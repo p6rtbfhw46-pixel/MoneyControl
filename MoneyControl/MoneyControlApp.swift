@@ -12,7 +12,9 @@ import SwiftData
 struct MoneyControlApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            MoneyTransaction.self,
+            ExpensePayment.self,
+            AccountSettings.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
