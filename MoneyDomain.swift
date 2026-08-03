@@ -1,0 +1,398 @@
+//
+//  MoneyDomain.swift
+//  MoneyControl
+//
+
+import SwiftUI
+
+enum TransactionKind: String {
+    case expense
+    case income
+}
+
+enum RecurrenceType: String {
+    case monthly
+    case yearlyMonth
+}
+
+enum TransactionEditScope {
+    case normal
+    case singleMonth
+    case futureMonths
+}
+
+enum TransactionEditorMode: String {
+    case expense
+    case income
+    case monthlyExpense
+    case periodicExpense
+    case salary
+
+    var needsExpenseClassification: Bool {
+        self == .expense || self == .monthlyExpense || self == .periodicExpense
+    }
+
+    var sectionTitle: String {
+        switch self {
+        case .expense, .monthlyExpense, .periodicExpense:
+            AppStrings.text(.details)
+        case .income:
+            AppStrings.text(.income)
+        case .salary:
+            AppStrings.text(.salary)
+        }
+    }
+
+    func navigationTitle(isEditing: Bool) -> String {
+        switch (self, isEditing) {
+        case (.expense, false):
+            return AppStrings.text(.newExpense)
+        case (.expense, true):
+            return AppStrings.text(.editExpense)
+        case (.income, false):
+            return AppStrings.text(.newIncome)
+        case (.income, true):
+            return AppStrings.text(.editIncome)
+        case (.monthlyExpense, false):
+            return AppStrings.text(.newMonthlyExpense)
+        case (.monthlyExpense, true):
+            return AppStrings.text(.editMonthlyExpense)
+        case (.periodicExpense, false):
+            return AppStrings.text(.newPeriodicExpense)
+        case (.periodicExpense, true):
+            return AppStrings.text(.editPeriodicExpense)
+        case (.salary, false):
+            return AppStrings.text(.newSalary)
+        case (.salary, true):
+            return AppStrings.text(.editSalary)
+        }
+    }
+}
+
+enum ExpenseCategory: String, CaseIterable, Identifiable {
+    case needs
+    case wants
+    case savingsAndDebt
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .needs:
+            AppStrings.text(.needsCategory)
+        case .wants:
+            AppStrings.text(.wantsCategory)
+        case .savingsAndDebt:
+            AppStrings.text(.savingsAndDebtCategory)
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .needs:
+            AppPalette.background
+        case .wants:
+            AppPalette.primary
+        case .savingsAndDebt:
+            AppPalette.savings
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .needs:
+            "lightbulb"
+        case .wants:
+            "sparkles"
+        case .savingsAndDebt:
+            "shield.checkered"
+        }
+    }
+
+    var names: [String] {
+        AppStrings.expenseNames(for: self)
+    }
+}
+
+struct TransactionEditorRequest: Identifiable {
+    let id = UUID()
+    let mode: TransactionEditorMode
+    let month: Date
+    let transaction: MoneyTransaction?
+    let editScope: TransactionEditScope
+
+    init(mode: TransactionEditorMode, month: Date, transaction: MoneyTransaction? = nil, editScope: TransactionEditScope = .normal) {
+        self.mode = mode
+        self.month = month
+        self.transaction = transaction
+        self.editScope = editScope
+    }
+
+    init(transaction: MoneyTransaction, month: Date, editScope: TransactionEditScope = .normal) {
+        self.mode = transaction.editorMode
+        self.month = month
+        self.transaction = transaction
+        self.editScope = editScope
+    }
+}
+
+extension Array where Element == MoneyTransaction {
+    func visible(in month: Date, payments: [ExpensePayment], exclusions: [RecurrenceExclusion]) -> [MoneyTransaction] {
+        filter { $0.occurs(in: month, exclusions: exclusions) }
+            .sorted { first, second in
+                let firstRank = first.listRank(in: month, payments: payments)
+                let secondRank = second.listRank(in: month, payments: payments)
+
+                if firstRank != secondRank {
+                    return firstRank < secondRank
+                }
+
+                let firstDay = first.effectiveDay(in: month)
+                let secondDay = second.effectiveDay(in: month)
+
+                if firstDay != secondDay {
+                    return firstDay < secondDay
+                }
+
+                return first.displayName.localizedCaseInsensitiveCompare(second.displayName) == .orderedAscending
+            }
+    }
+}
+
+extension MoneyTransaction {
+    var recurrence: RecurrenceType? {
+        if let recurrenceType, let recurrence = RecurrenceType(rawValue: recurrenceType) {
+            return recurrence
+        }
+
+        return repeatsEveryMonth ? .monthly : nil
+    }
+
+    var editorMode: TransactionEditorMode {
+        if kind == TransactionKind.expense.rawValue {
+            switch recurrence {
+            case .monthly:
+                return .monthlyExpense
+            case .yearlyMonth:
+                return .periodicExpense
+            case nil:
+                return .expense
+            }
+        }
+
+        return recurrence == .monthly ? .salary : .income
+    }
+
+    var displayName: String {
+        if kind == TransactionKind.expense.rawValue {
+            return expenseName ?? title
+        }
+        return title
+    }
+
+    var detailText: String {
+        detailText(in: nil)
+    }
+
+    func detailText(in month: Date?) -> String {
+        let displayedDay = month.map { effectiveDay(in: $0) } ?? day
+        var parts = ["\(AppStrings.text(.day)) \(displayedDay)"]
+
+        if let category = ExpenseCategory(rawValue: expenseCategory ?? "") {
+            parts.append(category.title)
+        }
+
+        if kind == TransactionKind.expense.rawValue, !title.isEmpty {
+            parts.append(title)
+        }
+
+        switch recurrence {
+        case .monthly:
+            parts.append(AppStrings.text(.everyMonth))
+            if let recurrenceEndMonthStart {
+                parts.append("\(AppStrings.text(.endDate)) \(recurrenceEndMonthStart.previousMonthStart.monthTitle)")
+            }
+        case .yearlyMonth:
+            parts.append(Date.monthName(forMonthNumber: recurrenceMonth))
+        case nil:
+            break
+        }
+
+        return parts.joined(separator: " · ")
+    }
+
+    func effectiveDay(in month: Date) -> Int {
+        min(day, month.daysInMonth)
+    }
+
+    var isRecurring: Bool {
+        recurrence != nil
+    }
+
+    var isActiveForSettingsList: Bool {
+        guard isRecurring else { return false }
+        return recurrenceEndMonthStart.map { $0 > Date().monthStart.nextMonthStart } ?? true
+    }
+
+    func occurs(in month: Date, exclusions: [RecurrenceExclusion]) -> Bool {
+        let monthStart = month.monthStart
+
+        if recurrenceEndMonthStart.map({ monthStart >= $0.monthStart }) == true {
+            return false
+        }
+
+        if exclusions.contains(where: { $0.transactionID == id && Calendar.current.isDate($0.monthStart, equalTo: monthStart, toGranularity: .month) }) {
+            return false
+        }
+
+        switch recurrence {
+        case .monthly:
+            return monthStart >= self.monthStart.monthStart
+        case .yearlyMonth:
+            return monthStart >= self.monthStart.monthStart && monthStart.monthNumber == recurrenceMonth
+        case nil:
+            return Calendar.current.isDate(self.monthStart, equalTo: monthStart, toGranularity: .month)
+        }
+    }
+
+    func occurrenceCount(through month: Date, exclusions: [RecurrenceExclusion] = []) -> Int {
+        guard kind == TransactionKind.income.rawValue else { return 0 }
+
+        let finalMonth = min(month.monthStart, recurrenceEndMonthStart?.previousMonthStart ?? month.monthStart)
+        guard finalMonth >= monthStart.monthStart else { return 0 }
+
+        switch recurrence {
+        case .monthly:
+            let months = Calendar.current.dateComponents([.month], from: monthStart.monthStart, to: finalMonth).month ?? -1
+            let total = max(months + 1, 0)
+            let excludedMonths = exclusions.filter {
+                $0.transactionID == id && $0.monthStart >= monthStart.monthStart && $0.monthStart <= finalMonth
+            }.count
+            return max(total - excludedMonths, 0)
+        case .yearlyMonth:
+            return finalMonth.monthNumber >= recurrenceMonth ? 1 : 0
+        case nil:
+            return monthStart.monthStart <= finalMonth ? 1 : 0
+        }
+    }
+
+    func listRank(in month: Date, payments: [ExpensePayment]) -> Int {
+        guard kind == TransactionKind.expense.rawValue else { return 1 }
+        let payment = payments.first { $0.transactionID == id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }
+        let paidAmount = payment?.amountPaid ?? (payment == nil ? 0 : amount)
+        return paidAmount >= amount ? 2 : 0
+    }
+
+    func copyForMonth(_ month: Date, recurrenceType: RecurrenceType? = nil, recurrenceMonth: Int = 0) -> MoneyTransaction {
+        MoneyTransaction(
+            title: title,
+            day: day,
+            monthStart: month.monthStart,
+            amount: amount,
+            kind: kind,
+            repeatsEveryMonth: recurrenceType == .monthly,
+            isPaid: false,
+            expenseCategory: expenseCategory,
+            expenseName: expenseName,
+            recurrenceType: recurrenceType?.rawValue,
+            recurrenceMonth: recurrenceMonth
+        )
+    }
+}
+
+extension Date {
+    var monthStart: Date {
+        let components = Calendar.current.dateComponents([.year, .month], from: self)
+        return Calendar.current.date(from: components) ?? self
+    }
+
+    var nextMonthStart: Date {
+        Calendar.current.date(byAdding: .month, value: 1, to: monthStart) ?? monthStart
+    }
+
+    var previousMonthStart: Date {
+        Calendar.current.date(byAdding: .month, value: -1, to: monthStart) ?? monthStart
+    }
+
+    var monthNumber: Int {
+        Calendar.current.component(.month, from: self)
+    }
+
+    var monthTitle: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "pt_PT")
+        formatter.dateFormat = "MMMM yyyy"
+        let title = formatter.string(from: self)
+        return title.prefix(1).uppercased() + title.dropFirst()
+    }
+
+    var daysInMonth: Int {
+        Calendar.current.range(of: .day, in: .month, for: self)?.count ?? 31
+    }
+
+    static func monthStart(forMonthNumber month: Int) -> Date {
+        var components = Calendar.current.dateComponents([.year], from: Date())
+        components.month = month
+        components.day = 1
+        return Calendar.current.date(from: components) ?? Date().monthStart
+    }
+
+    static func monthStart(month: Int, year: Int) -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = 1
+        return Calendar.current.date(from: components) ?? Date().monthStart
+    }
+
+    static func monthName(forMonthNumber month: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "pt_PT")
+        formatter.dateFormat = "MMMM"
+        let title = formatter.string(from: monthStart(forMonthNumber: month))
+        return title.prefix(1).uppercased() + title.dropFirst()
+    }
+}
+
+extension Double {
+    var currencyText: String {
+        formatted(.currency(code: Locale.current.currency?.identifier ?? "EUR"))
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func monthPagerStyle() -> some View {
+#if os(iOS)
+        tabViewStyle(.page(indexDisplayMode: .never))
+#else
+        self
+#endif
+    }
+
+    @ViewBuilder
+    func decimalKeyboard() -> some View {
+#if os(iOS)
+        keyboardType(.decimalPad)
+#else
+        self
+#endif
+    }
+
+    @ViewBuilder
+    func liquidGlassButtonStyle(prominent: Bool = false) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            if prominent {
+                buttonStyle(.glassProminent)
+            } else {
+                buttonStyle(.glass)
+            }
+        } else {
+            if prominent {
+                buttonStyle(.borderedProminent)
+            } else {
+                buttonStyle(.bordered)
+            }
+        }
+    }
+}

@@ -22,6 +22,7 @@ final class MoneyTransaction {
     var expenseName: String?
     var recurrenceType: String?
     var recurrenceMonth: Int
+    var recurrenceEndMonthStart: Date?
 
     init(
         title: String,
@@ -34,7 +35,8 @@ final class MoneyTransaction {
         expenseCategory: String? = nil,
         expenseName: String? = nil,
         recurrenceType: String? = nil,
-        recurrenceMonth: Int = 0
+        recurrenceMonth: Int = 0,
+        recurrenceEndMonthStart: Date? = nil
     ) {
         self.id = UUID()
         self.title = title
@@ -48,11 +50,12 @@ final class MoneyTransaction {
         self.expenseName = expenseName
         self.recurrenceType = recurrenceType
         self.recurrenceMonth = recurrenceMonth
+        self.recurrenceEndMonthStart = recurrenceEndMonthStart
     }
 }
 
 @Model
-final class ExpensePayment {
+final class RecurrenceExclusion {
     var transactionID: UUID
     var monthStart: Date
 
@@ -63,12 +66,15 @@ final class ExpensePayment {
 }
 
 @Model
-final class AccountSettings {
-    var personName: String
-    var initialBalance: Double
+final class ExpensePayment {
+    var transactionID: UUID
+    var monthStart: Date
+    var amountPaid: Double?
 
-    init(personName: String = "", initialBalance: Double = 0) {
-        self.personName = personName
-        self.initialBalance = initialBalance
+    init(transactionID: UUID, monthStart: Date, amountPaid: Double? = nil) {
+        self.transactionID = transactionID
+        self.monthStart = monthStart
+        self.amountPaid = amountPaid
     }
 }
+

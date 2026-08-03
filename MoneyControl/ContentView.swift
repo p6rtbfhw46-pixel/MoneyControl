@@ -5,958 +5,914 @@
 //  Created by Paulo Gaio on 29/07/2026.
 //
 
-import SwiftUI
 import SwiftData
+import SwiftUI
+import Charts
+
+private struct TransactionOccurrence {
+    let transaction: MoneyTransaction
+    let month: Date
+}
+
+private enum MainTab {
+    case currentAccount
+    case credits
+}
+
+private enum AnalyticsExpenseTab {
+    case whereSpent
+    case budgetRule
+}
+
+private struct CategoryExpensePoint: Identifiable {
+    let category: ExpenseCategory
+    let amount: Double
+
+    var id: String { category.rawValue }
+}
+
+private struct ExpenseTypePoint: Identifiable {
+    let title: String
+    let category: ExpenseCategory
+    let amount: Double
+
+    var id: String { "\(category.rawValue)-\(title)" }
+}
+
+private struct ExpenseNotice: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+}
+
+private struct MonthlyBalancePoint: Identifiable {
+    let month: Date
+    let income: Double
+    let expenses: Double
+
+    var id: Date { month }
+    var balance: Double { income - expenses }
+    var monthLabel: String { month.formatted(.dateTime.month(.abbreviated)) }
+}
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var transactions: [MoneyTransaction]
     @Query private var payments: [ExpensePayment]
-    @Query private var settings: [AccountSettings]
+    @Query private var exclusions: [RecurrenceExclusion]
 
     @State private var selectedMonthOffset = 0
+    @State private var selectedTab: MainTab = .currentAccount
+    @State private var selectedAnalyticsExpenseTab: AnalyticsExpenseTab = .whereSpent
+    @State private var selectedAdviceIndex = 0
     @State private var editorRequest: TransactionEditorRequest?
     @State private var showsSettings = false
+    @State private var showsQuickActions = false
+    @State private var expenseNotice: ExpenseNotice?
+    @State private var didCheckOverdueExpenses = false
 
     private let monthOffsets = Array(-24...24)
-    private var accountSettings: AccountSettings? { settings.first }
     private var selectedMonth: Date { Calendar.current.date(byAdding: .month, value: selectedMonthOffset, to: Date().monthStart) ?? Date().monthStart }
-    private var selectedTransactions: [MoneyTransaction] { transactions.visible(in: selectedMonth, payments: payments) }
-
-    private var incomeTotal: Double {
-        transactions
-            .filter { $0.kind == TransactionKind.income.rawValue }
-            .reduce(0) { $0 + ($1.amount * Double($1.occurrenceCount(through: selectedMonth))) }
+    private var currentMonth: Date { Date().monthStart }
+    private var selectedTransactions: [MoneyTransaction] { transactions.visible(in: selectedMonth, payments: payments, exclusions: exclusions) }
+    private var currentMonthTransactions: [MoneyTransaction] { transactions.visible(in: currentMonth, payments: payments, exclusions: exclusions) }
+    private var currentYear: Int { Calendar.current.component(.year, from: Date()) }
+    private var currentYearMonths: [Date] {
+        (1...12).map { Date.monthStart(month: $0, year: currentYear) }
     }
+    private var accountOccurrencesUntilToday: [TransactionOccurrence] {
+        guard let firstMonth = transactions.map(\.monthStart.monthStart).min() else { return [] }
 
-    private var paidExpenses: Double {
-        payments
-            .filter { $0.monthStart <= selectedMonth }
-            .reduce(0) { total, payment in
-                guard let transaction = transactions.first(where: { $0.id == payment.transactionID && $0.kind == TransactionKind.expense.rawValue }) else {
-                    return total
+        return months(from: firstMonth, through: currentMonth).flatMap { month in
+            let maxDay = Calendar.current.isDate(month, equalTo: currentMonth, toGranularity: .month)
+                ? Calendar.current.component(.day, from: Date())
+                : month.daysInMonth
+
+            return transactions
+                .visible(in: month, payments: payments, exclusions: exclusions)
+                .filter { transaction in
+                    if transaction.kind == TransactionKind.income.rawValue {
+                        return transaction.effectiveDay(in: month) <= maxDay
+                    }
+
+                    return transaction.effectiveDay(in: month) <= maxDay || paidAmount(for: transaction, in: month) > 0
                 }
-                return total + transaction.amount
-            }
+                .map { TransactionOccurrence(transaction: $0, month: month) }
+        }
     }
 
     private var monthUnpaidExpenses: Double {
         selectedTransactions
-            .filter { $0.kind == TransactionKind.expense.rawValue && !isPaid($0, in: selectedMonth) }
+            .filter { $0.kind == TransactionKind.expense.rawValue }
+            .reduce(0) { $0 + max($1.amount - paidAmount(for: $1, in: selectedMonth), 0) }
+    }
+
+    private var monthIncome: Double {
+        selectedTransactions
+            .filter { $0.kind == TransactionKind.income.rawValue }
             .reduce(0) { $0 + $1.amount }
     }
 
-    private var inAccount: Double { (accountSettings?.initialBalance ?? 0) + incomeTotal - paidExpenses }
-    private var monthRemaining: Double { inAccount - monthUnpaidExpenses }
+    private var monthExpenses: Double {
+        selectedTransactions
+            .filter { $0.kind == TransactionKind.expense.rawValue }
+            .reduce(0) { $0 + $1.amount }
+    }
+
+    private var incomeUntilToday: Double {
+        accountOccurrencesUntilToday
+            .filter { $0.transaction.kind == TransactionKind.income.rawValue }
+            .reduce(0) { $0 + $1.transaction.amount }
+    }
+
+    private var paidExpensesUntilToday: Double {
+        accountOccurrencesUntilToday
+            .filter { $0.transaction.kind == TransactionKind.expense.rawValue }
+            .reduce(0) { $0 + paidAmount(for: $1.transaction, in: $1.month) }
+    }
+
+    private var inAccount: Double { incomeUntilToday - paidExpensesUntilToday }
+    private var monthRemaining: Double { monthIncome - monthExpenses }
+    private var currentMonthCategoryExpenses: [CategoryExpensePoint] {
+        categoryExpenses(in: currentMonth)
+    }
+    private var currentMonthExpenseTotal: Double {
+        currentMonthCategoryExpenses.reduce(0) { $0 + $1.amount }
+    }
+    private var currentMonthExpenseTypePoints: [ExpenseTypePoint] {
+        expenseTypePoints(in: [currentMonth])
+    }
+    private var budgetReferencePoints: [CategoryExpensePoint] {
+        [
+            CategoryExpensePoint(category: .needs, amount: 50),
+            CategoryExpensePoint(category: .wants, amount: 30),
+            CategoryExpensePoint(category: .savingsAndDebt, amount: 20)
+        ]
+    }
+    private var annualBalancePoints: [MonthlyBalancePoint] {
+        currentYearMonths.map { month in
+            let monthTransactions = transactions.visible(in: month, payments: payments, exclusions: exclusions)
+            let income = monthTransactions
+                .filter { $0.kind == TransactionKind.income.rawValue }
+                .reduce(0) { $0 + $1.amount }
+            let expenses = monthTransactions
+                .filter { $0.kind == TransactionKind.expense.rawValue }
+                .reduce(0) { $0 + $1.amount }
+
+            return MonthlyBalancePoint(month: month, income: income, expenses: expenses)
+        }
+    }
+    private var annualBalanceTotal: Double {
+        annualBalancePoints.reduce(0) { $0 + $1.balance }
+    }
+    private var currentMonthAnalysisTitle: String {
+        "\(AppStrings.text(.monthAnalysis)) \(currentMonth.monthTitle)"
+    }
+    private var currentAdvice: (title: String, message: String) {
+        let adviceCards = AppStrings.analyticsAdviceCards
+        let index = selectedAdviceIndex % adviceCards.count
+        return adviceCards[index]
+    }
+    private var navigationTitle: String {
+        switch selectedTab {
+        case .currentAccount:
+            AppStrings.text(.appName)
+        case .credits:
+            AppStrings.text(.credits)
+        }
+    }
+
+    private func categoryExpenses(in month: Date) -> [CategoryExpensePoint] {
+        let monthTransactions = transactions.visible(in: month, payments: payments, exclusions: exclusions)
+
+        return ExpenseCategory.allCases.map { category in
+            let amount = monthTransactions
+                .filter { transaction in
+                    transaction.kind == TransactionKind.expense.rawValue && transaction.expenseCategory == category.rawValue
+                }
+                .reduce(0) { $0 + $1.amount }
+
+            return CategoryExpensePoint(category: category, amount: amount)
+        }
+    }
+
+    private func expenseTypePoints(in months: [Date]) -> [ExpenseTypePoint] {
+        var totals: [String: (title: String, category: ExpenseCategory, amount: Double)] = [:]
+
+        months.forEach { month in
+            transactions
+                .visible(in: month, payments: payments, exclusions: exclusions)
+                .filter { $0.kind == TransactionKind.expense.rawValue }
+                .forEach { transaction in
+                    let category = ExpenseCategory(rawValue: transaction.expenseCategory ?? "") ?? .needs
+                    let title = transaction.displayName.isEmpty ? AppStrings.text(.expense) : transaction.displayName
+                    let key = "\(category.rawValue)-\(title)"
+                    let currentAmount = totals[key]?.amount ?? 0
+                    totals[key] = (title, category, currentAmount + transaction.amount)
+                }
+        }
+
+        return totals.values
+            .map { ExpenseTypePoint(title: $0.title, category: $0.category, amount: $0.amount) }
+            .sorted { first, second in
+                if first.amount != second.amount {
+                    return first.amount > second.amount
+                }
+
+                return first.title.localizedCaseInsensitiveCompare(second.title) == .orderedAscending
+            }
+    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                summaryBar
-
-                TabView(selection: $selectedMonthOffset) {
-                    ForEach(monthOffsets, id: \.self) { offset in
-                        let month = Calendar.current.date(byAdding: .month, value: offset, to: Date().monthStart) ?? Date().monthStart
-
-                        MonthPage(
-                            month: month,
-                            transactions: transactions.visible(in: month, payments: payments),
-                            payments: payments,
-                            onTogglePaid: togglePaid,
-                            onEdit: { editorRequest = TransactionEditorRequest(transaction: $0, month: month) },
-                            onDelete: deleteTransactions
-                        )
-                        .tag(offset)
-                    }
+            Group {
+                switch selectedTab {
+                case .currentAccount:
+                    currentAccountView
+                case .credits:
+                    creditsView
                 }
-                .monthPagerStyle()
             }
-            .navigationTitle(accountSettings?.personName.isEmpty == false ? accountSettings?.personName ?? "Money Control" : "Money Control")
+            .background(AppPalette.appBackground.ignoresSafeArea())
+            .toolbarBackground(AppPalette.appBackground, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .navigationTitle(navigationTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    appIcon
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showsSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.title2)
+                            .foregroundStyle(AppPalette.background)
+                            .frame(width: 40, height: 40)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
             .safeAreaInset(edge: .bottom) {
-                actionBar
+                bottomArea
             }
             .sheet(item: $editorRequest) { request in
                 TransactionEditor(request: request)
             }
             .sheet(isPresented: $showsSettings) {
-                if let accountSettings {
-                    SettingsEditor(settings: accountSettings, onDelete: deleteTransactions)
+                SettingsEditor()
+            }
+            .alert(item: $expenseNotice) { notice in
+                Alert(
+                    title: Text(notice.title),
+                    message: Text(notice.message),
+                    dismissButton: .default(Text(AppStrings.text(.ok)))
+                )
+            }
+            .onAppear(perform: handleAppear)
+        }
+    }
+
+    private var currentAccountView: some View {
+        VStack(spacing: 0) {
+            summaryBar
+
+            TabView(selection: $selectedMonthOffset) {
+                ForEach(monthOffsets, id: \.self) { offset in
+                    let month = Calendar.current.date(byAdding: .month, value: offset, to: Date().monthStart) ?? Date().monthStart
+
+                    MonthPage(
+                        month: month,
+                        transactions: transactions.visible(in: month, payments: payments, exclusions: exclusions),
+                        payments: payments,
+                        onSetPaidAmount: setPaidAmount,
+                        onEdit: { editorRequest = TransactionEditorRequest(transaction: $0, month: month, editScope: $0.isRecurring ? .singleMonth : .normal) },
+                        onDelete: { deleteTransaction($0, in: month) }
+                    )
+                    .tag(offset)
                 }
             }
-            .onAppear(perform: ensureSettings)
+            .monthPagerStyle()
+
+            monthNavigationBar
+                .padding(.horizontal)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+                .frame(height: 52)
         }
+    }
+
+    private var monthNavigationBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                selectedMonthOffset = max(selectedMonthOffset - 1, monthOffsets.first ?? 0)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.headline)
+                    .foregroundStyle(AppPalette.primary)
+                    .frame(width: 38, height: 48)
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedMonthOffset <= (monthOffsets.first ?? 0))
+            .opacity(selectedMonthOffset <= (monthOffsets.first ?? 0) ? 0.35 : 1)
+
+            BudgetStatusCard(
+                month: selectedMonth,
+                transactions: selectedTransactions,
+                payments: payments,
+                isCompact: true
+            )
+
+            Button {
+                selectedMonthOffset = min(selectedMonthOffset + 1, monthOffsets.last ?? 0)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.headline)
+                    .foregroundStyle(AppPalette.primary)
+                    .frame(width: 38, height: 48)
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedMonthOffset >= (monthOffsets.last ?? 0))
+            .opacity(selectedMonthOffset >= (monthOffsets.last ?? 0) ? 0.35 : 1)
+        }
+    }
+
+    private var creditsView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                chartCard(
+                    title: currentMonthAnalysisTitle,
+                    total: currentMonthExpenseTotal
+                ) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Picker("", selection: $selectedAnalyticsExpenseTab) {
+                            Text(AppStrings.text(.whereSpent)).tag(AnalyticsExpenseTab.whereSpent)
+                            Text(AppStrings.text(.budgetRule)).tag(AnalyticsExpenseTab.budgetRule)
+                        }
+                        .pickerStyle(.segmented)
+                        .tint(AppPalette.background)
+
+                        switch selectedAnalyticsExpenseTab {
+                        case .whereSpent:
+                            expenseTypePieChart(points: currentMonthExpenseTypePoints, total: currentMonthExpenseTotal)
+                        case .budgetRule:
+                            HStack(alignment: .top, spacing: 16) {
+                                pieChartColumn(
+                                    title: AppStrings.text(.actualExpenses),
+                                    points: currentMonthCategoryExpenses,
+                                    total: currentMonthExpenseTotal
+                                )
+
+                                pieChartColumn(
+                                    title: AppStrings.text(.reference503020),
+                                    points: budgetReferencePoints,
+                                    total: 100
+                                )
+                            }
+                        }
+                    }
+                }
+
+                adviceCarouselCard
+
+                chartCard(
+                    title: AppStrings.text(.annualBalance),
+                    total: annualBalanceTotal
+                ) {
+                    Chart(annualBalancePoints) { point in
+                        BarMark(
+                            x: .value(AppStrings.text(.month), point.monthLabel),
+                            y: .value(AppStrings.text(.monthRemaining), point.balance)
+                        )
+                        .foregroundStyle(point.balance >= 0 ? AppPalette.positive : AppPalette.primary)
+                        .cornerRadius(6)
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading)
+                    }
+                    .frame(height: 220)
+                }
+            }
+            .padding()
+        }
+        .background(AppPalette.appBackground)
+    }
+
+    private var adviceCarouselCard: some View {
+        HStack(spacing: 12) {
+            adviceNavigationButton(systemImage: "chevron.left") {
+                moveAdvice(by: -1)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(currentAdvice.title)
+                    .font(.caption.bold())
+                    .foregroundStyle(AppPalette.primary)
+                    .lineLimit(1)
+
+                Text(currentAdvice.message)
+                    .font(.subheadline)
+                    .foregroundStyle(AppPalette.background)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .id(selectedAdviceIndex)
+            .transition(.asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .leading).combined(with: .opacity)
+            ))
+
+            Spacer(minLength: 0)
+
+            adviceNavigationButton(systemImage: "chevron.right") {
+                moveAdvice(by: 1)
+            }
+        }
+        .padding(14)
+        .background(AppPalette.mintSurface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(AppPalette.secondary.opacity(0.45), lineWidth: 1)
+        )
+        .shadow(color: AppPalette.background.opacity(0.06), radius: 14, y: 7)
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(25))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    moveAdvice(by: 1)
+                }
+            }
+        }
+    }
+
+    private func adviceNavigationButton(systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.headline)
+                .foregroundStyle(AppPalette.background)
+                .frame(width: 34, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func moveAdvice(by offset: Int) {
+        let adviceCount = AppStrings.analyticsAdviceCards.count
+        guard adviceCount > 0 else { return }
+
+        withAnimation(.snappy) {
+            selectedAdviceIndex = (selectedAdviceIndex + offset + adviceCount) % adviceCount
+        }
+    }
+
+    private func chartCard<Content: View>(title: String, total: Double, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(AppPalette.background)
+
+                Spacer()
+
+                Text(total.currencyText)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(total < 0 ? AppPalette.primary : AppPalette.background)
+            }
+
+            content()
+        }
+        .padding()
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: AppPalette.background.opacity(0.07), radius: 16, y: 8)
+    }
+
+    private func pieChartColumn(title: String, points: [CategoryExpensePoint], total: Double) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.bold())
+                .foregroundStyle(AppPalette.background)
+
+            if total > 0 {
+                Chart(points.filter { $0.amount > 0 }) { point in
+                    SectorMark(
+                        angle: .value(AppStrings.text(.value), point.amount),
+                        innerRadius: .ratio(0.58),
+                        angularInset: 1.5
+                    )
+                    .cornerRadius(4)
+                    .foregroundStyle(point.category.color)
+                }
+                .frame(height: 150)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(points) { point in
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(point.category.color)
+                                .frame(width: 8, height: 8)
+                            Text("\(categoryShortTitle(point.category)): \(percentageText(point.amount, total: total))")
+                                .font(.caption2)
+                                .foregroundStyle(AppPalette.mutedText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                    }
+                }
+            } else {
+                ContentUnavailableView(AppStrings.text(.noTransactions), systemImage: "chart.pie")
+                    .foregroundStyle(AppPalette.background)
+                    .frame(height: 150)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func expenseTypePieChart(points: [ExpenseTypePoint], total: Double) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if total > 0 {
+                Chart(points.filter { $0.amount > 0 }) { point in
+                    SectorMark(
+                        angle: .value(AppStrings.text(.value), point.amount),
+                        innerRadius: .ratio(0.58),
+                        angularInset: 1.5
+                    )
+                    .cornerRadius(4)
+                    .foregroundStyle(point.category.color)
+                }
+                .frame(height: 180)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(points.filter { $0.amount > 0 }) { point in
+                        HStack(spacing: 10) {
+                            Image(systemName: expenseIconName(for: point.title))
+                                .font(.caption.bold())
+                                .foregroundStyle(point.category.color)
+                                .frame(width: 28, height: 28)
+                                .background(point.category.color.opacity(0.14), in: Circle())
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(point.title)
+                                    .font(.caption.bold())
+                                    .foregroundStyle(AppPalette.background)
+                                    .lineLimit(2)
+
+                                Text(point.category.title)
+                                    .font(.caption2)
+                                    .foregroundStyle(AppPalette.mutedText)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(percentageText(point.amount, total: total))
+                                    .font(.caption.bold())
+                                    .foregroundStyle(AppPalette.background)
+
+                                Text(point.amount.currencyText)
+                                    .font(.caption2)
+                                    .foregroundStyle(AppPalette.mutedText)
+                            }
+                        }
+                    }
+                }
+            } else {
+                ContentUnavailableView(AppStrings.text(.noTransactions), systemImage: "chart.pie")
+                    .foregroundStyle(AppPalette.background)
+                    .frame(height: 180)
+            }
+        }
+    }
+
+    private func expenseIconName(for title: String) -> String {
+        let normalizedTitle = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+
+        if normalizedTitle.contains("transport") || normalizedTitle.contains("combustivel") || normalizedTitle.contains("carro") {
+            return "car.fill"
+        }
+
+        if normalizedTitle.contains("aliment") || normalizedTitle.contains("supermercado") || normalizedTitle.contains("refeic") {
+            return "fork.knife"
+        }
+
+        if normalizedTitle.contains("habit") || normalizedTitle.contains("renda") || normalizedTitle.contains("credito") || normalizedTitle.contains("casa") {
+            return "house.fill"
+        }
+
+        if normalizedTitle.contains("eletric") || normalizedTitle.contains("gas") || normalizedTitle.contains("agua") || normalizedTitle.contains("telecom") || normalizedTitle.contains("contas") {
+            return "lightbulb.fill"
+        }
+
+        if normalizedTitle.contains("seguro") {
+            return "shield.fill"
+        }
+
+        if normalizedTitle.contains("subscr") {
+            return "play.rectangle.fill"
+        }
+
+        if normalizedTitle.contains("lazer") || normalizedTitle.contains("entreten") {
+            return "sparkles"
+        }
+
+        if normalizedTitle.contains("viagem") || normalizedTitle.contains("ferias") {
+            return "airplane"
+        }
+
+        if normalizedTitle.contains("roupa") || normalizedTitle.contains("acessor") || normalizedTitle.contains("compras") {
+            return "bag.fill"
+        }
+
+        if normalizedTitle.contains("poup") {
+            return "leaf.fill"
+        }
+
+        if normalizedTitle.contains("divida") || normalizedTitle.contains("amort") {
+            return "creditcard.fill"
+        }
+
+        return "ellipsis.circle.fill"
+    }
+
+    private func categoryShortTitle(_ category: ExpenseCategory) -> String {
+        switch category {
+        case .needs:
+            "50"
+        case .wants:
+            "30"
+        case .savingsAndDebt:
+            "20"
+        }
+    }
+
+    private func percentageText(_ amount: Double, total: Double) -> String {
+        guard total > 0 else { return "0%" }
+        return (amount / total).formatted(.percent.precision(.fractionLength(0)))
+    }
+
+    private var appIcon: some View {
+        Image("SpendWiseIcon")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 34, height: 34)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private var summaryBar: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                SummaryTile(title: "Na Conta", value: inAccount)
-
-                Button {
-                    showsSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.title3)
-                        .frame(width: 44, height: 58)
-                }
-                .buttonStyle(.bordered)
-            }
+            SummaryTile(
+                title: AppStrings.text(.balanceThisMonth),
+                value: inAccount,
+                helpText: AppStrings.text(.balanceThisMonthHelp)
+            )
 
             HStack(spacing: 8) {
-                SummaryTile(title: "Mês Falta Pagar", value: monthUnpaidExpenses)
-                SummaryTile(title: "Mês Remanescente", value: monthRemaining)
+                SummaryTile(
+                    title: AppStrings.text(.monthUnpaid),
+                    value: monthUnpaidExpenses,
+                    helpText: AppStrings.text(.monthUnpaidHelp)
+                )
+                SummaryTile(
+                    title: AppStrings.text(.monthRemaining),
+                    value: monthRemaining,
+                    helpText: AppStrings.text(.monthRemainingHelp)
+                )
             }
         }
         .padding()
-        .background(.thinMaterial)
+        .background(AppPalette.appBackground)
     }
 
-    private var actionBar: some View {
-        HStack(spacing: 12) {
-            Button {
-                editorRequest = TransactionEditorRequest(mode: .expense, month: selectedMonth)
-            } label: {
-                Label("Despesa", systemImage: "minus.circle")
-                    .frame(maxWidth: .infinity)
+    private var bottomArea: some View {
+        VStack(spacing: 8) {
+            if showsQuickActions && selectedTab == .currentAccount {
+                quickActionsBar
             }
-            .buttonStyle(.borderedProminent)
-
-            Button {
-                editorRequest = TransactionEditorRequest(mode: .income, month: selectedMonth)
-            } label: {
-                Label("Income", systemImage: "plus.circle")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
+            bottomNavigationBar
         }
-        .padding()
-        .background(.bar)
+        .padding(.top, 8)
+        .background(AppPalette.appBackground)
     }
 
-    private func ensureSettings() {
-        guard settings.isEmpty else { return }
-        modelContext.insert(AccountSettings())
-    }
-
-    private func isPaid(_ transaction: MoneyTransaction, in month: Date) -> Bool {
-        payments.contains { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }
-    }
-
-    private func togglePaid(_ transaction: MoneyTransaction, in month: Date) {
-        if let payment = payments.first(where: { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }) {
-            modelContext.delete(payment)
-        } else {
-            modelContext.insert(ExpensePayment(transactionID: transaction.id, monthStart: month.monthStart))
-        }
-    }
-
-    private func deleteTransactions(_ transaction: MoneyTransaction) {
-        payments
-            .filter { $0.transactionID == transaction.id }
-            .forEach(modelContext.delete)
-        modelContext.delete(transaction)
-    }
-}
-
-private struct MonthPage: View {
-    let month: Date
-    let transactions: [MoneyTransaction]
-    let payments: [ExpensePayment]
-    let onTogglePaid: (MoneyTransaction, Date) -> Void
-    let onEdit: (MoneyTransaction) -> Void
-    let onDelete: (MoneyTransaction) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(month.monthTitle)
-                .font(.largeTitle.bold())
-                .padding(.horizontal)
-                .padding(.top)
-
-            if transactions.isEmpty {
-                ContentUnavailableView("Sem movimentos", systemImage: "calendar", description: Text("Adiciona despesas ou incomes deste mês."))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List {
-                    ForEach(transactions) { transaction in
-                        TransactionRow(
-                            transaction: transaction,
-                            isPaid: isPaid(transaction),
-                            onTogglePaid: { onTogglePaid(transaction, month) },
-                            onEdit: { onEdit(transaction) },
-                            onDelete: { onDelete(transaction) }
-                        )
-                    }
+    private var bottomNavigationBar: some View {
+        HStack(spacing: 14) {
+            HStack(spacing: 4) {
+                bottomTabButton(
+                    title: AppStrings.text(.currentAccount),
+                    systemImage: "list.bullet.rectangle",
+                    isSelected: selectedTab == .currentAccount
+                ) {
+                    selectedTab = .currentAccount
                 }
-                .listStyle(.plain)
-            }
-        }
-    }
 
-    private func isPaid(_ transaction: MoneyTransaction) -> Bool {
-        payments.contains { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }
-    }
-}
-
-private struct TransactionRow: View {
-    let transaction: MoneyTransaction
-    let isPaid: Bool
-    let onTogglePaid: () -> Void
-    let onEdit: () -> Void
-    let onDelete: () -> Void
-
-    private var category: ExpenseCategory? {
-        ExpenseCategory(rawValue: transaction.expenseCategory ?? "")
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            if transaction.kind == TransactionKind.expense.rawValue {
-                Button(action: onTogglePaid) {
-                    Image(systemName: isPaid ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(isPaid ? .green : .secondary)
+                bottomTabButton(
+                    title: AppStrings.text(.credits),
+                    systemImage: "chart.bar",
+                    isSelected: selectedTab == .credits
+                ) {
+                    selectedTab = .credits
+                    showsQuickActions = false
                 }
-                .buttonStyle(.plain)
             }
-
-            if let category {
-                Circle()
-                    .fill(category.color)
-                    .frame(width: 12, height: 12)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.displayName)
-                    .font(.headline)
-
-                Text(transaction.detailText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            .padding(6)
+            .background(AppPalette.surface, in: Capsule())
+            .shadow(color: AppPalette.background.opacity(0.08), radius: 14, y: 8)
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 8) {
-                Text(transaction.amount.currencyText)
-                    .font(.headline)
-                    .foregroundStyle(transaction.kind == TransactionKind.income.rawValue ? .green : .red)
-
-                HStack(spacing: 10) {
-                    Button(action: onEdit) {
-                        Image(systemName: "pencil")
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(role: .destructive, action: onDelete) {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.plain)
+            Button {
+                withAnimation(.snappy) {
+                    showsQuickActions.toggle()
                 }
-                .font(.caption)
+            } label: {
+                Image(systemName: showsQuickActions ? "xmark" : "plus")
+                    .font(.title2)
+                    .frame(width: 58, height: 58)
+                    .foregroundStyle(AppPalette.background)
+                    .background(AppPalette.secondary, in: Circle())
+                    .shadow(color: AppPalette.background.opacity(0.08), radius: 12, y: 7)
             }
+            .buttonStyle(.plain)
+            .disabled(selectedTab != .currentAccount)
+            .opacity(selectedTab == .currentAccount ? 1 : 0.35)
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal)
+        .padding(.bottom, 8)
     }
-}
 
-private struct SummaryTile: View {
-    let title: String
-    let value: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(value.currencyText)
-                .font(.headline)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+    private func bottomTabButton(title: String, systemImage: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.title3)
+                Text(title)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(isSelected ? AppPalette.surface : AppPalette.background)
+            .frame(width: 104, height: 58)
+            .background(isSelected ? AppPalette.background : Color.clear, in: Capsule())
         }
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-        .padding(.horizontal, 10)
-        .background(.background, in: RoundedRectangle(cornerRadius: 8))
-    }
-}
-
-private struct SettingsEditor: View {
-    @Environment(\.dismiss) private var dismiss
-    @Query private var transactions: [MoneyTransaction]
-    @Query private var payments: [ExpensePayment]
-    @Bindable var settings: AccountSettings
-
-    let onDelete: (MoneyTransaction) -> Void
-
-    @State private var showsAccountFields = false
-    @State private var editorRequest: TransactionEditorRequest?
-    @State private var selectedList = 0
-
-    private var accountIsFilled: Bool {
-        !settings.personName.trimmingCharacters(in: .whitespaces).isEmpty || settings.initialBalance != 0
+        .buttonStyle(.plain)
     }
 
-    private var periodicExpenses: [MoneyTransaction] {
-        transactions
-            .filter { $0.kind == TransactionKind.expense.rawValue && $0.recurrence == .yearlyMonth }
-            .sorted { $0.recurrenceMonth == $1.recurrenceMonth ? $0.day < $1.day : $0.recurrenceMonth < $1.recurrenceMonth }
-    }
-
-    private var salaries: [MoneyTransaction] {
-        transactions
-            .filter { $0.kind == TransactionKind.income.rawValue && $0.recurrence == .monthly }
-            .sorted { $0.day == $1.day ? $0.title < $1.title : $0.day < $1.day }
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Dados da conta") {
-                    if showsAccountFields || !accountIsFilled {
-                        LabeledContent("Nome") {
-                            TextField("Nome da pessoa", text: $settings.personName)
-                                .multilineTextAlignment(.trailing)
-                        }
-
-                        LabeledContent("Saldo inicial") {
-                            TextField("Saldo inicial", value: $settings.initialBalance, format: .number)
-                                .multilineTextAlignment(.trailing)
-                                .decimalKeyboard()
-                        }
-                    } else {
-                        LabeledContent("Nome", value: settings.personName)
-                        LabeledContent("Saldo inicial", value: settings.initialBalance.currencyText)
-
-                        Button {
-                            showsAccountFields = true
-                        } label: {
-                            Label("Expandir para alterar", systemImage: "chevron.down")
-                        }
-                    }
-                }
-
-                Section {
-                    Button {
-                        editorRequest = TransactionEditorRequest(mode: .periodicExpense, month: Date().monthStart)
-                    } label: {
-                        Label("Despesa Periódica", systemImage: "calendar.badge.plus")
-                    }
-
-                    Button {
-                        editorRequest = TransactionEditorRequest(mode: .salary, month: Date().monthStart)
-                    } label: {
-                        Label("Vencimento", systemImage: "banknote")
-                    }
-                }
-
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(selectedList == 0 ? "Lista de despesas periódicas" : "Lista de vencimentos")
-                            .font(.headline)
-
-                        TabView(selection: $selectedList) {
-                            RecurringList(
-                                emptyTitle: "Sem despesas periódicas",
-                                transactions: periodicExpenses,
-                                payments: payments,
-                                onEdit: { editorRequest = TransactionEditorRequest(transaction: $0, month: Date().monthStart) },
-                                onDelete: onDelete
-                            )
-                            .tag(0)
-
-                            RecurringList(
-                                emptyTitle: "Sem vencimentos",
-                                transactions: salaries,
-                                payments: payments,
-                                onEdit: { editorRequest = TransactionEditorRequest(transaction: $0, month: Date().monthStart) },
-                                onDelete: onDelete
-                            )
-                            .tag(1)
-                        }
-                        .frame(minHeight: 220)
-                        .monthPagerStyle()
-                    }
-                }
+    private var quickActionsBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                editorRequest = TransactionEditorRequest(mode: .income, month: selectedMonth)
+                showsQuickActions = false
+            } label: {
+                Label(AppStrings.text(.income), systemImage: "plus.circle")
+                    .foregroundStyle(AppPalette.background)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(AppPalette.secondary, in: RoundedRectangle(cornerRadius: 14))
             }
-            .navigationTitle("Configurações")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("OK") { dismiss() }
-                }
+            .buttonStyle(.plain)
+
+            Button {
+                editorRequest = TransactionEditorRequest(mode: .expense, month: selectedMonth)
+                showsQuickActions = false
+            } label: {
+                Label(AppStrings.text(.expense), systemImage: "minus.circle")
+                    .foregroundStyle(AppPalette.surface)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(AppPalette.primary, in: RoundedRectangle(cornerRadius: 14))
             }
-            .sheet(item: $editorRequest) { request in
-                TransactionEditor(request: request)
-            }
+            .buttonStyle(.plain)
         }
+        .padding(.horizontal)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
-}
 
-private struct RecurringList: View {
-    let emptyTitle: String
-    let transactions: [MoneyTransaction]
-    let payments: [ExpensePayment]
-    let onEdit: (MoneyTransaction) -> Void
-    let onDelete: (MoneyTransaction) -> Void
+    private func handleAppear() {
+        checkOverdueExpenses()
+    }
 
-    var body: some View {
-        if transactions.isEmpty {
-            ContentUnavailableView(emptyTitle, systemImage: "list.bullet.rectangle")
-                .frame(maxWidth: .infinity, minHeight: 180)
+    private func checkOverdueExpenses() {
+        guard !didCheckOverdueExpenses else { return }
+        didCheckOverdueExpenses = true
+
+        let todayDay = Calendar.current.component(.day, from: Date())
+        let currentOverdueExpenses = unpaidExpenses(in: currentMonth, throughDay: todayDay)
+        let previousMonthUnpaidExpenses: [MoneyTransaction]
+
+        if todayDay == 1, let previousMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) {
+            previousMonthUnpaidExpenses = unpaidExpenses(in: previousMonth, throughDay: previousMonth.daysInMonth)
         } else {
-            VStack(spacing: 0) {
-                ForEach(transactions) { transaction in
-                    TransactionRow(
-                        transaction: transaction,
-                        isPaid: false,
-                        onTogglePaid: {},
-                        onEdit: { onEdit(transaction) },
-                        onDelete: { onDelete(transaction) }
-                    )
-                    .padding(.vertical, 6)
-
-                    Divider()
-                }
-            }
-        }
-    }
-}
-
-private struct TransactionEditor: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-
-    let request: TransactionEditorRequest
-
-    @State private var title = ""
-    @State private var day = 1
-    @State private var value = ""
-    @State private var repeatsEveryMonth = false
-    @State private var expenseCategory: ExpenseCategory?
-    @State private var expenseName = ""
-    @State private var recurrenceMonth = Calendar.current.component(.month, from: Date())
-    @State private var showsDayPicker = false
-    @State private var validationMessage: String?
-    @State private var didLoad = false
-
-    private var mode: TransactionEditorMode { request.mode }
-    private var editedTransaction: MoneyTransaction? { request.transaction }
-    private var pickerMonth: Date { Date.monthStart(forMonthNumber: recurrenceMonth) }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if mode.needsExpenseClassification {
-                    Section("Classificação") {
-                        Picker("Tipo de despesa", selection: $expenseCategory) {
-                            Text("Selecionar").tag(nil as ExpenseCategory?)
-                            ForEach(ExpenseCategory.allCases) { category in
-                                Label(category.title, systemImage: "circle.fill")
-                                    .foregroundStyle(category.color)
-                                    .tag(category as ExpenseCategory?)
-                            }
-                        }
-
-                        Picker("Nome", selection: $expenseName) {
-                            Text("Selecionar").tag("")
-                            ForEach(expenseCategory?.names ?? [], id: \.self) { name in
-                                Text(name).tag(name)
-                            }
-                        }
-                        .disabled(expenseCategory == nil)
-                    }
-                }
-
-                if mode == .periodicExpense {
-                    Section("Recorrência") {
-                        Picker("Mês", selection: $recurrenceMonth) {
-                            ForEach(1...12, id: \.self) { month in
-                                Text(Date.monthName(forMonthNumber: month)).tag(month)
-                            }
-                        }
-                    }
-                }
-
-                Section(mode.sectionTitle) {
-                    TextField(mode == .expense || mode == .periodicExpense ? "Texto livre" : "Nome", text: $title)
-
-                    Button {
-                        showsDayPicker = true
-                    } label: {
-                        HStack {
-                            Text("Dia")
-                            Spacer()
-                            Text("\(day)")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    TextField("Valor", text: $value)
-                        .decimalKeyboard()
-
-                    if mode == .expense {
-                        Toggle("Adicionar em todos os meses", isOn: $repeatsEveryMonth)
-                    }
-                }
-
-                if let validationMessage {
-                    Text(validationMessage)
-                        .foregroundStyle(.red)
-                }
-            }
-            .navigationTitle(mode.navigationTitle(isEditing: editedTransaction != nil))
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar", action: save)
-                }
-            }
-            .sheet(isPresented: $showsDayPicker) {
-                DayPicker(month: mode == .periodicExpense ? pickerMonth : request.month, selectedDay: $day)
-            }
-            .onChange(of: expenseCategory) { _, _ in
-                expenseName = ""
-            }
-            .onAppear(perform: loadInitialValues)
-        }
-    }
-
-    private var parsedValue: Double? {
-        Double(value.replacingOccurrences(of: ",", with: "."))
-    }
-
-    private func loadInitialValues() {
-        guard !didLoad else { return }
-        didLoad = true
-
-        guard let transaction = editedTransaction else {
-            recurrenceMonth = Calendar.current.component(.month, from: request.month)
-            return
+            previousMonthUnpaidExpenses = []
         }
 
-        title = transaction.title
-        day = transaction.day
-        value = String(transaction.amount)
-        repeatsEveryMonth = transaction.recurrence == .monthly && transaction.kind == TransactionKind.expense.rawValue
-        expenseCategory = ExpenseCategory(rawValue: transaction.expenseCategory ?? "")
-        expenseName = transaction.expenseName ?? ""
-        recurrenceMonth = transaction.recurrenceMonth > 0 ? transaction.recurrenceMonth : Calendar.current.component(.month, from: transaction.monthStart)
-    }
+        var sections: [String] = []
 
-    private func save() {
-        validationMessage = nil
-
-        guard let parsedValue else {
-            validationMessage = "Preenche o valor."
-            return
+        if !previousMonthUnpaidExpenses.isEmpty, let previousMonth = Calendar.current.date(byAdding: .month, value: -1, to: currentMonth) {
+            sections.append(expenseNoticeSection(
+                prefix: "\(AppStrings.text(.previousMonthUnpaidExpensesMessagePrefix)) \(previousMonth.monthTitle)",
+                expenses: previousMonthUnpaidExpenses,
+                month: previousMonth
+            ))
         }
 
-        if mode.needsExpenseClassification {
-            guard let expenseCategory else {
-                validationMessage = "Seleciona o tipo de despesa."
-                return
-            }
-
-            guard !expenseName.isEmpty else {
-                validationMessage = "Seleciona o nome da despesa."
-                return
-            }
-
-            saveExpense(value: parsedValue, category: expenseCategory)
-        } else {
-            let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
-            guard !trimmedTitle.isEmpty else {
-                validationMessage = "Preenche o nome."
-                return
-            }
-
-            saveIncome(value: parsedValue, title: trimmedTitle)
+        if !currentOverdueExpenses.isEmpty {
+            sections.append(expenseNoticeSection(
+                prefix: AppStrings.text(.overdueExpensesMessagePrefix),
+                expenses: currentOverdueExpenses,
+                month: currentMonth
+            ))
         }
 
-        dismiss()
-    }
+        guard !sections.isEmpty else { return }
 
-    private func saveExpense(value: Double, category: ExpenseCategory) {
-        let transaction = editedTransaction ?? MoneyTransaction(
-            title: "",
-            day: day,
-            monthStart: request.month.monthStart,
-            amount: value,
-            kind: TransactionKind.expense.rawValue
+        expenseNotice = ExpenseNotice(
+            title: AppStrings.text(.overdueExpensesTitle),
+            message: sections.joined(separator: "\n\n")
         )
-
-        transaction.title = title.trimmingCharacters(in: .whitespaces)
-        transaction.day = day
-        transaction.amount = value
-        transaction.kind = TransactionKind.expense.rawValue
-        transaction.expenseCategory = category.rawValue
-        transaction.expenseName = expenseName
-
-        if mode == .periodicExpense {
-            transaction.repeatsEveryMonth = false
-            transaction.recurrenceType = RecurrenceType.yearlyMonth.rawValue
-            transaction.recurrenceMonth = recurrenceMonth
-            transaction.monthStart = Date.monthStart(forMonthNumber: recurrenceMonth)
-        } else {
-            transaction.repeatsEveryMonth = repeatsEveryMonth
-            transaction.recurrenceType = repeatsEveryMonth ? RecurrenceType.monthly.rawValue : nil
-            transaction.recurrenceMonth = 0
-            transaction.monthStart = request.month.monthStart
-        }
-
-        if editedTransaction == nil {
-            modelContext.insert(transaction)
-        }
     }
 
-    private func saveIncome(value: Double, title: String) {
-        let transaction = editedTransaction ?? MoneyTransaction(
-            title: title,
-            day: day,
-            monthStart: request.month.monthStart,
-            amount: value,
-            kind: TransactionKind.income.rawValue
-        )
-
-        transaction.title = title
-        transaction.day = day
-        transaction.amount = value
-        transaction.kind = TransactionKind.income.rawValue
-        transaction.expenseCategory = nil
-        transaction.expenseName = nil
-
-        if mode == .salary {
-            transaction.repeatsEveryMonth = true
-            transaction.recurrenceType = RecurrenceType.monthly.rawValue
-        } else {
-            transaction.repeatsEveryMonth = false
-            transaction.recurrenceType = nil
-        }
-
-        transaction.recurrenceMonth = 0
-        transaction.monthStart = request.month.monthStart
-
-        if editedTransaction == nil {
-            modelContext.insert(transaction)
-        }
-    }
-}
-
-private struct DayPicker: View {
-    @Environment(\.dismiss) private var dismiss
-    let month: Date
-    @Binding var selectedDay: Int
-
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 7)
-
-    var body: some View {
-        NavigationStack {
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(1...month.daysInMonth, id: \.self) { day in
-                    Button {
-                        selectedDay = day
-                        dismiss()
-                    } label: {
-                        Text("\(day)")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .background(day == selectedDay ? Color.accentColor : Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
-                            .foregroundStyle(day == selectedDay ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
-                }
+    private func unpaidExpenses(in month: Date, throughDay maxDay: Int) -> [MoneyTransaction] {
+        transactions
+            .visible(in: month, payments: payments, exclusions: exclusions)
+            .filter { transaction in
+                transaction.kind == TransactionKind.expense.rawValue && transaction.effectiveDay(in: month) <= maxDay && !isPaid(transaction, in: month)
             }
-            .padding()
-            .navigationTitle(month.monthTitle)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") { dismiss() }
-                }
-            }
-        }
-    }
-}
-
-private struct TransactionEditorRequest: Identifiable {
-    let id = UUID()
-    let mode: TransactionEditorMode
-    let month: Date
-    let transaction: MoneyTransaction?
-
-    init(mode: TransactionEditorMode, month: Date, transaction: MoneyTransaction? = nil) {
-        self.mode = mode
-        self.month = month
-        self.transaction = transaction
-    }
-
-    init(transaction: MoneyTransaction, month: Date) {
-        self.mode = transaction.editorMode
-        self.month = month
-        self.transaction = transaction
-    }
-}
-
-private enum TransactionKind: String {
-    case expense
-    case income
-}
-
-private enum RecurrenceType: String {
-    case monthly
-    case yearlyMonth
-}
-
-private enum TransactionEditorMode: String {
-    case expense
-    case income
-    case periodicExpense
-    case salary
-
-    var needsExpenseClassification: Bool {
-        self == .expense || self == .periodicExpense
-    }
-
-    var sectionTitle: String {
-        switch self {
-        case .expense, .periodicExpense:
-            "Detalhes"
-        case .income:
-            "Income"
-        case .salary:
-            "Vencimento"
-        }
-    }
-
-    func navigationTitle(isEditing: Bool) -> String {
-        let prefix = isEditing ? "Editar" : "Novo"
-
-        switch self {
-        case .expense:
-            return "\(prefix) Despesa"
-        case .income:
-            return "\(prefix) Income"
-        case .periodicExpense:
-            return "\(prefix) Despesa Periódica"
-        case .salary:
-            return "\(prefix) Vencimento"
-        }
-    }
-}
-
-private enum ExpenseCategory: String, CaseIterable, Identifiable {
-    case needs
-    case wants
-    case savingsAndDebt
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .needs:
-            "50% Necessidades"
-        case .wants:
-            "30% Desejos"
-        case .savingsAndDebt:
-            "20% Pagamentos e Poupança"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .needs:
-            .blue
-        case .wants:
-            .orange
-        case .savingsAndDebt:
-            .purple
-        }
-    }
-
-    var names: [String] {
-        switch self {
-        case .needs:
-            [
-                "Habitação: renda ou prestação do crédito à habitação",
-                "Transportes: transporte público, prestações e combustível",
-                "Alimentação: compras de supermercado",
-                "Contas de serviços essenciais: eletricidade, gás, água e telecomunicações",
-                "Seguros: saúde, vida e automóvel essenciais"
-            ]
-        case .wants:
-            [
-                "Refeições fora de casa",
-                "Subscrições mensais",
-                "Atividades de lazer e entretenimento",
-                "Viagens e férias",
-                "Roupa e acessórios"
-            ]
-        case .savingsAndDebt:
-            [
-                "Poupança",
-                "Amortização de dívidas"
-            ]
-        }
-    }
-}
-
-private extension Array where Element == MoneyTransaction {
-    func visible(in month: Date, payments: [ExpensePayment]) -> [MoneyTransaction] {
-        filter { $0.occurs(in: month) }
             .sorted { first, second in
-                let firstRank = first.listRank(in: month, payments: payments)
-                let secondRank = second.listRank(in: month, payments: payments)
+                let firstDay = first.effectiveDay(in: month)
+                let secondDay = second.effectiveDay(in: month)
 
-                if firstRank != secondRank {
-                    return firstRank < secondRank
+                if firstDay != secondDay {
+                    return firstDay < secondDay
                 }
 
-                if first.day != second.day {
-                    return first.day < second.day
-                }
-
-                return first.displayName.localizedCaseInsensitiveCompare(second.displayName) == .orderedAscending
+                return first.displayName < second.displayName
             }
     }
-}
 
-private extension MoneyTransaction {
-    var recurrence: RecurrenceType? {
-        if let recurrenceType, let recurrence = RecurrenceType(rawValue: recurrenceType) {
-            return recurrence
+    private func expenseNoticeSection(prefix: String, expenses: [MoneyTransaction], month: Date) -> String {
+        let lines = expenses.map {
+            "\($0.displayName) - \(AppStrings.text(.overdueExpenseDueDay)) \($0.effectiveDay(in: month))"
         }
 
-        return repeatsEveryMonth ? .monthly : nil
+        return ([prefix] + lines).joined(separator: "\n")
     }
 
-    var editorMode: TransactionEditorMode {
-        if kind == TransactionKind.expense.rawValue {
-            return recurrence == .yearlyMonth ? .periodicExpense : .expense
-        }
+    private func months(from startMonth: Date, through endMonth: Date) -> [Date] {
+        let monthCount = Calendar.current.dateComponents([.month], from: startMonth.monthStart, to: endMonth.monthStart).month ?? 0
+        guard monthCount >= 0 else { return [] }
 
-        return recurrence == .monthly ? .salary : .income
-    }
-
-    var displayName: String {
-        if kind == TransactionKind.expense.rawValue {
-            return expenseName ?? title
-        }
-        return title
-    }
-
-    var detailText: String {
-        var parts = ["Dia \(day)"]
-
-        if let category = ExpenseCategory(rawValue: expenseCategory ?? "") {
-            parts.append(category.title)
-        }
-
-        if kind == TransactionKind.expense.rawValue, !title.isEmpty {
-            parts.append(title)
-        }
-
-        switch recurrence {
-        case .monthly:
-            parts.append("todos os meses")
-        case .yearlyMonth:
-            parts.append(Date.monthName(forMonthNumber: recurrenceMonth))
-        case nil:
-            break
-        }
-
-        return parts.joined(separator: " · ")
-    }
-
-    func occurs(in month: Date) -> Bool {
-        switch recurrence {
-        case .monthly:
-            return month.monthStart >= monthStart.monthStart
-        case .yearlyMonth:
-            return month.monthNumber == recurrenceMonth
-        case nil:
-            return Calendar.current.isDate(monthStart, equalTo: month, toGranularity: .month)
+        return (0...monthCount).compactMap {
+            Calendar.current.date(byAdding: .month, value: $0, to: startMonth.monthStart)
         }
     }
 
-    func occurrenceCount(through month: Date) -> Int {
-        guard kind == TransactionKind.income.rawValue else { return 0 }
+    private func isPaid(_ transaction: MoneyTransaction, in month: Date) -> Bool {
+        paidAmount(for: transaction, in: month) >= transaction.amount
+    }
 
-        switch recurrence {
-        case .monthly:
-            let months = Calendar.current.dateComponents([.month], from: monthStart.monthStart, to: month.monthStart).month ?? -1
-            return max(months + 1, 0)
-        case .yearlyMonth:
-            return month.monthNumber >= recurrenceMonth ? 1 : 0
-        case nil:
-            return monthStart.monthStart <= month.monthStart ? 1 : 0
+    private func paidAmount(for transaction: MoneyTransaction, in month: Date) -> Double {
+        guard transaction.kind == TransactionKind.expense.rawValue else { return 0 }
+        guard let payment = payments.first(where: { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }) else { return 0 }
+        return min(payment.amountPaid ?? transaction.amount, transaction.amount)
+    }
+
+    private func setPaidAmount(_ transaction: MoneyTransaction, in month: Date, amount: Double) {
+        let clampedAmount = min(max(amount, 0), transaction.amount)
+
+        if let payment = payments.first(where: { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }) {
+            if clampedAmount <= 0 {
+                modelContext.delete(payment)
+            } else {
+                payment.amountPaid = clampedAmount
+            }
+        } else if clampedAmount > 0 {
+            modelContext.insert(ExpensePayment(transactionID: transaction.id, monthStart: month.monthStart, amountPaid: clampedAmount))
         }
     }
 
-    func listRank(in month: Date, payments: [ExpensePayment]) -> Int {
-        guard kind == TransactionKind.expense.rawValue else { return 1 }
-        let paid = payments.contains { $0.transactionID == id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }
-        return paid ? 2 : 0
-    }
-}
-
-private extension Date {
-    var monthStart: Date {
-        let components = Calendar.current.dateComponents([.year, .month], from: self)
-        return Calendar.current.date(from: components) ?? self
-    }
-
-    var monthNumber: Int {
-        Calendar.current.component(.month, from: self)
+    private func deleteTransaction(_ transaction: MoneyTransaction, in month: Date) {
+        if transaction.isRecurring {
+            addExclusion(for: transaction, in: month)
+            payments
+                .filter { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }
+                .forEach(modelContext.delete)
+        } else {
+            payments
+                .filter { $0.transactionID == transaction.id }
+                .forEach(modelContext.delete)
+            modelContext.delete(transaction)
+        }
     }
 
-    var monthTitle: String {
-        formatted(.dateTime.month(.wide).year())
-    }
+    private func addExclusion(for transaction: MoneyTransaction, in month: Date) {
+        guard !exclusions.contains(where: { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }) else {
+            return
+        }
 
-    var daysInMonth: Int {
-        Calendar.current.range(of: .day, in: .month, for: self)?.count ?? 31
-    }
-
-    static func monthStart(forMonthNumber month: Int) -> Date {
-        var components = Calendar.current.dateComponents([.year], from: Date())
-        components.month = month
-        components.day = 1
-        return Calendar.current.date(from: components) ?? Date().monthStart
-    }
-
-    static func monthName(forMonthNumber month: Int) -> String {
-        monthStart(forMonthNumber: month).formatted(.dateTime.month(.wide))
-    }
-}
-
-private extension Double {
-    var currencyText: String {
-        formatted(.currency(code: Locale.current.currency?.identifier ?? "EUR"))
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func monthPagerStyle() -> some View {
-#if os(iOS)
-        tabViewStyle(.page(indexDisplayMode: .never))
-#else
-        self
-#endif
-    }
-
-    @ViewBuilder
-    func decimalKeyboard() -> some View {
-#if os(iOS)
-        keyboardType(.decimalPad)
-#else
-        self
-#endif
+        modelContext.insert(RecurrenceExclusion(transactionID: transaction.id, monthStart: month.monthStart))
     }
 }
 
 #Preview {
     ContentView()
-        .modelContainer(for: [MoneyTransaction.self, ExpensePayment.self, AccountSettings.self], inMemory: true)
+        .modelContainer(for: [MoneyTransaction.self, ExpensePayment.self, RecurrenceExclusion.self], inMemory: true)
 }

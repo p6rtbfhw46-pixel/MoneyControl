@@ -6,6 +6,17 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		78DB10F8301BFDD4009F36E8 /* AppStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10F7301BFDD3009F36E8 /* AppStrings.swift */; };
+		78DB10FA301BFDFC009F36E8 /* MoneyDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10F9301BFDFC009F36E8 /* MoneyDomain.swift */; };
+		78DB10FC301BFE1E009F36E8 /* MoneyComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10FB301BFE1E009F36E8 /* MoneyComponents.swift */; };
+		78DB10FE301BFE35009F36E8 /* SettingsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10FD301BFE35009F36E8 /* SettingsEditor.swift */; };
+		78DB1100301BFE5D009F36E8 /* TransactionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10FF301BFE5D009F36E8 /* TransactionEditor.swift */; };
+		78DB1102301D7647009F36E8 /* AppPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB1101301D7647009F36E8 /* AppPalette.swift */; };
+		78DB1104301E2EC2009F36E8 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB1103301E2EC2009F36E8 /* OnboardingView.swift */; };
+		78DB1106301E3E8A009F36E8 /* InitialSetupWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB1105301E3E8A009F36E8 /* InitialSetupWizardView.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		780E64F2301A9003002BC6D1 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +38,14 @@
 		780E64E2301A9002002BC6D1 /* MoneyControl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MoneyControl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		780E64F1301A9003002BC6D1 /* MoneyControlTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoneyControlTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		780E64FB301A9003002BC6D1 /* MoneyControlUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoneyControlUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		78DB10F7301BFDD3009F36E8 /* AppStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStrings.swift; sourceTree = "<group>"; };
+		78DB10F9301BFDFC009F36E8 /* MoneyDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyDomain.swift; sourceTree = "<group>"; };
+		78DB10FB301BFE1E009F36E8 /* MoneyComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyComponents.swift; sourceTree = "<group>"; };
+		78DB10FD301BFE35009F36E8 /* SettingsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsEditor.swift; sourceTree = "<group>"; };
+		78DB10FF301BFE5D009F36E8 /* TransactionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionEditor.swift; sourceTree = "<group>"; };
+		78DB1101301D7647009F36E8 /* AppPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPalette.swift; sourceTree = "<group>"; };
+		78DB1103301E2EC2009F36E8 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		78DB1105301E3E8A009F36E8 /* InitialSetupWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InitialSetupWizardView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -79,6 +98,14 @@
 				780E64F4301A9003002BC6D1 /* MoneyControlTests */,
 				780E64FE301A9003002BC6D1 /* MoneyControlUITests */,
 				780E64E3301A9002002BC6D1 /* Products */,
+				78DB10F7301BFDD3009F36E8 /* AppStrings.swift */,
+				78DB10F9301BFDFC009F36E8 /* MoneyDomain.swift */,
+				78DB10FB301BFE1E009F36E8 /* MoneyComponents.swift */,
+				78DB10FD301BFE35009F36E8 /* SettingsEditor.swift */,
+				78DB10FF301BFE5D009F36E8 /* TransactionEditor.swift */,
+				78DB1101301D7647009F36E8 /* AppPalette.swift */,
+				78DB1103301E2EC2009F36E8 /* OnboardingView.swift */,
+				78DB1105301E3E8A009F36E8 /* InitialSetupWizardView.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -236,6 +263,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				78DB10FC301BFE1E009F36E8 /* MoneyComponents.swift in Sources */,
+				78DB10FE301BFE35009F36E8 /* SettingsEditor.swift in Sources */,
+				78DB1104301E2EC2009F36E8 /* OnboardingView.swift in Sources */,
+				78DB10FA301BFDFC009F36E8 /* MoneyDomain.swift in Sources */,
+				78DB1102301D7647009F36E8 /* AppPalette.swift in Sources */,
+				78DB1106301E3E8A009F36E8 /* InitialSetupWizardView.swift in Sources */,
+				78DB10F8301BFDD4009F36E8 /* AppStrings.swift in Sources */,
+				78DB1100301BFE5D009F36E8 /* TransactionEditor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -388,12 +423,25 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z97S7B69YV;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = SpendWise;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -409,7 +457,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = skyIsTheLimit.MoneyControl;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skyIsTheLimit.MoneyControl;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -430,12 +478,25 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z97S7B69YV;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = SpendWise;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -451,7 +512,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = skyIsTheLimit.MoneyControl;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skyIsTheLimit.MoneyControl;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -473,6 +534,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z97S7B69YV;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
@@ -498,6 +560,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z97S7B69YV;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
@@ -522,6 +585,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z97S7B69YV;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
@@ -546,6 +610,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z97S7B69YV;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
