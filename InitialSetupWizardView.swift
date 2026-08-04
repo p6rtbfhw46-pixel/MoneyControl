@@ -9,6 +9,7 @@ import SwiftUI
 
 struct InitialSetupWizardView: View {
     @Environment(\.modelContext) private var modelContext
+    @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
 
     let onFinish: () -> Void
 
@@ -44,7 +45,7 @@ struct InitialSetupWizardView: View {
 
     private var bodyAnalysis: String {
         guard totalIncome > 0 else {
-            return "Adicione os seus rendimentos para obter uma análise inicial do orçamento."
+            return AppStrings.text(.budgetAnalysisNoIncome)
         }
 
         let needsRatio = categoryRatio(.needs)
@@ -52,18 +53,18 @@ struct InitialSetupWizardView: View {
         let savingsRatio = categoryRatio(.savingsAndDebt)
 
         if needsRatio > 0.50 {
-            return "Está acima do recomendado em Necessidades. Pode acompanhar esta área com mais atenção nos próximos meses."
+            return AppStrings.text(.budgetAnalysisNeedsHigh)
         }
 
         if savingsRatio < 0.20 {
-            return "Ainda pode aumentar a sua poupança para se aproximar da regra 50/30/20."
+            return AppStrings.text(.budgetAnalysisSavingsLow)
         }
 
         if wantsRatio <= 0.30 && needsRatio <= 0.50 && savingsRatio >= 0.20 {
-            return "Excelente equilíbrio financeiro. Está dentro do orçamento recomendado."
+            return AppStrings.text(.budgetAnalysisExcellent)
         }
 
-        return "Está dentro de um ponto de partida saudável para acompanhar e ajustar o orçamento todos os meses."
+        return AppStrings.text(.budgetAnalysisHealthy)
     }
 
     var body: some View {
@@ -74,7 +75,14 @@ struct InitialSetupWizardView: View {
                 progressHeader
                     .padding(.horizontal, 20)
                     .padding(.top, 14)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, validationMessage == nil ? 10 : 6)
+
+                if let validationMessage {
+                    ValidationBanner(message: validationMessage)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
 
                 ZStack {
                     currentStepView
@@ -85,6 +93,7 @@ struct InitialSetupWizardView: View {
                         ))
                 }
                 .animation(.snappy, value: step)
+                .animation(.snappy, value: validationMessage)
 
                 footer
                     .padding(.horizontal, 20)
@@ -93,6 +102,7 @@ struct InitialSetupWizardView: View {
             }
         }
         .preferredColorScheme(.light)
+        .id(selectedCurrencyCode)
     }
 
     private var progressHeader: some View {
@@ -104,7 +114,7 @@ struct InitialSetupWizardView: View {
 
                 Spacer()
 
-                Text("Configuração inicial")
+                Text(AppStrings.text(.setupProgressTitle))
                     .font(.subheadline.bold())
                     .foregroundStyle(AppPalette.mutedText)
             }
@@ -136,23 +146,23 @@ struct InitialSetupWizardView: View {
     private var incomeStep: some View {
         wizardScroll {
             stepTitle(
-                title: "Bem-vindo!",
-                subtitle: "Vamos configurar o seu orçamento. Isto demora menos de 2 minutos."
+                title: AppStrings.text(.setupWelcomeTitle),
+                subtitle: AppStrings.text(.setupWelcomeSubtitle)
             )
 
-            inputCard(title: "Rendimentos mensais", systemImage: "banknote.fill", tint: AppPalette.positive) {
-                TextField("Nome", text: $incomeDraft.name, prompt: Text(" ... Nome do rendimento").foregroundStyle(AppPalette.secondaryText))
+            inputCard(title: AppStrings.text(.setupIncomeCardTitle), systemImage: "banknote.fill", tint: AppPalette.positive) {
+                TextField(AppStrings.text(.name), text: $incomeDraft.name, prompt: Text(AppStrings.text(.incomeNamePrompt)).foregroundStyle(AppPalette.secondaryText))
                     .textFieldStyle(.plain)
                     .foregroundStyle(AppPalette.background)
                     .padding(12)
                     .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
 
-                MoneyAmountPicker(title: "Valor", amount: $incomeDraft.amount, maximumAmount: 20_000)
+                MoneyAmountPicker(title: AppStrings.text(.value), amount: $incomeDraft.amount, maximumAmount: 1_000_000)
 
                 Button {
                     addIncome()
                 } label: {
-                    Label("Adicionar rendimento", systemImage: "plus.circle.fill")
+                    Label(AppStrings.text(.addIncome), systemImage: "plus.circle.fill")
                         .font(.headline)
                         .foregroundStyle(AppPalette.surface)
                         .frame(maxWidth: .infinity, minHeight: 46)
@@ -161,36 +171,36 @@ struct InitialSetupWizardView: View {
                 .buttonStyle(.plain)
             }
 
-            draftList(title: "Rendimentos adicionados", drafts: incomes.map { $0.listText }, emptyText: "Ainda não adicionou rendimentos.") { index in
+            draftList(title: AppStrings.text(.addedIncomes), drafts: incomes.map { $0.listText }, emptyText: AppStrings.text(.noAddedIncomes)) { index in
                 incomes.remove(at: index)
             }
 
-            noteCard("Pode sempre adicionar novos rendimentos ou alterar os existentes mais tarde.")
+            noteCard(AppStrings.text(.setupIncomeNote))
         }
     }
 
     private var expenseStep: some View {
         wizardScroll {
             stepTitle(
-                title: "Despesas mensais",
-                subtitle: "Quais destas despesas paga todos os meses?"
+                title: AppStrings.text(.setupExpensesTitle),
+                subtitle: AppStrings.text(.setupExpensesSubtitle)
             )
 
-            inputCard(title: "Despesa", systemImage: "creditcard.fill", tint: AppPalette.primary) {
+            inputCard(title: AppStrings.text(.setupExpenseCardTitle), systemImage: "creditcard.fill", tint: AppPalette.primary) {
                 HStack(spacing: 10) {
-                    Text("Categoria 50/30/20")
+                    Text(AppStrings.text(.category503020))
                         .font(.subheadline.bold())
                         .foregroundStyle(AppPalette.background)
 
                     HelpIconButton(
-                        title: "Regra 50/30/20",
-                        message: "A metodologia 50/30/20 ajuda a distribuir o rendimento de forma equilibrada: 50% para necessidades, 30% para desejos e 20% para poupança. Não é uma regra obrigatória, mas uma referência para uma melhor gestão financeira."
+                        title: AppStrings.text(.rule503020Title),
+                        message: AppStrings.text(.rule503020Help)
                     )
 
                     Spacer()
                 }
 
-                Picker("Categoria", selection: $expenseDraft.category) {
+                Picker(AppStrings.text(.category503020), selection: $expenseDraft.category) {
                     ForEach(ExpenseCategory.allCases) { category in
                         Text(category.title).tag(category)
                     }
@@ -199,12 +209,12 @@ struct InitialSetupWizardView: View {
                 .tint(AppPalette.background)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Tipo de Despesa")
+                    Text(AppStrings.text(.expenseType))
                         .font(.subheadline.bold())
                         .foregroundStyle(AppPalette.background)
 
-                    Picker("Tipo de Despesa", selection: $expenseDraft.expenseName) {
-                        Text("Selecionar").tag("")
+                    Picker(AppStrings.text(.expenseType), selection: $expenseDraft.expenseName) {
+                        Text(AppStrings.text(.select)).tag("")
                         ForEach(expenseDraft.category.names, id: \.self) { name in
                             Text(name).tag(name)
                         }
@@ -216,13 +226,13 @@ struct InitialSetupWizardView: View {
                     .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
                 }
 
-                TextField("Nome", text: $expenseDraft.name, prompt: Text("Texto livre opcional").foregroundStyle(AppPalette.secondaryText))
+                TextField(AppStrings.text(.name), text: $expenseDraft.name, prompt: Text(AppStrings.text(.optionalFreeText)).foregroundStyle(AppPalette.secondaryText))
                     .textFieldStyle(.plain)
                     .foregroundStyle(AppPalette.background)
                     .padding(12)
                     .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
 
-                MoneyAmountPicker(title: "Valor", amount: $expenseDraft.amount, maximumAmount: 20_000)
+                MoneyAmountPicker(title: AppStrings.text(.value), amount: $expenseDraft.amount, maximumAmount: 1_000_000)
 
                 Button {
                     showsExpenseDayPicker = true
@@ -233,7 +243,7 @@ struct InitialSetupWizardView: View {
                             .frame(width: 34, height: 34)
                             .background(AppPalette.paleOrange, in: Circle())
 
-                        Text("Dia do mês")
+                        Text(AppStrings.text(.dayOfMonth))
                             .font(.subheadline.bold())
                             .foregroundStyle(AppPalette.background)
 
@@ -250,7 +260,7 @@ struct InitialSetupWizardView: View {
                 }
                 .buttonStyle(.plain)
 
-                Toggle("Todos os meses", isOn: $expenseDraft.repeatsEveryMonth)
+                Toggle(AppStrings.text(.everyMonth), isOn: $expenseDraft.repeatsEveryMonth)
                     .font(.subheadline.bold())
                     .foregroundStyle(AppPalette.background)
                     .tint(AppPalette.primary)
@@ -260,7 +270,7 @@ struct InitialSetupWizardView: View {
                 Button {
                     addExpense()
                 } label: {
-                    Label("Adicionar despesa", systemImage: "plus.circle.fill")
+                    Label(AppStrings.text(.addExpense), systemImage: "plus.circle.fill")
                         .font(.headline)
                         .foregroundStyle(AppPalette.surface)
                         .frame(maxWidth: .infinity, minHeight: 46)
@@ -270,11 +280,11 @@ struct InitialSetupWizardView: View {
             }
             .id(expenseDraft.id)
 
-            draftList(title: "Despesas adicionadas", drafts: expenses.map { $0.listText }, emptyText: "Ainda não adicionou despesas.") { index in
+            draftList(title: AppStrings.text(.addedExpenses), drafts: expenses.map { $0.listText }, emptyText: AppStrings.text(.noAddedExpenses)) { index in
                 expenses.remove(at: index)
             }
 
-            noteCard("Pode sempre adicionar novas despesas ou alterar despesas mensais e periódicas mais tarde.")
+            noteCard(AppStrings.text(.setupExpensesNote))
         }
         .sheet(isPresented: $showsExpenseDayPicker) {
             DayPicker(month: Date().monthStart, selectedDay: $expenseDraft.day)
@@ -284,26 +294,26 @@ struct InitialSetupWizardView: View {
     private var summaryStep: some View {
         wizardScroll {
             stepTitle(
-                title: "O seu orçamento está pronto.",
-                subtitle: "Revê o resumo inicial antes de começar a utilizar a SpendWise."
+                title: AppStrings.text(.setupSummaryTitle),
+                subtitle: AppStrings.text(.setupSummarySubtitle)
             )
 
             VStack(spacing: 10) {
-                summaryRow("Recebe", totalIncome.currencyText, AppPalette.positive)
-                summaryRow("Despesas fixas", totalExpenses.currencyText, AppPalette.primary)
-                summaryRow("Pode gastar este mês", availableBalance.currencyText, AppPalette.background)
+                summaryRow(AppStrings.text(.receives), totalIncome.currencyText, AppPalette.positive)
+                summaryRow(AppStrings.text(.fixedExpenses), totalExpenses.currencyText, AppPalette.primary)
+                summaryRow(AppStrings.text(.setupAvailableThisMonth), availableBalance.currencyText, AppPalette.background)
             }
             .padding(16)
             .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 18))
             .shadow(color: AppPalette.background.opacity(0.07), radius: 16, y: 8)
 
-            inputCard(title: "Resumo visual", systemImage: "chart.pie.fill", tint: AppPalette.secondary) {
+            inputCard(title: AppStrings.text(.visualSummary), systemImage: "chart.pie.fill", tint: AppPalette.secondary) {
                 Chart {
-                    BarMark(x: .value("Tipo", "Rendimentos"), y: .value("Valor", totalIncome))
+                    BarMark(x: .value(AppStrings.text(.expenseType), AppStrings.text(.chartIncome)), y: .value(AppStrings.text(.value), totalIncome))
                         .foregroundStyle(AppPalette.positive)
-                    BarMark(x: .value("Tipo", "Despesas"), y: .value("Valor", totalExpenses))
+                    BarMark(x: .value(AppStrings.text(.expenseType), AppStrings.text(.chartExpenses)), y: .value(AppStrings.text(.value), totalExpenses))
                         .foregroundStyle(AppPalette.primary)
-                    BarMark(x: .value("Tipo", "Saldo"), y: .value("Valor", max(availableBalance, 0)))
+                    BarMark(x: .value(AppStrings.text(.expenseType), AppStrings.text(.chartBalance)), y: .value(AppStrings.text(.value), max(availableBalance, 0)))
                         .foregroundStyle(AppPalette.background)
                 }
                 .frame(height: 170)
@@ -330,31 +340,24 @@ struct InitialSetupWizardView: View {
                 }
             }
 
-            inputCard(title: "Análise automática", systemImage: "lightbulb.fill", tint: AppPalette.accent) {
+            inputCard(title: AppStrings.text(.automaticAnalysis), systemImage: "lightbulb.fill", tint: AppPalette.accent) {
                 Text(bodyAnalysis)
                     .font(.body)
                     .foregroundStyle(AppPalette.bodyText)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            noteCard("Este é apenas o ponto de partida. Continue a registar os seus movimentos e acompanhe a evolução do seu orçamento todos os meses.")
+            noteCard(AppStrings.text(.setupFinalNote))
         }
     }
 
     private var footer: some View {
         VStack(spacing: 8) {
-            if let validationMessage {
-                Text(validationMessage)
-                    .font(.caption.bold())
-                    .foregroundStyle(AppPalette.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
             HStack(spacing: 12) {
                 Button {
                     goBack()
                 } label: {
-                    Label("Voltar", systemImage: "chevron.left")
+                    Label(AppStrings.text(.back), systemImage: "chevron.left")
                         .font(.headline)
                         .foregroundStyle(AppPalette.background)
                         .frame(maxWidth: .infinity, minHeight: 50)
@@ -370,7 +373,7 @@ struct InitialSetupWizardView: View {
                 Button {
                     goForward()
                 } label: {
-                    Text(step == 2 ? "Começar a utilizar a\nSpendWise" : "Seguinte")
+                    Text(step == 2 ? AppStrings.text(.startUsingSpendWise) : AppStrings.text(.next))
                         .font(.headline)
                         .foregroundStyle(AppPalette.surface)
                         .multilineTextAlignment(.center)
@@ -489,12 +492,12 @@ struct InitialSetupWizardView: View {
         let name = incomeDraft.name.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !name.isEmpty else {
-            validationMessage = "Indique o nome do rendimento."
+            validationMessage = AppStrings.text(.incomeNameRequired)
             return
         }
 
         guard incomeDraft.amount > 0 else {
-            validationMessage = "Indique o valor do rendimento."
+            validationMessage = AppStrings.text(.incomeValueRequired)
             return
         }
 
@@ -507,12 +510,12 @@ struct InitialSetupWizardView: View {
         validationMessage = nil
 
         guard !expenseDraft.expenseName.isEmpty else {
-            validationMessage = "Selecione o tipo de despesa."
+            validationMessage = AppStrings.text(.selectExpenseName)
             return
         }
 
         guard expenseDraft.amount > 0 else {
-            validationMessage = "Indique o valor da despesa."
+            validationMessage = AppStrings.text(.expenseValueRequired)
             return
         }
 
@@ -536,7 +539,7 @@ struct InitialSetupWizardView: View {
                 addIncome()
             }
             guard !incomes.isEmpty else {
-                validationMessage = "Adicione pelo menos um rendimento para continuar."
+                validationMessage = AppStrings.text(.addIncomeToContinue)
                 return
             }
         }
@@ -626,8 +629,8 @@ private struct SetupExpenseDraft: Identifiable {
     var hasRequiredValues: Bool { !expenseName.isEmpty && amount > 0 }
     var listText: String {
         let title = name.isEmpty ? expenseName : name
-        let recurrenceText = repeatsEveryMonth ? "todos os meses" : "só este mês"
-        return "\(title) · \(amount.currencyText) · dia \(day) · \(recurrenceText) · \(category.title)"
+        let recurrenceText = repeatsEveryMonth ? AppStrings.text(.everyMonth) : AppStrings.text(.onlyThisMonth)
+        return "\(title) · \(amount.currencyText) · \(AppStrings.text(.day).lowercased()) \(day) · \(recurrenceText) · \(category.title)"
     }
 }
 

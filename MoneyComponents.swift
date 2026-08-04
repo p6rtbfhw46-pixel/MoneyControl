@@ -15,14 +15,6 @@ struct MonthPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(month.monthTitle)
-                .font(.title.bold())
-                .foregroundStyle(AppPalette.background)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.horizontal)
-                .padding(.top, 4)
-                .padding(.bottom, -2)
-
             if transactions.isEmpty {
                 ContentUnavailableView(
                     AppStrings.text(.noTransactions),
@@ -102,37 +94,37 @@ struct BudgetStatusCard: View {
     private var state: BudgetStatusState {
         if income <= 0 && expenses <= 0 {
             return BudgetStatusState(
-                message: "👋 Bem-vindo! Adicione os seus rendimentos e despesas para começar a acompanhar o seu orçamento.",
+                message: AppStrings.text(.budgetStatusNoData),
                 color: AppPalette.secondary,
                 emoji: "🙂"
             )
         }
 
         if consumedRatio > 1 {
-            return BudgetStatusState(message: "🚨 Já ultrapassou o orçamento disponível para este mês. Reveja as suas despesas para recuperar o equilíbrio.", color: AppPalette.primary, emoji: budgetEmoji)
+            return BudgetStatusState(message: AppStrings.text(.budgetStatusExceeded), color: AppPalette.primary, emoji: budgetEmoji)
         }
 
         if categoryRatio(.needs) > 0.50 {
-            return BudgetStatusState(message: "⚠️ As despesas essenciais ultrapassaram o limite recomendado de 50% do rendimento.", color: AppPalette.warning, emoji: budgetEmoji)
+            return BudgetStatusState(message: AppStrings.text(.budgetStatusNeedsExceeded), color: AppPalette.warning, emoji: budgetEmoji)
         }
 
         if categoryRatio(.wants) > 0.30 {
-            return BudgetStatusState(message: "⚠️ Os gastos em lazer e despesas pessoais ultrapassaram o orçamento recomendado.", color: AppPalette.warning, emoji: budgetEmoji)
+            return BudgetStatusState(message: AppStrings.text(.budgetStatusWantsExceeded), color: AppPalette.warning, emoji: budgetEmoji)
         }
 
         if categoryAmount(.savingsAndDebt) == 0, income > 0 {
-            return BudgetStatusState(message: "💰 Ainda não registou qualquer poupança este mês. Mesmo um pequeno valor faz diferença.", color: AppPalette.warning, emoji: budgetEmoji)
+            return BudgetStatusState(message: AppStrings.text(.budgetStatusNoSavings), color: AppPalette.warning, emoji: budgetEmoji)
         }
 
         if categoryRatio(.savingsAndDebt) < 0.20, income > 0 {
-            return BudgetStatusState(message: "🌱 Ainda não atingiu o objetivo de poupança recomendado para este mês.", color: AppPalette.warning, emoji: budgetEmoji)
+            return BudgetStatusState(message: AppStrings.text(.budgetStatusSavingsBelowGoal), color: AppPalette.warning, emoji: budgetEmoji)
         }
 
         if unpaid > 0 {
-            return BudgetStatusState(message: "🧾 Ainda tem despesas por liquidar este mês.", color: AppPalette.warning, emoji: budgetEmoji)
+            return BudgetStatusState(message: AppStrings.text(.budgetStatusUnpaidExpenses), color: AppPalette.warning, emoji: budgetEmoji)
         }
 
-        return BudgetStatusState(message: "✅ Excelente! Está dentro do orçamento e a gerir bem as suas finanças.", color: AppPalette.positive, emoji: budgetEmoji)
+        return BudgetStatusState(message: AppStrings.text(.budgetStatusHealthy), color: AppPalette.positive, emoji: budgetEmoji)
     }
 
     private var budgetEmoji: String {
@@ -156,10 +148,10 @@ struct BudgetStatusCard: View {
         let consumed = consumedRatio.formatted(.percent.precision(.fractionLength(0)))
         let available = availableRatio.formatted(.percent.precision(.fractionLength(0)))
         let explanation = consumedRatio <= 1
-            ? "Mantendo este ritmo, continua dentro do orçamento recomendado."
-            : "Está acima do orçamento recomendado. Considere reduzir despesas nas categorias com maior impacto."
+            ? AppStrings.text(.budgetStatusDetailHealthyExplanation)
+            : AppStrings.text(.budgetStatusDetailExceededExplanation)
 
-        return "Orçamento consumido\nJá utilizou \(consumed) do orçamento disponível para este mês.\n\nAinda disponível\nTem \(available) do orçamento por utilizar.\n\n\(explanation)"
+        return "\(AppStrings.text(.budgetStatusDetailConsumedTitle))\n\(String(format: AppStrings.text(.budgetStatusDetailConsumedMessage), consumed))\n\n\(AppStrings.text(.budgetStatusDetailAvailableTitle))\n\(String(format: AppStrings.text(.budgetStatusDetailAvailableMessage), available))\n\n\(explanation)"
     }
 
     var body: some View {
@@ -191,7 +183,7 @@ struct BudgetStatusCard: View {
         .frame(minHeight: isCompact ? 48 : nil)
         .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: isCompact ? 12 : 16))
         .shadow(color: AppPalette.background.opacity(0.07), radius: isCompact ? 8 : 14, y: isCompact ? 4 : 7)
-        .alert("Estado do orçamento", isPresented: $showsDetails) {
+        .alert(AppStrings.text(.budgetStatusDetailsTitle), isPresented: $showsDetails) {
             Button(AppStrings.text(.ok)) {}
         } message: {
             Text(detailMessage)
@@ -265,6 +257,15 @@ struct TransactionCard: View {
         return min(max((transaction.amount - amountPaid) / transaction.amount, 0), 1)
     }
 
+    private var paidRatio: Double {
+        guard isExpense, transaction.amount > 0 else { return 0 }
+        return min(max(amountPaid / transaction.amount, 0), 1)
+    }
+
+    private var paidPercentageText: String {
+        paidRatio.formatted(.percent.precision(.fractionLength(0)))
+    }
+
     private var isFullyPaid: Bool {
         isExpense && amountPaid >= transaction.amount
     }
@@ -272,6 +273,30 @@ struct TransactionCard: View {
     private var freeTextTitle: String? {
         let trimmedTitle = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
         return isExpense && !trimmedTitle.isEmpty ? trimmedTitle : nil
+    }
+
+    private var paymentProgressSummary: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            Text("\(AppStrings.text(.paid)) \(paidPercentageText)")
+                .font(.caption2.bold())
+                .foregroundStyle(AppPalette.background)
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    AppPalette.separator
+                    AppPalette.mediumGreen
+                        .frame(width: proxy.size.width * paidRatio)
+                }
+            }
+            .frame(width: 92, height: 7)
+            .clipShape(Capsule())
+
+            Text("\(amountPaid.currencyText) \(AppStrings.text(.ofAmount)) \(transaction.amount.currencyText)")
+                .font(.caption2)
+                .foregroundStyle(AppPalette.mutedText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
     }
 
     private var detailTextWithoutFreeText: String {
@@ -347,9 +372,7 @@ struct TransactionCard: View {
                             .foregroundStyle(transaction.kind == TransactionKind.income.rawValue ? AppPalette.positive : AppPalette.primary)
 
                         if isExpense {
-                            Text("\(amountPaid.currencyText) / \(transaction.amount.currencyText)")
-                                .font(.caption2)
-                                .foregroundStyle(AppPalette.mutedText)
+                            paymentProgressSummary
                         }
                     }
 
@@ -581,6 +604,7 @@ struct SettingsTransactionCard: View {
 
 struct PaymentAmountPicker: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
 
     let title: String
     let totalAmount: Double
@@ -650,6 +674,45 @@ struct PaymentAmountPicker: View {
             .onAppear {
                 selectedAmount = min(max(initialAmount, 0), totalAmount)
             }
+            .id(selectedCurrencyCode)
+        }
+    }
+}
+
+struct ValidationBanner: View {
+    let message: String
+
+    @State private var shake = 0.0
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.subheadline.bold())
+                .foregroundStyle(AppPalette.primary)
+                .padding(.top, 2)
+
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppPalette.background)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppPalette.paleOrange, in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(AppPalette.primary.opacity(0.18), lineWidth: 1)
+        }
+        .modifier(ShakeEffect(animatableData: shake))
+        .onAppear(perform: shakeBanner)
+        .onChange(of: message) { _, _ in shakeBanner() }
+    }
+
+    private func shakeBanner() {
+        withAnimation(.linear(duration: 0.45)) {
+            shake += 1
         }
     }
 }
@@ -680,6 +743,8 @@ struct HelpIconButton: View {
 }
 
 struct MoneyAmountPicker: View {
+    @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
+
     let title: String
     @Binding var amount: Double
     let maximumAmount: Double
@@ -694,6 +759,11 @@ struct MoneyAmountPicker: View {
         self._amount = amount
         self.maximumAmount = maximumAmount
         self.onConfirm = onConfirm
+    }
+
+    private var currencySymbol: String {
+        _ = selectedCurrencyCode
+        return AppPreferences.selectedCurrencySymbol
     }
 
     var body: some View {
@@ -712,7 +782,7 @@ struct MoneyAmountPicker: View {
                 .frame(maxWidth: .infinity, minHeight: 72)
                 .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
                 .overlay(alignment: .trailing) {
-                    Text("€")
+                    Text(currencySymbol)
                         .font(.title2.bold())
                         .foregroundStyle(AppPalette.mutedText)
                         .padding(.trailing, 16)
@@ -730,7 +800,7 @@ struct MoneyAmountPicker: View {
                         syncTextFromAmount()
                     }
                 } label: {
-                    Label("Confirmar", systemImage: "checkmark.circle.fill")
+                    Label(AppStrings.text(.confirm), systemImage: "checkmark.circle.fill")
                         .font(.subheadline.bold())
                         .foregroundStyle(AppPalette.surface)
                         .frame(maxWidth: .infinity, minHeight: 42)
@@ -743,7 +813,7 @@ struct MoneyAmountPicker: View {
                     isAmountFocused = false
                     syncTextFromAmount()
                 } label: {
-                    Label("Limpar", systemImage: "trash.fill")
+                    Label(AppStrings.text(.clear), systemImage: "trash.fill")
                         .font(.subheadline.bold())
                         .foregroundStyle(AppPalette.surface)
                         .frame(maxWidth: .infinity, minHeight: 42)
@@ -838,42 +908,6 @@ struct SummaryTile: View {
             Button(AppStrings.text(.ok)) {}
         } message: {
             Text(helpText)
-        }
-    }
-}
-
-struct CarouselNavigationButtons: View {
-    @Binding var selection: Int
-    let lowerBound: Int
-    let upperBound: Int
-
-    var body: some View {
-        HStack {
-            Button {
-                selection = max(selection - 1, lowerBound)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.headline)
-                    .foregroundStyle(AppPalette.primary)
-                    .frame(width: 44, height: 42)
-            }
-            .buttonStyle(.plain)
-            .disabled(selection <= lowerBound)
-            .opacity(selection <= lowerBound ? 0.35 : 1)
-
-            Spacer()
-
-            Button {
-                selection = min(selection + 1, upperBound)
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.headline)
-                    .foregroundStyle(AppPalette.primary)
-                    .frame(width: 44, height: 42)
-            }
-            .buttonStyle(.plain)
-            .disabled(selection >= upperBound)
-            .opacity(selection >= upperBound ? 0.35 : 1)
         }
     }
 }

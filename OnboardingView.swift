@@ -201,7 +201,7 @@ private struct WalletIllustration: View {
                         .padding(.trailing, 14)
                 }
 
-            Image(systemName: "eurosign.circle.fill")
+            Image(systemName: "coloncurrencysign.circle.fill")
                 .font(.system(size: 60))
                 .foregroundStyle(AppPalette.accent)
                 .offset(x: 184, y: 18)

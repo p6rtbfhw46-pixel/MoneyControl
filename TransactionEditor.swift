@@ -11,6 +11,7 @@ struct TransactionEditor: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var exclusions: [RecurrenceExclusion]
     @Query private var payments: [ExpensePayment]
+    @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
 
     let request: TransactionEditorRequest
 
@@ -56,23 +57,40 @@ struct TransactionEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                if mode.needsExpenseClassification {
+            VStack(spacing: 0) {
+                Text(mode.navigationTitle(isEditing: editedTransaction != nil))
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(AppPalette.background)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, validationMessage == nil ? 10 : 6)
+
+                if let validationMessage {
+                    ValidationBanner(message: validationMessage)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 6)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                Form {
+                    if mode.needsExpenseClassification {
                     Section(AppStrings.text(.classification)) {
                         HStack(spacing: 10) {
-                            Text("Categoria 50/30/20")
+                            Text(AppStrings.text(.category503020))
                                 .font(.subheadline.bold())
                                 .foregroundStyle(AppPalette.background)
 
                             HelpIconButton(
-                                title: "Regra 50/30/20",
-                                message: "A metodologia 50/30/20 ajuda a distribuir o rendimento de forma equilibrada: 50% para necessidades, 30% para desejos e 20% para poupança. Não é uma regra obrigatória, mas uma referência para uma melhor gestão financeira."
+                                title: AppStrings.text(.rule503020Title),
+                                message: AppStrings.text(.rule503020Help)
                             )
 
                             Spacer()
                         }
 
-                        Picker("Categoria 50/30/20", selection: expenseCategoryBinding) {
+                        Picker(AppStrings.text(.category503020), selection: expenseCategoryBinding) {
                             ForEach(ExpenseCategory.allCases) { category in
                                 Text(category.title).tag(category as ExpenseCategory?)
                             }
@@ -165,22 +183,21 @@ struct TransactionEditor: View {
                     MoneyAmountPicker(
                         title: AppStrings.text(.value),
                         amount: $amountValue,
-                        maximumAmount: 20_000,
+                        maximumAmount: 1_000_000,
                         onConfirm: save
                     )
                 }
                 .listRowBackground(AppPalette.surface)
 
-                if let validationMessage {
-                    Text(validationMessage)
-                        .foregroundStyle(AppPalette.destructive)
                 }
+                .scrollContentBackground(.hidden)
+                .background(AppPalette.appBackground)
             }
-            .scrollContentBackground(.hidden)
+            .animation(.snappy, value: validationMessage)
             .foregroundStyle(AppPalette.background)
             .tint(AppPalette.background)
             .background(AppPalette.appBackground)
-            .navigationTitle(mode.navigationTitle(isEditing: editedTransaction != nil))
+            .navigationTitle("")
             .toolbarBackground(AppPalette.appBackground, for: .navigationBar)
             .toolbarColorScheme(.light, for: .navigationBar)
             .toolbar {
@@ -203,11 +220,16 @@ struct TransactionEditor: View {
                 Text("Está a editar apenas o registo deste mês. Para alterar todos os meses desta despesa recorrente, utilize as Configurações.")
             }
             .onAppear(perform: loadInitialValues)
+            .id(selectedCurrencyCode)
         }
     }
 
     private var parsedValue: Double? {
         amountValue > 0 ? amountValue : nil
+    }
+
+    private func showValidation(_ message: String) {
+        validationMessage = message
     }
 
     private func loadInitialValues() {
@@ -237,19 +259,19 @@ struct TransactionEditor: View {
     private func save() {
         validationMessage = nil
 
-        guard let parsedValue else {
-            validationMessage = AppStrings.text(.fillValue)
-            return
-        }
-
         if mode.needsExpenseClassification {
             guard let expenseCategory else {
-                validationMessage = AppStrings.text(.selectExpenseType)
+                showValidation(AppStrings.text(.selectExpenseType))
                 return
             }
 
             guard !expenseName.isEmpty else {
-                validationMessage = AppStrings.text(.selectExpenseName)
+                showValidation(AppStrings.text(.selectExpenseName))
+                return
+            }
+
+            guard let parsedValue else {
+                showValidation(AppStrings.text(.fillValue))
                 return
             }
 
@@ -262,7 +284,12 @@ struct TransactionEditor: View {
         } else {
             let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
             guard !trimmedTitle.isEmpty else {
-                validationMessage = AppStrings.text(.fillName)
+                showValidation(AppStrings.text(.fillName))
+                return
+            }
+
+            guard let parsedValue else {
+                showValidation(AppStrings.text(.fillValue))
                 return
             }
 

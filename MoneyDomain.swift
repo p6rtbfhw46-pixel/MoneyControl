@@ -255,48 +255,11 @@ extension MoneyTransaction {
         }
     }
 
-    func occurrenceCount(through month: Date, exclusions: [RecurrenceExclusion] = []) -> Int {
-        guard kind == TransactionKind.income.rawValue else { return 0 }
-
-        let finalMonth = min(month.monthStart, recurrenceEndMonthStart?.previousMonthStart ?? month.monthStart)
-        guard finalMonth >= monthStart.monthStart else { return 0 }
-
-        switch recurrence {
-        case .monthly:
-            let months = Calendar.current.dateComponents([.month], from: monthStart.monthStart, to: finalMonth).month ?? -1
-            let total = max(months + 1, 0)
-            let excludedMonths = exclusions.filter {
-                $0.transactionID == id && $0.monthStart >= monthStart.monthStart && $0.monthStart <= finalMonth
-            }.count
-            return max(total - excludedMonths, 0)
-        case .yearlyMonth:
-            return finalMonth.monthNumber >= recurrenceMonth ? 1 : 0
-        case nil:
-            return monthStart.monthStart <= finalMonth ? 1 : 0
-        }
-    }
-
     func listRank(in month: Date, payments: [ExpensePayment]) -> Int {
         guard kind == TransactionKind.expense.rawValue else { return 1 }
         let payment = payments.first { $0.transactionID == id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }
         let paidAmount = payment?.amountPaid ?? (payment == nil ? 0 : amount)
         return paidAmount >= amount ? 2 : 0
-    }
-
-    func copyForMonth(_ month: Date, recurrenceType: RecurrenceType? = nil, recurrenceMonth: Int = 0) -> MoneyTransaction {
-        MoneyTransaction(
-            title: title,
-            day: day,
-            monthStart: month.monthStart,
-            amount: amount,
-            kind: kind,
-            repeatsEveryMonth: recurrenceType == .monthly,
-            isPaid: false,
-            expenseCategory: expenseCategory,
-            expenseName: expenseName,
-            recurrenceType: recurrenceType?.rawValue,
-            recurrenceMonth: recurrenceMonth
-        )
     }
 }
 
@@ -320,7 +283,7 @@ extension Date {
 
     var monthTitle: String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "pt_PT")
+        formatter.locale = Locale(identifier: AppStrings.currentLocaleIdentifier)
         formatter.dateFormat = "MMMM yyyy"
         let title = formatter.string(from: self)
         return title.prefix(1).uppercased() + title.dropFirst()
@@ -347,16 +310,45 @@ extension Date {
 
     static func monthName(forMonthNumber month: Int) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "pt_PT")
+        formatter.locale = Locale(identifier: AppStrings.currentLocaleIdentifier)
         formatter.dateFormat = "MMMM"
         let title = formatter.string(from: monthStart(forMonthNumber: month))
         return title.prefix(1).uppercased() + title.dropFirst()
     }
 }
 
+enum AppPreferences {
+    static let selectedCurrencyCodeKey = "selectedCurrencyCode"
+
+    static var deviceCurrencyCode: String {
+        Locale.autoupdatingCurrent.currency?.identifier ?? "EUR"
+    }
+
+    static var selectedCurrencyCode: String {
+        let storedCode = UserDefaults.standard.string(forKey: selectedCurrencyCodeKey) ?? ""
+        return storedCode.isEmpty ? deviceCurrencyCode : storedCode
+    }
+
+    static var selectedCurrencySymbol: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.locale = .autoupdatingCurrent
+        formatter.currencyCode = selectedCurrencyCode
+        return formatter.currencySymbol ?? selectedCurrencyCode
+    }
+
+    static func currencyText(for value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.locale = .autoupdatingCurrent
+        formatter.currencyCode = selectedCurrencyCode
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value) \(selectedCurrencyCode)"
+    }
+}
+
 extension Double {
     var currencyText: String {
-        formatted(.currency(code: Locale.current.currency?.identifier ?? "EUR"))
+        AppPreferences.currencyText(for: self)
     }
 }
 
@@ -365,15 +357,6 @@ extension View {
     func monthPagerStyle() -> some View {
 #if os(iOS)
         tabViewStyle(.page(indexDisplayMode: .never))
-#else
-        self
-#endif
-    }
-
-    @ViewBuilder
-    func decimalKeyboard() -> some View {
-#if os(iOS)
-        keyboardType(.decimalPad)
 #else
         self
 #endif

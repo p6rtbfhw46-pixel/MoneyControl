@@ -5,12 +5,13 @@
 
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @AppStorage("hasCompletedInitialSetup") private var hasCompletedInitialSetup = false
+    @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
     @Query private var transactions: [MoneyTransaction]
     @Query private var payments: [ExpensePayment]
     @Query private var exclusions: [RecurrenceExclusion]
@@ -19,6 +20,12 @@ struct SettingsEditor: View {
     @State private var selectedTab: SettingsTab = .budget
     @State private var pendingAction: SettingsListAction?
     @State private var showsDeleteAllDataConfirmation = false
+    @State private var isExportingBackup = false
+    @State private var isImportingBackup = false
+    @State private var backupDocument = SpendWiseBackupDocument(data: Data())
+    @State private var pendingImportedBackup: SpendWiseBackup?
+    @State private var backupNotice: BackupNotice?
+    @State private var backupHelp: BackupNotice?
 
     private var nextMonth: Date {
         Date().monthStart.nextMonthStart
@@ -51,6 +58,35 @@ struct SettingsEditor: View {
         default:
             AppStrings.text(.periodicExpensesList)
         }
+    }
+
+    private var backupFilename: String {
+        "spendwise-backup-\(Date().backupFilenameDate).json"
+    }
+
+    private var currencyCodes: [String] {
+        Locale.commonISOCurrencyCodes.sorted()
+    }
+
+    private var showsBackupHelp: Binding<Bool> {
+        Binding(
+            get: { backupHelp != nil },
+            set: { if !$0 { backupHelp = nil } }
+        )
+    }
+
+    private var hasPendingImportedBackup: Binding<Bool> {
+        Binding(
+            get: { pendingImportedBackup != nil },
+            set: { if !$0 { pendingImportedBackup = nil } }
+        )
+    }
+
+    private var showsBackupNotice: Binding<Bool> {
+        Binding(
+            get: { backupNotice != nil },
+            set: { if !$0 { backupNotice = nil } }
+        )
     }
 
     var body: some View {
@@ -107,34 +143,85 @@ struct SettingsEditor: View {
             } message: {
                 Text(AppStrings.text(.deleteAllDataMessage))
             }
+            .alert(backupHelp?.title ?? "", isPresented: showsBackupHelp) {
+                Button(AppStrings.text(.ok)) { backupHelp = nil }
+            } message: {
+                Text(backupHelp?.message ?? "")
+            }
+            .alert(AppStrings.text(.importBackupConfirmationTitle), isPresented: hasPendingImportedBackup) {
+                Button(AppStrings.text(.cancel), role: .cancel) { pendingImportedBackup = nil }
+                Button(AppStrings.text(.continueAction), role: .destructive, action: importPendingBackup)
+            } message: {
+                Text(AppStrings.text(.importBackupConfirmationMessage))
+            }
+            .alert(backupNotice?.title ?? "", isPresented: showsBackupNotice) {
+                Button(AppStrings.text(.ok)) { backupNotice = nil }
+            } message: {
+                Text(backupNotice?.message ?? "")
+            }
+            .fileExporter(
+                isPresented: $isExportingBackup,
+                document: backupDocument,
+                contentType: .json,
+                defaultFilename: backupFilename
+            ) { result in
+                handleExportResult(result)
+            }
+            .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json]) { result in
+                handleImportResult(result)
+            }
         }
     }
 
     private var appSettingsView: some View {
         Form {
             Section {
-                Button {
-                    hasSeenOnboarding = false
-                    hasCompletedInitialSetup = false
-                    dismiss()
+                Picker(selection: $selectedCurrencyCode) {
+                    Text("\(AppStrings.text(.deviceRegionCurrency)) (\(AppPreferences.deviceCurrencyCode))")
+                        .tag("")
+                    ForEach(currencyCodes, id: \.self) { code in
+                        Text(currencyOptionTitle(for: code))
+                            .tag(code)
+                    }
                 } label: {
-                    Label(AppStrings.text(.showOnboardingAgain), systemImage: "sparkles.rectangle.stack")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    Label(AppStrings.text(.currency), systemImage: "coloncurrencysign.circle")
                 }
-                .liquidGlassButtonStyle()
 
-                Button(role: .destructive) {
-                    showsDeleteAllDataConfirmation = true
-                } label: {
-                    Label(AppStrings.text(.deleteAllData), systemImage: "trash")
-                        .foregroundStyle(AppPalette.surface)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }
-                .tint(AppPalette.primary)
-                .liquidGlassButtonStyle(prominent: true)
+                Text(AppStrings.text(.currencyFormatHelp))
+                    .font(.caption)
+                    .foregroundStyle(AppPalette.mutedText)
+            }
+            .listRowBackground(AppPalette.surface)
+
+            Section {
+                BackupActionRow(
+                    title: AppStrings.text(.exportBackup),
+                    systemImage: "square.and.arrow.up",
+                    helpMessage: AppStrings.text(.exportBackupHelp),
+                    action: exportBackup,
+                    onHelp: { backupHelp = BackupNotice(title: AppStrings.text(.exportBackup), message: $0) }
+                )
+
+                BackupActionRow(
+                    title: AppStrings.text(.importBackup),
+                    systemImage: "square.and.arrow.down",
+                    helpMessage: AppStrings.text(.importBackupHelp),
+                    action: { isImportingBackup = true },
+                    onHelp: { backupHelp = BackupNotice(title: AppStrings.text(.importBackup), message: $0) }
+                )
+
+                BackupActionRow(
+                    title: AppStrings.text(.deleteAllData),
+                    systemImage: "trash",
+                    helpMessage: AppStrings.text(.deleteAllDataMessage),
+                    isDestructive: true,
+                    action: { showsDeleteAllDataConfirmation = true },
+                    onHelp: { backupHelp = BackupNotice(title: AppStrings.text(.deleteAllData), message: $0) }
+                )
             }
             .listRowBackground(AppPalette.surface)
         }
+        .listSectionSpacing(15)
         .scrollContentBackground(.hidden)
         .foregroundStyle(AppPalette.background)
         .tint(AppPalette.background)
@@ -142,49 +229,48 @@ struct SettingsEditor: View {
     }
 
     private var budgetSettingsView: some View {
-        Form {
-            Section {
-                Button {
-                    selectedList = 0
-                    editorRequest = TransactionEditorRequest(mode: .salary, month: Date().monthStart)
-                } label: {
-                    Label(AppStrings.text(.salary), systemImage: "banknote")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }
-                .liquidGlassButtonStyle()
-                .listRowSeparator(.hidden)
+        ScrollView {
+            VStack(spacing: 15) {
+                VStack(spacing: 15) {
+                    Button {
+                        selectedList = 0
+                        editorRequest = TransactionEditorRequest(mode: .salary, month: Date().monthStart)
+                    } label: {
+                        Label(AppStrings.text(.salary), systemImage: "banknote")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                    }
+                    .liquidGlassButtonStyle()
 
-                Button {
-                    selectedList = 1
-                    editorRequest = TransactionEditorRequest(mode: .monthlyExpense, month: Date().monthStart)
-                } label: {
-                    Label(AppStrings.text(.monthlyExpense), systemImage: "calendar.badge.clock")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }
-                .liquidGlassButtonStyle()
-                .listRowSeparator(.hidden)
+                    Button {
+                        selectedList = 1
+                        editorRequest = TransactionEditorRequest(mode: .monthlyExpense, month: Date().monthStart)
+                    } label: {
+                        Label(AppStrings.text(.monthlyExpense), systemImage: "calendar.badge.clock")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                    }
+                    .liquidGlassButtonStyle()
 
-                Button {
-                    selectedList = 2
-                    editorRequest = TransactionEditorRequest(mode: .periodicExpense, month: Date().monthStart)
-                } label: {
-                    Label(AppStrings.text(.periodicExpense), systemImage: "calendar.badge.plus")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    Button {
+                        selectedList = 2
+                        editorRequest = TransactionEditorRequest(mode: .periodicExpense, month: Date().monthStart)
+                    } label: {
+                        Label(AppStrings.text(.periodicExpense), systemImage: "calendar.badge.plus")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                    }
+                    .liquidGlassButtonStyle()
                 }
-                .liquidGlassButtonStyle()
-                .listRowSeparator(.hidden)
-            }
-            .listRowBackground(AppPalette.surface)
+                .padding(20)
+                .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 28))
 
-            Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(selectedListTitle)
-                        .font(.headline)
-                        .foregroundStyle(AppPalette.background)
+                    settingsListHeader
 
                     TabView(selection: $selectedList) {
                         RecurringList(
-                            emptyTitle: AppStrings.text(.noSalaries),
+                            emptyTitle: AppStrings.text(.salariesList),
                             transactions: salaries,
                             payments: payments,
                             onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
@@ -193,7 +279,7 @@ struct SettingsEditor: View {
                         .tag(0)
 
                         RecurringList(
-                            emptyTitle: AppStrings.text(.noMonthlyExpenses),
+                            emptyTitle: AppStrings.text(.monthlyExpensesList),
                             transactions: monthlyExpenses,
                             payments: payments,
                             onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
@@ -202,7 +288,7 @@ struct SettingsEditor: View {
                         .tag(1)
 
                         RecurringList(
-                            emptyTitle: AppStrings.text(.noPeriodicExpenses),
+                            emptyTitle: AppStrings.text(.periodicExpensesList),
                             transactions: periodicExpenses,
                             payments: payments,
                             onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
@@ -210,22 +296,155 @@ struct SettingsEditor: View {
                         )
                         .tag(2)
                     }
-                    .frame(minHeight: 220)
+                    .frame(minHeight: 320)
                     .monthPagerStyle()
-
-                    CarouselNavigationButtons(
-                        selection: $selectedList,
-                        lowerBound: 0,
-                        upperBound: 2
-                    )
                 }
+                .padding(20)
+                .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 28))
             }
-            .listRowBackground(AppPalette.surface)
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom)
         }
-        .scrollContentBackground(.hidden)
         .foregroundStyle(AppPalette.background)
         .tint(AppPalette.background)
         .background(AppPalette.appBackground)
+    }
+
+    private func currencyOptionTitle(for code: String) -> String {
+        if let currencyName = Locale.autoupdatingCurrent.localizedString(forCurrencyCode: code) {
+            return "\(code) · \(currencyName)"
+        }
+        return code
+    }
+
+    private var settingsListHeader: some View {
+        HStack(spacing: 12) {
+            settingsListArrow(systemImage: "chevron.left") {
+                selectedList = max(selectedList - 1, 0)
+            }
+            .disabled(selectedList <= 0)
+            .opacity(selectedList <= 0 ? 0.35 : 1)
+
+            Text(selectedListTitle)
+                .font(.headline)
+                .foregroundStyle(AppPalette.background)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            settingsListArrow(systemImage: "chevron.right") {
+                selectedList = min(selectedList + 1, 2)
+            }
+            .disabled(selectedList >= 2)
+            .opacity(selectedList >= 2 ? 0.35 : 1)
+        }
+    }
+
+    private func settingsListArrow(systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.headline)
+                .foregroundStyle(AppPalette.primary)
+                .frame(width: 44, height: 42)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func exportBackup() {
+        do {
+            let backup = SpendWiseBackup(
+                transactions: transactions.map { BackupTransaction(transaction: $0) },
+                payments: payments.map { BackupPayment(payment: $0) },
+                exclusions: exclusions.map { BackupExclusion(exclusion: $0) }
+            )
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            backupDocument = SpendWiseBackupDocument(data: try encoder.encode(backup))
+            isExportingBackup = true
+        } catch {
+            backupNotice = BackupNotice(
+                title: AppStrings.text(.exportBackupFailureTitle),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func handleExportResult(_ result: Result<URL, Error>) {
+        switch result {
+        case .success:
+            backupNotice = BackupNotice(
+                title: AppStrings.text(.exportBackupSuccessTitle),
+                message: AppStrings.text(.exportBackupSuccessMessage)
+            )
+        case .failure(let error):
+            backupNotice = BackupNotice(
+                title: AppStrings.text(.exportBackupFailureTitle),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func handleImportResult(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            do {
+                let canAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if canAccess {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+
+                let data = try Data(contentsOf: url)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let backup = try decoder.decode(SpendWiseBackup.self, from: data)
+                guard backup.version == SpendWiseBackup.currentVersion else {
+                    throw BackupError.unsupportedVersion
+                }
+                pendingImportedBackup = backup
+            } catch {
+                backupNotice = BackupNotice(
+                    title: AppStrings.text(.importBackupFailureTitle),
+                    message: AppStrings.text(.importBackupFailureMessage)
+                )
+            }
+        case .failure(let error):
+            backupNotice = BackupNotice(
+                title: AppStrings.text(.importBackupFailureTitle),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func importPendingBackup() {
+        guard let backup = pendingImportedBackup else { return }
+
+        payments.forEach(modelContext.delete)
+        exclusions.forEach(modelContext.delete)
+        transactions.forEach(modelContext.delete)
+
+        backup.transactions.map(\.model).forEach(modelContext.insert)
+        backup.payments.map(\.model).forEach(modelContext.insert)
+        backup.exclusions.map(\.model).forEach(modelContext.insert)
+
+        pendingImportedBackup = nil
+
+        do {
+            try modelContext.save()
+            backupNotice = BackupNotice(
+                title: AppStrings.text(.importBackupSuccessTitle),
+                message: AppStrings.text(.importBackupSuccessMessage)
+            )
+        } catch {
+            backupNotice = BackupNotice(
+                title: AppStrings.text(.importBackupFailureTitle),
+                message: error.localizedDescription
+            )
+        }
     }
 
     private func perform(_ action: SettingsListAction) {
@@ -281,5 +500,189 @@ private struct SettingsListAction: Identifiable {
         case .delete:
             AppStrings.text(.futureDeleteMessage)
         }
+    }
+}
+
+private struct BackupActionRow: View {
+    let title: String
+    let systemImage: String
+    let helpMessage: String
+    var isDestructive = false
+    let action: () -> Void
+    let onHelp: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: action) {
+                Label(title, systemImage: systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isDestructive ? AppPalette.surface : AppPalette.background)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .tint(isDestructive ? AppPalette.primary : AppPalette.secondary)
+            .liquidGlassButtonStyle(prominent: isDestructive)
+
+            Button {
+                onHelp(helpMessage)
+            } label: {
+                Text("?")
+                    .font(.headline.bold())
+                    .foregroundStyle(AppPalette.background)
+                    .frame(width: 34, height: 34)
+                    .background(AppPalette.accent, in: Circle())
+                    .overlay(Circle().stroke(AppPalette.background.opacity(0.18), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(AppStrings.text(.backupInfoTitle))
+        }
+    }
+}
+
+private struct BackupNotice: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+}
+
+private enum BackupError: Error {
+    case unsupportedVersion
+}
+
+private struct SpendWiseBackupDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+
+    var data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.data = data
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+private struct SpendWiseBackup: Codable, Sendable {
+    static let currentVersion = 1
+    static let empty = SpendWiseBackup(
+        transactions: [],
+        payments: [],
+        exclusions: []
+    )
+
+    let version: Int
+    let createdAt: Date
+    let transactions: [BackupTransaction]
+    let payments: [BackupPayment]
+    let exclusions: [BackupExclusion]
+
+    init(
+        transactions: [BackupTransaction],
+        payments: [BackupPayment],
+        exclusions: [BackupExclusion]
+    ) {
+        version = Self.currentVersion
+        createdAt = Date()
+        self.transactions = transactions
+        self.payments = payments
+        self.exclusions = exclusions
+    }
+}
+
+private struct BackupTransaction: Codable, Sendable {
+    let id: UUID
+    let title: String
+    let day: Int
+    let monthStart: Date
+    let amount: Double
+    let kind: String
+    let repeatsEveryMonth: Bool
+    let isPaid: Bool
+    let expenseCategory: String?
+    let expenseName: String?
+    let recurrenceType: String?
+    let recurrenceMonth: Int
+    let recurrenceEndMonthStart: Date?
+
+    init(transaction: MoneyTransaction) {
+        id = transaction.id
+        title = transaction.title
+        day = transaction.day
+        monthStart = transaction.monthStart
+        amount = transaction.amount
+        kind = transaction.kind
+        repeatsEveryMonth = transaction.repeatsEveryMonth
+        isPaid = transaction.isPaid
+        expenseCategory = transaction.expenseCategory
+        expenseName = transaction.expenseName
+        recurrenceType = transaction.recurrenceType
+        recurrenceMonth = transaction.recurrenceMonth
+        recurrenceEndMonthStart = transaction.recurrenceEndMonthStart
+    }
+
+    var model: MoneyTransaction {
+        let transaction = MoneyTransaction(
+            title: title,
+            day: day,
+            monthStart: monthStart,
+            amount: amount,
+            kind: kind,
+            repeatsEveryMonth: repeatsEveryMonth,
+            isPaid: isPaid,
+            expenseCategory: expenseCategory,
+            expenseName: expenseName,
+            recurrenceType: recurrenceType,
+            recurrenceMonth: recurrenceMonth,
+            recurrenceEndMonthStart: recurrenceEndMonthStart
+        )
+        transaction.id = id
+        return transaction
+    }
+}
+
+private struct BackupPayment: Codable, Sendable {
+    let transactionID: UUID
+    let monthStart: Date
+    let amountPaid: Double?
+
+    init(payment: ExpensePayment) {
+        transactionID = payment.transactionID
+        monthStart = payment.monthStart
+        amountPaid = payment.amountPaid
+    }
+
+    var model: ExpensePayment {
+        ExpensePayment(transactionID: transactionID, monthStart: monthStart, amountPaid: amountPaid)
+    }
+}
+
+private struct BackupExclusion: Codable, Sendable {
+    let transactionID: UUID
+    let monthStart: Date
+
+    init(exclusion: RecurrenceExclusion) {
+        transactionID = exclusion.transactionID
+        monthStart = exclusion.monthStart
+    }
+
+    var model: RecurrenceExclusion {
+        RecurrenceExclusion(transactionID: transactionID, monthStart: monthStart)
+    }
+}
+
+private extension Date {
+    var backupFilenameDate: String {
+        formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: " ", with: "-")
     }
 }
