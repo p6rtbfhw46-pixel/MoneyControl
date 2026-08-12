@@ -9,7 +9,8 @@ struct MonthPage: View {
     let month: Date
     let transactions: [MoneyTransaction]
     let payments: [ExpensePayment]
-    let onSetPaidAmount: (MoneyTransaction, Date, Double) -> Void
+    let creditAccounts: [CreditAccount]
+    let onPay: (MoneyTransaction, Date, Double) -> Void
     let onEdit: (MoneyTransaction) -> Void
     let onDelete: (MoneyTransaction) -> Void
 
@@ -24,22 +25,26 @@ struct MonthPage: View {
                 .foregroundStyle(AppPalette.background)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(transactions) { transaction in
-                            TransactionCard(
-                                transaction: transaction,
-                                month: month,
-                                amountPaid: amountPaid(for: transaction),
-                                onSetPaidAmount: { onSetPaidAmount(transaction, month, $0) },
-                                onEdit: { onEdit(transaction) },
-                                onDelete: { onDelete(transaction) }
-                            )
-                        }
+                List {
+                    ForEach(transactions) { transaction in
+                        let paidAmount = amountPaid(for: transaction)
+
+                        TransactionCard(
+                            transaction: transaction,
+                            month: month,
+                            amountPaid: paidAmount,
+                            creditAccounts: creditAccounts,
+                            onPay: { onPay(transaction, month, paidAmount) },
+                            onEdit: { onEdit(transaction) },
+                            onDelete: { onDelete(transaction) }
+                        )
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 4))
+                        .listRowBackground(AppPalette.appBackground)
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .background(AppPalette.appBackground)
             }
         }
@@ -51,6 +56,7 @@ struct MonthPage: View {
         guard let payment = payments.first(where: { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }) else { return 0 }
         return min(payment.amountPaid ?? transaction.amount, transaction.amount)
     }
+
 }
 
 struct BudgetStatusCard: View {
@@ -236,13 +242,13 @@ struct TransactionCard: View {
     let transaction: MoneyTransaction
     let month: Date
     let amountPaid: Double
-    let onSetPaidAmount: (Double) -> Void
+    let creditAccounts: [CreditAccount]
+    let onPay: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
 
     @State private var isExpanded = false
     @State private var showsDeleteConfirmation = false
-    @State private var showsPaymentPicker = false
 
     private var category: ExpenseCategory? {
         ExpenseCategory(rawValue: transaction.expenseCategory ?? "")
@@ -272,7 +278,21 @@ struct TransactionCard: View {
 
     private var freeTextTitle: String? {
         let trimmedTitle = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return isExpense && !trimmedTitle.isEmpty ? trimmedTitle : nil
+        guard isExpense else { return nil }
+
+        let creditName = linkedCreditName
+        if !trimmedTitle.isEmpty, let creditName {
+            return "\(trimmedTitle) - \(creditName)"
+        }
+        if !trimmedTitle.isEmpty {
+            return trimmedTitle
+        }
+        return creditName
+    }
+
+    private var linkedCreditName: String? {
+        guard let linkedCreditID = transaction.linkedCreditID else { return nil }
+        return creditAccounts.first { $0.id == linkedCreditID }?.name
     }
 
     private var paymentProgressSummary: some View {
@@ -390,7 +410,8 @@ struct TransactionCard: View {
                 HStack(spacing: 10) {
                     if isExpense {
                         Button {
-                            showsPaymentPicker = true
+                            collapse()
+                            onPay()
                         } label: {
                             Label(AppStrings.text(.pay), systemImage: "creditcard")
                                 .foregroundStyle(isFullyPaid ? AppPalette.mutedText : AppPalette.background)
@@ -435,17 +456,6 @@ struct TransactionCard: View {
         .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: AppPalette.background.opacity(0.08), radius: 14, y: 8)
-        .sheet(isPresented: $showsPaymentPicker) {
-            PaymentAmountPicker(
-                title: transaction.displayName,
-                totalAmount: transaction.amount,
-                initialAmount: amountPaid,
-                onConfirm: { amount in
-                    onSetPaidAmount(amount)
-                    collapse()
-                }
-            )
-        }
         .alert(deleteConfirmationTitle, isPresented: $showsDeleteConfirmation) {
             Button(AppStrings.text(.cancel), role: .cancel) {}
             Button(AppStrings.text(.delete), role: .destructive) {
@@ -501,6 +511,37 @@ struct SettingsTransactionCard: View {
         ExpenseCategory(rawValue: transaction.expenseCategory ?? "")
     }
 
+    private var freeTextTitle: String? {
+        let trimmedTitle = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return transaction.kind == TransactionKind.expense.rawValue && !trimmedTitle.isEmpty ? trimmedTitle : nil
+    }
+
+    private var detailTextWithoutFreeText: String {
+        guard freeTextTitle != nil else {
+            return transaction.detailText
+        }
+
+        var parts = ["\(AppStrings.text(.day)) \(transaction.day)"]
+
+        if let category {
+            parts.append(category.title)
+        }
+
+        switch transaction.recurrence {
+        case .monthly:
+            parts.append(AppStrings.text(.everyMonth))
+            if let recurrenceEndMonthStart = transaction.recurrenceEndMonthStart {
+                parts.append("\(AppStrings.text(.endDate)) \(recurrenceEndMonthStart.previousMonthStart.monthTitle)")
+            }
+        case .yearlyMonth:
+            parts.append(Date.monthName(forMonthNumber: transaction.recurrenceMonth))
+        case nil:
+            break
+        }
+
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Button {
@@ -516,10 +557,17 @@ struct SettingsTransactionCard: View {
                             .font(.headline)
                             .foregroundStyle(AppPalette.background)
 
-                        Text(transaction.detailText)
+                        Text(detailTextWithoutFreeText)
                             .font(.caption)
                             .foregroundStyle(AppPalette.mutedText)
                             .lineLimit(2)
+
+                        if let freeTextTitle {
+                            Text(freeTextTitle)
+                                .font(.caption.bold())
+                                .foregroundStyle(AppPalette.darkBlue)
+                                .lineLimit(1)
+                        }
                     }
 
                     Spacer()

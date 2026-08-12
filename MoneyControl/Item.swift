@@ -23,6 +23,8 @@ final class MoneyTransaction {
     var recurrenceType: String?
     var recurrenceMonth: Int
     var recurrenceEndMonthStart: Date?
+    var linkedCreditID: UUID?
+    var linkedCreditMovementID: UUID?
 
     init(
         title: String,
@@ -36,7 +38,9 @@ final class MoneyTransaction {
         expenseName: String? = nil,
         recurrenceType: String? = nil,
         recurrenceMonth: Int = 0,
-        recurrenceEndMonthStart: Date? = nil
+        recurrenceEndMonthStart: Date? = nil,
+        linkedCreditID: UUID? = nil,
+        linkedCreditMovementID: UUID? = nil
     ) {
         self.id = UUID()
         self.title = title
@@ -51,6 +55,8 @@ final class MoneyTransaction {
         self.recurrenceType = recurrenceType
         self.recurrenceMonth = recurrenceMonth
         self.recurrenceEndMonthStart = recurrenceEndMonthStart
+        self.linkedCreditID = linkedCreditID
+        self.linkedCreditMovementID = linkedCreditMovementID
     }
 }
 
@@ -78,3 +84,55 @@ final class ExpensePayment {
     }
 }
 
+@Model
+final class CreditAccount {
+    var id: UUID
+    var name: String
+    var type: String
+    var initialDebt: Double
+    var creditLimit: Double?
+    var createdAt: Date
+    var status: String
+
+    init(
+        name: String,
+        type: String,
+        initialDebt: Double,
+        creditLimit: Double? = nil,
+        createdAt: Date = Date(),
+        status: String = CreditStatus.active.rawValue
+    ) {
+        self.id = UUID()
+        self.name = name
+        self.type = type
+        self.initialDebt = initialDebt
+        self.creditLimit = creditLimit
+        self.createdAt = createdAt
+        self.status = status
+    }
+}
+
+@Model
+final class CreditMovement {
+    var id: UUID
+    var creditID: UUID
+    var date: Date
+    var type: String
+    var amount: Double
+    var note: String
+
+    init(
+        creditID: UUID,
+        date: Date,
+        type: String,
+        amount: Double,
+        note: String
+    ) {
+        self.id = UUID()
+        self.creditID = creditID
+        self.date = date
+        self.type = type
+        self.amount = amount
+        self.note = note
+    }
+}

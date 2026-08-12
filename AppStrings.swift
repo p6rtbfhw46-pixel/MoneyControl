@@ -33,6 +33,7 @@ enum AppTextKey: String, CaseIterable {
     case deleteConfirmation
     case name
     case settings
+    case add
     case currentAccount
     case credits
     case monthlyExpense
@@ -94,6 +95,8 @@ enum AppTextKey: String, CaseIterable {
     case monthRemainingHelp
     case pay
     case paid
+    case paidExpense
+    case unpaidExpense
     case paidAmount
     case ofAmount
     case amountToPay
@@ -199,6 +202,19 @@ enum AppTextKey: String, CaseIterable {
     case currency
     case deviceRegionCurrency
     case currencyFormatHelp
+    case filters
+    case clearFilters
+    case paymentStatus
+    case all
+    case paidPlural
+    case unpaidPlural
+    case categories
+    case expenseTypeFilter
+    case freeTextFilter
+    case searchPlaceholder
+    case expenseDueTomorrowTitle
+    case expenseDueTomorrowBody
+    case expenseDueTomorrowBodyWithType
 }
 
 enum AppStrings {
@@ -304,6 +320,7 @@ enum AppStrings {
             .deleteConfirmation: "Tem a certeza que quer apagar?",
             .name: "Nome",
             .settings: "Configurações",
+            .add: "Adicionar",
             .currentAccount: "Conta Corrente",
             .credits: "Análises",
             .monthlyExpense: "Despesas Mensais Periódicas",
@@ -360,11 +377,13 @@ enum AppStrings {
             .overdueExpensesMessagePrefix: "Existem despesas no mês corrente que já deviam estar pagas:",
             .previousMonthUnpaidExpensesMessagePrefix: "Ficaram despesas por pagar no mês passado:",
             .overdueExpenseDueDay: "devia ter sido paga no dia",
-            .balanceThisMonthHelp: "Mostra o dinheiro na conta no dia de hoje. Soma todos os vencimentos e receitas até hoje e subtrai apenas as despesas até hoje que já foram marcadas como pagas.",
-            .monthUnpaidHelp: "Mostra o total de despesas do mês apresentado que ainda não foram marcadas como pagas.",
-            .monthRemainingHelp: "Mostra o remanescente do mês apresentado. É calculado somando todos os vencimentos e receitas desse mês e subtraindo todas as despesas desse mês.",
+            .balanceThisMonthHelp: "Mostra o saldo disponível até ao dia de hoje. Soma todos os vencimentos e receitas recebidos até hoje e subtrai apenas as despesas até hoje que já foram marcadas como pagas.",
+            .monthUnpaidHelp: "Mostra o total das despesas do mês apresentado que ainda não foram marcadas como pagas.",
+            .monthRemainingHelp: "Mostra o valor restante do mês apresentado. É calculado somando todos os vencimentos e receitas desse mês e subtraindo todas as despesas previstas para o mesmo período.",
             .pay: "Pagar",
             .paid: "Pago",
+            .paidExpense: "Paga",
+            .unpaidExpense: "Por pagar",
             .paidAmount: "Valor pago",
             .ofAmount: "de",
             .amountToPay: "Valor a pagar",
@@ -380,11 +399,11 @@ enum AppStrings {
             .budgetSettings: "Orçamento",
             .deleteAllData: "Apagar todos os dados",
             .deleteAllDataTitle: "Apagar todos os dados?",
-            .deleteAllDataMessage: "Esta ação vai apagar todas as despesas, receitas, vencimentos, pagamentos e exceções guardadas na app. Não é possível anular.",
+            .deleteAllDataMessage: "Esta ação vai apagar todas as despesas, receitas, vencimentos, pagamentos, exceções, créditos e movimentos de crédito guardados na app. Não é possível anular.",
             .exportBackup: "Exportar backup",
             .importBackup: "Importar backup",
             .backupInfoTitle: "Backup",
-            .exportBackupHelp: "Cria um ficheiro JSON apenas com os dados registados pelo utilizador: vencimentos, despesas, pagamentos e exceções. Depois pode guardar esse ficheiro no iCloud Drive, Ficheiros, AirDrop ou outro local à sua escolha.",
+            .exportBackupHelp: "Cria um ficheiro JSON apenas com os dados registados pelo utilizador: vencimentos, despesas, pagamentos, exceções, créditos e movimentos de crédito. Depois pode guardar esse ficheiro no iCloud Drive, Ficheiros, AirDrop ou outro local à sua escolha.",
             .importBackupHelp: "Permite escolher um ficheiro JSON exportado anteriormente pela SpendWise. Após confirmação, os dados registados atuais são substituídos pelos dados do backup.",
             .exportBackupSuccessTitle: "Backup criado",
             .exportBackupSuccessMessage: "O ficheiro de backup foi criado. Escolha onde pretende guardar ou partilhar o ficheiro.",
@@ -469,7 +488,20 @@ enum AppStrings {
             .noListData: "Ainda não existem dados para mostrar.",
             .currency: "Moeda",
             .deviceRegionCurrency: "Moeda da região do dispositivo",
-            .currencyFormatHelp: "A app usa por defeito a moeda da região do dispositivo. Pode escolher outra moeda; o símbolo muda para a moeda escolhida e os separadores decimais continuam a seguir a região do dispositivo."
+            .currencyFormatHelp: "A app usa por defeito a moeda da região do dispositivo. Pode escolher outra moeda; o símbolo muda para a moeda escolhida e os separadores decimais continuam a seguir a região do dispositivo.",
+            .filters: "Filtros",
+            .clearFilters: "Limpar filtros",
+            .paymentStatus: "Estado de pagamento",
+            .all: "Todos",
+            .paidPlural: "Pagas",
+            .unpaidPlural: "Por pagar",
+            .categories: "Categorias",
+            .expenseTypeFilter: "Tipo de despesa",
+            .freeTextFilter: "Texto livre",
+            .searchPlaceholder: "Procurar texto",
+            .expenseDueTomorrowTitle: "Despesa vence amanhã",
+            .expenseDueTomorrowBody: "%@ vence amanhã. Dia %d.",
+            .expenseDueTomorrowBodyWithType: "%@ vence amanhã. Dia %d. Tipo: %@."
         ],
         .english: [
             .appName: "SpendWise",
@@ -485,6 +517,7 @@ enum AppStrings {
             .deleteConfirmation: "Are you sure you want to delete?",
             .name: "Name",
             .settings: "Settings",
+            .add: "Add",
             .currentAccount: "Current Account",
             .credits: "Analytics",
             .monthlyExpense: "Periodic Monthly Expenses",
@@ -541,11 +574,13 @@ enum AppStrings {
             .overdueExpensesMessagePrefix: "There are expenses in the current month that should already be paid:",
             .previousMonthUnpaidExpensesMessagePrefix: "There are unpaid expenses from last month:",
             .overdueExpenseDueDay: "should have been paid on day",
-            .balanceThisMonthHelp: "Shows the money in the account today. It sums all salaries and income up to today and subtracts only expenses up to today that have been marked as paid.",
+            .balanceThisMonthHelp: "Shows the available balance up to today. It sums all salaries and income received up to today and subtracts only expenses up to today that have been marked as paid.",
             .monthUnpaidHelp: "Shows the total expenses in the displayed month that have not been marked as paid.",
-            .monthRemainingHelp: "Shows the remaining amount for the displayed month. It sums all salaries and income in that month and subtracts all expenses in that month.",
+            .monthRemainingHelp: "Shows the remaining amount for the displayed month. It is calculated by summing all salaries and income in that month and subtracting all expected expenses for the same period.",
             .pay: "Pay",
             .paid: "Paid",
+            .paidExpense: "Paid",
+            .unpaidExpense: "Unpaid",
             .paidAmount: "Paid amount",
             .ofAmount: "of",
             .amountToPay: "Amount to pay",
@@ -561,11 +596,11 @@ enum AppStrings {
             .budgetSettings: "Budget",
             .deleteAllData: "Delete all data",
             .deleteAllDataTitle: "Delete all data?",
-            .deleteAllDataMessage: "This will delete every expense, income, salary, payment and recurrence exception stored in the app. This cannot be undone.",
+            .deleteAllDataMessage: "This will delete every expense, income, salary, payment, recurrence exception, credit and credit movement stored in the app. This cannot be undone.",
             .exportBackup: "Export backup",
             .importBackup: "Import backup",
             .backupInfoTitle: "Backup",
-            .exportBackupHelp: "Creates a JSON file only with user-entered data: salaries, expenses, payments and recurrence exceptions. You can then save it to iCloud Drive, Files, AirDrop or another location.",
+            .exportBackupHelp: "Creates a JSON file only with user-entered data: salaries, expenses, payments, recurrence exceptions, credits and credit movements. You can then save it to iCloud Drive, Files, AirDrop or another location.",
             .importBackupHelp: "Lets you choose a JSON file previously exported by SpendWise. After confirmation, current registered data is replaced with the backup data.",
             .exportBackupSuccessTitle: "Backup created",
             .exportBackupSuccessMessage: "The backup file was created. Choose where you want to save or share it.",
@@ -650,7 +685,20 @@ enum AppStrings {
             .noListData: "There is no data to show yet.",
             .currency: "Currency",
             .deviceRegionCurrency: "Device region currency",
-            .currencyFormatHelp: "By default, the app uses the currency from the device region. You can choose another currency; the symbol changes to the selected currency and decimal separators continue to follow the device region."
+            .currencyFormatHelp: "By default, the app uses the currency from the device region. You can choose another currency; the symbol changes to the selected currency and decimal separators continue to follow the device region.",
+            .filters: "Filters",
+            .clearFilters: "Clear filters",
+            .paymentStatus: "Payment status",
+            .all: "All",
+            .paidPlural: "Paid",
+            .unpaidPlural: "Unpaid",
+            .categories: "Categories",
+            .expenseTypeFilter: "Expense type",
+            .freeTextFilter: "Free text",
+            .searchPlaceholder: "Search text",
+            .expenseDueTomorrowTitle: "Expense due tomorrow",
+            .expenseDueTomorrowBody: "%@ is due tomorrow. Day %d.",
+            .expenseDueTomorrowBodyWithType: "%@ is due tomorrow. Day %d. Type: %@."
         ]
     ]
 

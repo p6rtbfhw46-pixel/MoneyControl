@@ -15,8 +15,11 @@ struct SettingsEditor: View {
     @Query private var transactions: [MoneyTransaction]
     @Query private var payments: [ExpensePayment]
     @Query private var exclusions: [RecurrenceExclusion]
+    @Query private var creditAccounts: [CreditAccount]
+    @Query private var creditMovements: [CreditMovement]
     @State private var editorRequest: TransactionEditorRequest?
     @State private var selectedList = 0
+    @State private var selectedListDirection = 1
     @State private var selectedTab: SettingsTab = .budget
     @State private var pendingAction: SettingsListAction?
     @State private var showsDeleteAllDataConfirmation = false
@@ -26,6 +29,10 @@ struct SettingsEditor: View {
     @State private var pendingImportedBackup: SpendWiseBackup?
     @State private var backupNotice: BackupNotice?
     @State private var backupHelp: BackupNotice?
+
+    init(openingCredits: Bool = false) {
+        _selectedTab = State(initialValue: openingCredits ? .credits : .budget)
+    }
 
     private var nextMonth: Date {
         Date().monthStart.nextMonthStart
@@ -94,6 +101,7 @@ struct SettingsEditor: View {
             VStack(spacing: 0) {
                 Picker("", selection: $selectedTab) {
                     Text(AppStrings.text(.budgetSettings)).tag(SettingsTab.budget)
+                    Text(CreditStrings.text(.settingsTitle)).tag(SettingsTab.credits)
                     Text(AppStrings.text(.appSettings)).tag(SettingsTab.app)
                 }
                 .pickerStyle(.segmented)
@@ -105,6 +113,8 @@ struct SettingsEditor: View {
                 switch selectedTab {
                 case .app:
                     appSettingsView
+                case .credits:
+                    CreditsSettingsView()
                 case .budget:
                     budgetSettingsView
                 }
@@ -229,83 +239,61 @@ struct SettingsEditor: View {
     }
 
     private var budgetSettingsView: some View {
-        ScrollView {
-            VStack(spacing: 15) {
-                VStack(spacing: 15) {
-                    Button {
-                        selectedList = 0
-                        editorRequest = TransactionEditorRequest(mode: .salary, month: Date().monthStart)
-                    } label: {
-                        Label(AppStrings.text(.salary), systemImage: "banknote")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
-                    }
-                    .liquidGlassButtonStyle()
+        VStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
+                settingsListHeader
 
-                    Button {
-                        selectedList = 1
-                        editorRequest = TransactionEditorRequest(mode: .monthlyExpense, month: Date().monthStart)
-                    } label: {
-                        Label(AppStrings.text(.monthlyExpense), systemImage: "calendar.badge.clock")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
-                    }
-                    .liquidGlassButtonStyle()
-
-                    Button {
-                        selectedList = 2
-                        editorRequest = TransactionEditorRequest(mode: .periodicExpense, month: Date().monthStart)
-                    } label: {
-                        Label(AppStrings.text(.periodicExpense), systemImage: "calendar.badge.plus")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
-                    }
-                    .liquidGlassButtonStyle()
-                }
-                .padding(20)
-                .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 28))
-
-                VStack(alignment: .leading, spacing: 12) {
-                    settingsListHeader
-
-                    TabView(selection: $selectedList) {
-                        RecurringList(
-                            emptyTitle: AppStrings.text(.salariesList),
-                            transactions: salaries,
-                            payments: payments,
-                            onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
-                            onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
-                        )
-                        .tag(0)
-
-                        RecurringList(
-                            emptyTitle: AppStrings.text(.monthlyExpensesList),
-                            transactions: monthlyExpenses,
-                            payments: payments,
-                            onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
-                            onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
-                        )
-                        .tag(1)
-
-                        RecurringList(
-                            emptyTitle: AppStrings.text(.periodicExpensesList),
-                            transactions: periodicExpenses,
-                            payments: payments,
-                            onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
-                            onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
-                        )
-                        .tag(2)
-                    }
-                    .frame(minHeight: 320)
-                    .monthPagerStyle()
-                }
-                .padding(20)
-                .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 28))
+                selectedSettingsList
+                    .id(selectedList)
+                    .transition(settingsListTransition)
+                    .animation(.snappy, value: selectedList)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .padding(.bottom)
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 28))
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(AppStrings.text(.add))
+                    .font(.headline.bold())
+                    .foregroundStyle(AppPalette.background)
+
+                Button {
+                    selectSettingsList(0)
+                    editorRequest = TransactionEditorRequest(mode: .salary, month: Date().monthStart)
+                } label: {
+                    Label(AppStrings.text(.salary), systemImage: "banknote")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                }
+                .liquidGlassButtonStyle()
+
+                Button {
+                    selectSettingsList(1)
+                    editorRequest = TransactionEditorRequest(mode: .monthlyExpense, month: Date().monthStart)
+                } label: {
+                    Label(AppStrings.text(.monthlyExpense), systemImage: "calendar.badge.clock")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                }
+                .liquidGlassButtonStyle()
+
+                Button {
+                    selectSettingsList(2)
+                    editorRequest = TransactionEditorRequest(mode: .periodicExpense, month: Date().monthStart)
+                } label: {
+                    Label(AppStrings.text(.periodicExpense), systemImage: "calendar.badge.plus")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                }
+                .liquidGlassButtonStyle()
+            }
+            .padding(16)
+            .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 28))
         }
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .padding(.bottom)
         .foregroundStyle(AppPalette.background)
         .tint(AppPalette.background)
         .background(AppPalette.appBackground)
@@ -318,10 +306,50 @@ struct SettingsEditor: View {
         return code
     }
 
+    @ViewBuilder
+    private var selectedSettingsList: some View {
+        switch selectedList {
+        case 0:
+            RecurringList(
+                emptyTitle: AppStrings.text(.salariesList),
+                transactions: salaries,
+                payments: payments,
+                onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
+                onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
+            )
+        case 1:
+            RecurringList(
+                emptyTitle: AppStrings.text(.monthlyExpensesList),
+                transactions: monthlyExpenses,
+                payments: payments,
+                onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
+                onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
+            )
+        default:
+            RecurringList(
+                emptyTitle: AppStrings.text(.periodicExpensesList),
+                transactions: periodicExpenses,
+                payments: payments,
+                onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
+                onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
+            )
+        }
+    }
+
+    private var settingsListTransition: AnyTransition {
+        let insertionEdge: Edge = selectedListDirection > 0 ? .trailing : .leading
+        let removalEdge: Edge = selectedListDirection > 0 ? .leading : .trailing
+
+        return .asymmetric(
+            insertion: .move(edge: insertionEdge).combined(with: .opacity),
+            removal: .move(edge: removalEdge).combined(with: .opacity)
+        )
+    }
+
     private var settingsListHeader: some View {
         HStack(spacing: 12) {
             settingsListArrow(systemImage: "chevron.left") {
-                selectedList = max(selectedList - 1, 0)
+                moveSelectedList(by: -1)
             }
             .disabled(selectedList <= 0)
             .opacity(selectedList <= 0 ? 0.35 : 1)
@@ -334,11 +362,22 @@ struct SettingsEditor: View {
                 .frame(maxWidth: .infinity, alignment: .center)
 
             settingsListArrow(systemImage: "chevron.right") {
-                selectedList = min(selectedList + 1, 2)
+                moveSelectedList(by: 1)
             }
             .disabled(selectedList >= 2)
             .opacity(selectedList >= 2 ? 0.35 : 1)
         }
+    }
+
+    private func moveSelectedList(by value: Int) {
+        selectedListDirection = value
+        selectedList = min(max(selectedList + value, 0), 2)
+    }
+
+    private func selectSettingsList(_ index: Int) {
+        guard index != selectedList else { return }
+        selectedListDirection = index > selectedList ? 1 : -1
+        selectedList = min(max(index, 0), 2)
     }
 
     private func settingsListArrow(systemImage: String, action: @escaping () -> Void) -> some View {
@@ -357,7 +396,9 @@ struct SettingsEditor: View {
             let backup = SpendWiseBackup(
                 transactions: transactions.map { BackupTransaction(transaction: $0) },
                 payments: payments.map { BackupPayment(payment: $0) },
-                exclusions: exclusions.map { BackupExclusion(exclusion: $0) }
+                exclusions: exclusions.map { BackupExclusion(exclusion: $0) },
+                creditAccounts: creditAccounts.map { BackupCreditAccount(credit: $0) },
+                creditMovements: creditMovements.map { BackupCreditMovement(movement: $0) }
             )
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
@@ -426,10 +467,14 @@ struct SettingsEditor: View {
         payments.forEach(modelContext.delete)
         exclusions.forEach(modelContext.delete)
         transactions.forEach(modelContext.delete)
+        creditMovements.forEach(modelContext.delete)
+        creditAccounts.forEach(modelContext.delete)
 
         backup.transactions.map(\.model).forEach(modelContext.insert)
         backup.payments.map(\.model).forEach(modelContext.insert)
         backup.exclusions.map(\.model).forEach(modelContext.insert)
+        backup.creditAccounts.map(\.model).forEach(modelContext.insert)
+        backup.creditMovements.map(\.model).forEach(modelContext.insert)
 
         pendingImportedBackup = nil
 
@@ -465,6 +510,8 @@ struct SettingsEditor: View {
         payments.forEach(modelContext.delete)
         exclusions.forEach(modelContext.delete)
         transactions.forEach(modelContext.delete)
+        creditMovements.forEach(modelContext.delete)
+        creditAccounts.forEach(modelContext.delete)
         hasCompletedInitialSetup = false
     }
 }
@@ -472,6 +519,7 @@ struct SettingsEditor: View {
 private enum SettingsTab {
     case app
     case budget
+    case credits
 }
 
 private struct SettingsListAction: Identifiable {
@@ -574,7 +622,9 @@ private struct SpendWiseBackup: Codable, Sendable {
     static let empty = SpendWiseBackup(
         transactions: [],
         payments: [],
-        exclusions: []
+        exclusions: [],
+        creditAccounts: [],
+        creditMovements: []
     )
 
     let version: Int
@@ -582,17 +632,44 @@ private struct SpendWiseBackup: Codable, Sendable {
     let transactions: [BackupTransaction]
     let payments: [BackupPayment]
     let exclusions: [BackupExclusion]
+    let creditAccounts: [BackupCreditAccount]
+    let creditMovements: [BackupCreditMovement]
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case createdAt
+        case transactions
+        case payments
+        case exclusions
+        case creditAccounts
+        case creditMovements
+    }
 
     init(
         transactions: [BackupTransaction],
         payments: [BackupPayment],
-        exclusions: [BackupExclusion]
+        exclusions: [BackupExclusion],
+        creditAccounts: [BackupCreditAccount] = [],
+        creditMovements: [BackupCreditMovement] = []
     ) {
         version = Self.currentVersion
         createdAt = Date()
         self.transactions = transactions
         self.payments = payments
         self.exclusions = exclusions
+        self.creditAccounts = creditAccounts
+        self.creditMovements = creditMovements
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        transactions = try container.decode([BackupTransaction].self, forKey: .transactions)
+        payments = try container.decode([BackupPayment].self, forKey: .payments)
+        exclusions = try container.decode([BackupExclusion].self, forKey: .exclusions)
+        creditAccounts = try container.decodeIfPresent([BackupCreditAccount].self, forKey: .creditAccounts) ?? []
+        creditMovements = try container.decodeIfPresent([BackupCreditMovement].self, forKey: .creditMovements) ?? []
     }
 }
 
@@ -610,6 +687,8 @@ private struct BackupTransaction: Codable, Sendable {
     let recurrenceType: String?
     let recurrenceMonth: Int
     let recurrenceEndMonthStart: Date?
+    let linkedCreditID: UUID?
+    let linkedCreditMovementID: UUID?
 
     init(transaction: MoneyTransaction) {
         id = transaction.id
@@ -625,6 +704,8 @@ private struct BackupTransaction: Codable, Sendable {
         recurrenceType = transaction.recurrenceType
         recurrenceMonth = transaction.recurrenceMonth
         recurrenceEndMonthStart = transaction.recurrenceEndMonthStart
+        linkedCreditID = transaction.linkedCreditID
+        linkedCreditMovementID = transaction.linkedCreditMovementID
     }
 
     var model: MoneyTransaction {
@@ -640,7 +721,9 @@ private struct BackupTransaction: Codable, Sendable {
             expenseName: expenseName,
             recurrenceType: recurrenceType,
             recurrenceMonth: recurrenceMonth,
-            recurrenceEndMonthStart: recurrenceEndMonthStart
+            recurrenceEndMonthStart: recurrenceEndMonthStart,
+            linkedCreditID: linkedCreditID,
+            linkedCreditMovementID: linkedCreditMovementID
         )
         transaction.id = id
         return transaction
@@ -674,6 +757,69 @@ private struct BackupExclusion: Codable, Sendable {
 
     var model: RecurrenceExclusion {
         RecurrenceExclusion(transactionID: transactionID, monthStart: monthStart)
+    }
+}
+
+private struct BackupCreditAccount: Codable, Sendable {
+    let id: UUID
+    let name: String
+    let type: String
+    let initialDebt: Double
+    let creditLimit: Double?
+    let createdAt: Date
+    let status: String
+
+    init(credit: CreditAccount) {
+        id = credit.id
+        name = credit.name
+        type = credit.type
+        initialDebt = credit.initialDebt
+        creditLimit = credit.creditLimit
+        createdAt = credit.createdAt
+        status = credit.status
+    }
+
+    var model: CreditAccount {
+        let credit = CreditAccount(
+            name: name,
+            type: type,
+            initialDebt: initialDebt,
+            creditLimit: creditLimit,
+            createdAt: createdAt,
+            status: status
+        )
+        credit.id = id
+        return credit
+    }
+}
+
+private struct BackupCreditMovement: Codable, Sendable {
+    let id: UUID
+    let creditID: UUID
+    let date: Date
+    let type: String
+    let amount: Double
+    let note: String
+
+    init(movement: CreditMovement) {
+        id = movement.id
+        creditID = movement.creditID
+        date = movement.date
+        type = movement.type
+        amount = movement.amount
+        note = movement.note
+    }
+
+    var model: CreditMovement {
+        let movement = CreditMovement(
+            creditID: creditID,
+            date: date,
+            type: type,
+            amount: amount,
+            note: note
+        )
+        movement.id = id
+        return movement
     }
 }
 

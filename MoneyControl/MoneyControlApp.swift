@@ -30,6 +30,8 @@ struct MoneyControlApp: App {
             MoneyTransaction.self,
             ExpensePayment.self,
             RecurrenceExclusion.self,
+            CreditAccount.self,
+            CreditMovement.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

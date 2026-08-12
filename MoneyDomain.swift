@@ -289,6 +289,18 @@ extension Date {
         return title.prefix(1).uppercased() + title.dropFirst()
     }
 
+    var notificationIdentifierDate: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMM"
+        return formatter.string(from: self)
+    }
+
+    func date(day: Int) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month], from: self)
+        components.day = min(max(day, 1), daysInMonth)
+        return Calendar.current.date(from: components) ?? self
+    }
+
     var daysInMonth: Int {
         Calendar.current.range(of: .day, in: .month, for: self)?.count ?? 31
     }

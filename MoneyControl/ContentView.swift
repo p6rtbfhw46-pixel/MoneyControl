@@ -8,11 +8,7 @@
 import SwiftData
 import SwiftUI
 import Charts
-
-private struct TransactionOccurrence {
-    let transaction: MoneyTransaction
-    let month: Date
-}
+import UserNotifications
 
 private enum MainTab {
     case currentAccount
@@ -22,6 +18,30 @@ private enum MainTab {
 private enum AnalyticsExpenseTab {
     case whereSpent
     case budgetRule
+}
+
+private enum AnalyticsPeriod {
+    case month
+    case year
+}
+
+private enum CurrentAccountPaymentFilter: String, CaseIterable, Identifiable {
+    case all
+    case paid
+    case unpaid
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all:
+            AppStrings.text(.all)
+        case .paid:
+            AppStrings.text(.paidPlural)
+        case .unpaid:
+            AppStrings.text(.unpaidPlural)
+        }
+    }
 }
 
 private enum AnalyticsListTab: String, CaseIterable, Identifiable {
@@ -43,42 +63,24 @@ private enum AnalyticsListTab: String, CaseIterable, Identifiable {
     }
 }
 
-private struct CategoryExpensePoint: Identifiable {
-    let category: ExpenseCategory
-    let amount: Double
-
-    var id: String { category.rawValue }
-}
-
-private struct ExpenseTypePoint: Identifiable {
-    let title: String
-    let category: ExpenseCategory
-    let amount: Double
-
-    var id: String { "\(category.rawValue)-\(title)" }
-}
-
-private struct AnalyticsInsight: Identifiable {
-    let title: String
-    let message: String
-
-    var id: String { "\(title)-\(message)" }
-}
-
 private struct ExpenseNotice: Identifiable {
     let id = UUID()
     let title: String
     let message: String
 }
 
-private struct MonthlyBalancePoint: Identifiable {
+private struct PaymentEditorRequest: Identifiable {
+    let id = UUID()
+    let transaction: MoneyTransaction
     let month: Date
-    let income: Double
-    let expenses: Double
+    let initialAmount: Double
+}
 
-    var id: Date { month }
-    var balance: Double { income - expenses }
-    var monthLabel: String { month.formatted(.dateTime.month(.abbreviated)) }
+private struct ExpensePaymentReminder: Sendable {
+    let identifier: String
+    let title: String
+    let body: String
+    let fireDate: Date
 }
 
 struct ContentView: View {
@@ -86,90 +88,146 @@ struct ContentView: View {
     @Query private var transactions: [MoneyTransaction]
     @Query private var payments: [ExpensePayment]
     @Query private var exclusions: [RecurrenceExclusion]
+    @Query private var creditAccounts: [CreditAccount]
+    @Query private var creditMovements: [CreditMovement]
 
     @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
+    @AppStorage("currentAccountPaymentFilter") private var storedPaymentFilter = CurrentAccountPaymentFilter.all.rawValue
+    @AppStorage("currentAccountFilteredCategories") private var storedFilteredCategories = ""
+    @AppStorage("currentAccountFilteredExpenseType") private var storedFilteredExpenseType = ""
+    @AppStorage("currentAccountFreeTextFilter") private var storedFreeTextFilter = ""
     @State private var selectedMonthOffset = 0
+    @State private var monthNavigationDirection = 1
     @State private var selectedTab: MainTab = .currentAccount
     @State private var selectedAnalyticsExpenseTab: AnalyticsExpenseTab = .whereSpent
+    @State private var selectedAnalyticsPeriod: AnalyticsPeriod = .month
+    @State private var selectedAnalyticsMonthOffset = 0
     @State private var selectedAnalyticsListTab: AnalyticsListTab = .subscriptions
     @State private var selectedInsightIndex = 0
     @State private var selectedAdviceIndex = 0
     @State private var editorRequest: TransactionEditorRequest?
+    @State private var paymentEditorRequest: PaymentEditorRequest?
     @State private var showsSettings = false
     @State private var showsQuickActions = false
+    @State private var showsFilters = false
+    @State private var paymentFilter: CurrentAccountPaymentFilter = .all
+    @State private var filteredCategories: Set<ExpenseCategory> = []
+    @State private var filteredExpenseType = ""
+    @State private var freeTextFilter = ""
     @State private var expenseNotice: ExpenseNotice?
+    @State private var didLoadStoredFilters = false
     @State private var didCheckOverdueExpenses = false
 
     private let monthOffsets = Array(-24...24)
     private var selectedMonth: Date { Calendar.current.date(byAdding: .month, value: selectedMonthOffset, to: Date().monthStart) ?? Date().monthStart }
     private var currentMonth: Date { Date().monthStart }
-    private var selectedTransactions: [MoneyTransaction] { transactions.visible(in: selectedMonth, payments: payments, exclusions: exclusions) }
-    private var currentMonthTransactions: [MoneyTransaction] { transactions.visible(in: currentMonth, payments: payments, exclusions: exclusions) }
+    private var calculator: MoneyCalculationService {
+        MoneyCalculationService(transactions: transactions, payments: payments, exclusions: exclusions)
+    }
+    private var selectedTransactions: [MoneyTransaction] { calculator.visibleTransactions(in: selectedMonth) }
+    private var selectedFilteredTransactions: [MoneyTransaction] { filteredTransactions(in: selectedMonth) }
+    private var currentMonthTransactions: [MoneyTransaction] { calculator.visibleTransactions(in: currentMonth) }
     private var currentYear: Int { Calendar.current.component(.year, from: Date()) }
     private var currentYearMonths: [Date] {
-        (1...12).map { Date.monthStart(month: $0, year: currentYear) }
+        MoneyCalculationService.monthsInYear(currentYear)
+    }
+    private var notificationScheduleSignature: String {
+        let transactionSignature = transactions
+            .map { transaction in
+                [
+                    transaction.id.uuidString,
+                    transaction.title,
+                    transaction.displayName,
+                    transaction.kind,
+                    transaction.expenseCategory ?? "",
+                    "\(transaction.day)",
+                    "\(transaction.amount)",
+                    transaction.monthStart.ISO8601Format(),
+                    transaction.recurrenceType ?? "",
+                    "\(transaction.recurrenceMonth)",
+                    transaction.recurrenceEndMonthStart?.ISO8601Format() ?? ""
+                ].joined(separator: "|")
+            }
+            .sorted()
+            .joined(separator: ";")
+        let paymentSignature = payments
+            .map { "\($0.transactionID.uuidString)|\($0.monthStart.ISO8601Format())|\($0.amountPaid ?? -1)" }
+            .sorted()
+            .joined(separator: ";")
+        let exclusionSignature = exclusions
+            .map { "\($0.transactionID.uuidString)|\($0.monthStart.ISO8601Format())" }
+            .sorted()
+            .joined(separator: ";")
+
+        return [transactionSignature, paymentSignature, exclusionSignature].joined(separator: "#")
+    }
+
+    private var activeFilterCount: Int {
+        var count = 0
+        if paymentFilter != .all { count += 1 }
+        if !filteredCategories.isEmpty { count += 1 }
+        if !filteredExpenseType.isEmpty { count += 1 }
+        if !freeTextFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { count += 1 }
+        return count
+    }
+    private var selectedMonthExpenseTypeOptions: [ExpenseTypePoint] {
+        var options: [String: ExpenseTypePoint] = [:]
+
+        selectedTransactions
+            .filter { $0.kind == TransactionKind.expense.rawValue }
+            .forEach { transaction in
+                guard !transaction.displayName.isEmpty,
+                      let category = ExpenseCategory(rawValue: transaction.expenseCategory ?? "")
+                else { return }
+
+                let key = "\(category.rawValue)-\(transaction.displayName)"
+                options[key] = ExpenseTypePoint(title: transaction.displayName, category: category, amount: 0)
+            }
+
+        return options.values.sorted { first, second in
+            first.title.localizedCaseInsensitiveCompare(second.title) == .orderedAscending
+        }
     }
     private var accountOccurrencesUntilToday: [TransactionOccurrence] {
-        guard let firstMonth = transactions.map(\.monthStart.monthStart).min() else { return [] }
-
-        return months(from: firstMonth, through: currentMonth).flatMap { month in
-            let maxDay = Calendar.current.isDate(month, equalTo: currentMonth, toGranularity: .month)
-                ? Calendar.current.component(.day, from: Date())
-                : month.daysInMonth
-
-            return transactions
-                .visible(in: month, payments: payments, exclusions: exclusions)
-                .filter { transaction in
-                    if transaction.kind == TransactionKind.income.rawValue {
-                        return transaction.effectiveDay(in: month) <= maxDay
-                    }
-
-                    return transaction.effectiveDay(in: month) <= maxDay || paidAmount(for: transaction, in: month) > 0
-                }
-                .map { TransactionOccurrence(transaction: $0, month: month) }
-        }
+        calculator.accountOccurrencesUntilToday(now: Date())
     }
 
     private var monthUnpaidExpenses: Double {
-        selectedTransactions
-            .filter { $0.kind == TransactionKind.expense.rawValue }
-            .reduce(0) { $0 + max($1.amount - paidAmount(for: $1, in: selectedMonth), 0) }
+        calculator.monthSummary(in: selectedMonth).unpaidExpenses
     }
 
     private var monthIncome: Double {
-        selectedTransactions
-            .filter { $0.kind == TransactionKind.income.rawValue }
-            .reduce(0) { $0 + $1.amount }
+        calculator.monthSummary(in: selectedMonth).income
     }
 
     private var monthExpenses: Double {
-        selectedTransactions
-            .filter { $0.kind == TransactionKind.expense.rawValue }
-            .reduce(0) { $0 + $1.amount }
+        calculator.monthSummary(in: selectedMonth).expenses
     }
 
     private var incomeUntilToday: Double {
-        accountOccurrencesUntilToday
-            .filter { $0.transaction.kind == TransactionKind.income.rawValue }
-            .reduce(0) { $0 + $1.transaction.amount }
+        calculator.accountSummary(until: Date()).incomeUntilToday
     }
 
     private var paidExpensesUntilToday: Double {
-        accountOccurrencesUntilToday
-            .filter { $0.transaction.kind == TransactionKind.expense.rawValue }
-            .reduce(0) { $0 + paidAmount(for: $1.transaction, in: $1.month) }
+        calculator.accountSummary(until: Date()).paidExpensesUntilToday
     }
 
-    private var inAccount: Double { incomeUntilToday - paidExpensesUntilToday }
-    private var monthRemaining: Double { monthIncome - monthExpenses }
-    private var currentMonthCategoryExpenses: [CategoryExpensePoint] {
-        categoryExpenses(in: currentMonth)
+    private var inAccount: Double { calculator.accountSummary(until: Date()).availableBalance }
+    private var monthRemaining: Double { calculator.monthSummary(in: selectedMonth).remaining }
+    private var selectedAnalyticsMonth: Date {
+        Calendar.current.date(byAdding: .month, value: selectedAnalyticsMonthOffset, to: Date().monthStart) ?? Date().monthStart
     }
-    private var currentMonthExpenseTotal: Double {
-        currentMonthCategoryExpenses.reduce(0) { $0 + $1.amount }
+    private var analyticsMonths: [Date] {
+        selectedAnalyticsPeriod == .month ? [selectedAnalyticsMonth] : currentYearMonths
     }
-    private var currentMonthExpenseTypePoints: [ExpenseTypePoint] {
-        expenseTypePoints(in: [currentMonth])
+    private var analyticsCategoryExpenses: [CategoryExpensePoint] {
+        calculator.categoryExpenses(in: analyticsMonths)
+    }
+    private var analyticsExpenseTotal: Double {
+        analyticsCategoryExpenses.reduce(0) { $0 + $1.amount }
+    }
+    private var analyticsExpenseTypePoints: [ExpenseTypePoint] {
+        expenseTypePoints(in: analyticsMonths)
     }
     private var budgetReferencePoints: [CategoryExpensePoint] {
         [
@@ -179,17 +237,7 @@ struct ContentView: View {
         ]
     }
     private var annualBalancePoints: [MonthlyBalancePoint] {
-        currentYearMonths.map { month in
-            let monthTransactions = transactions.visible(in: month, payments: payments, exclusions: exclusions)
-            let income = monthTransactions
-                .filter { $0.kind == TransactionKind.income.rawValue }
-                .reduce(0) { $0 + $1.amount }
-            let expenses = monthTransactions
-                .filter { $0.kind == TransactionKind.expense.rawValue }
-                .reduce(0) { $0 + $1.amount }
-
-            return MonthlyBalancePoint(month: month, income: income, expenses: expenses)
-        }
+        calculator.annualBalancePoints(in: currentYearMonths)
     }
     private var annualBalanceTotal: Double {
         annualBalancePoints.reduce(0) { $0 + $1.balance }
@@ -202,59 +250,18 @@ struct ContentView: View {
             .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
     private var yearSavingsPoints: [MonthlyBalancePoint] {
-        currentYearMonths.map { month in
-            MonthlyBalancePoint(
-                month: month,
-                income: 0,
-                expenses: expenseAmount(in: month, matching: ["poup", "saving"], paidOnly: false)
-            )
-        }
+        calculator.yearSavingsPoints(in: currentYearMonths)
     }
     private var analyticsInsights: [AnalyticsInsight] {
-        let previousMonth = currentMonth.previousMonthStart
-        guard paidExpenseTotal(in: previousMonth) > 0 else { return [] }
-
-        var insights: [AnalyticsInsight] = []
-        let currentRestaurants = expenseAmount(in: currentMonth, matching: ["refeic", "restaurante"], paidOnly: true)
-        let previousRestaurants = expenseAmount(in: previousMonth, matching: ["refeic", "restaurante"], paidOnly: true)
-        if previousRestaurants > 0, currentRestaurants > previousRestaurants {
-            insights.append(AnalyticsInsight(
-                title: AppStrings.text(.paidInsights),
-                message: String(format: AppStrings.text(.restaurantsIncreasedInsight), percentageText(currentRestaurants - previousRestaurants, total: previousRestaurants))
-            ))
-        }
-
-        let currentGroceries = expenseAmount(in: currentMonth, matching: ["aliment", "supermercado"], paidOnly: true)
-        let previousGroceries = expenseAmount(in: previousMonth, matching: ["aliment", "supermercado"], paidOnly: true)
-        if previousGroceries > 0, currentGroceries < previousGroceries {
-            insights.append(AnalyticsInsight(
-                title: AppStrings.text(.paidInsights),
-                message: String(format: AppStrings.text(.groceriesDecreasedInsight), percentageText(previousGroceries - currentGroceries, total: previousGroceries))
-            ))
-        }
-
-        let currentSavings = categoryAmount(in: currentMonth, category: .savingsAndDebt, paidOnly: true)
-        let previousSavings = categoryAmount(in: previousMonth, category: .savingsAndDebt, paidOnly: true)
-        if currentSavings > previousSavings {
-            insights.append(AnalyticsInsight(
-                title: AppStrings.text(.paidInsights),
-                message: String(format: AppStrings.text(.savingsIncreasedInsight), (currentSavings - previousSavings).currencyText)
-            ))
-        }
-
-        let subscriptions = expenseAmount(in: currentMonth, matching: ["subscr"], paidOnly: true)
-        let income = incomeTotal(in: currentMonth)
-        if income > 0, subscriptions > 0 {
-            insights.append(AnalyticsInsight(
-                title: AppStrings.text(.paidInsights),
-                message: String(format: AppStrings.text(.subscriptionsIncomeInsight), percentageText(subscriptions, total: income))
-            ))
-        }
-
-        return insights
+        calculator.analyticsInsights(currentMonth: currentMonth)
     }
-    private var currentMonthAnalysisTitle: String {
-        "\(AppStrings.text(.monthAnalysis)) \(currentMonth.monthTitle)"
+    private var analyticsAnalysisTitle: String {
+        switch selectedAnalyticsPeriod {
+        case .month:
+            "\(AppStrings.text(.monthAnalysis)) \(selectedAnalyticsMonth.monthTitle)"
+        case .year:
+            "\(AppStrings.text(.annualBalance)) \(currentYear)"
+        }
     }
     private var currentAdvice: (title: String, message: String) {
         let adviceCards = AppStrings.analyticsAdviceCards
@@ -271,86 +278,74 @@ struct ContentView: View {
     }
 
     private func categoryExpenses(in month: Date) -> [CategoryExpensePoint] {
-        let monthTransactions = transactions.visible(in: month, payments: payments, exclusions: exclusions)
-
-        return ExpenseCategory.allCases.map { category in
-            let amount = monthTransactions
-                .filter { transaction in
-                    transaction.kind == TransactionKind.expense.rawValue && transaction.expenseCategory == category.rawValue
-                }
-                .reduce(0) { $0 + $1.amount }
-
-            return CategoryExpensePoint(category: category, amount: amount)
-        }
+        calculator.categoryExpenses(in: month)
     }
 
     private func expenseTypePoints(in months: [Date]) -> [ExpenseTypePoint] {
-        var totals: [String: (title: String, category: ExpenseCategory, amount: Double)] = [:]
-
-        months.forEach { month in
-            transactions
-                .visible(in: month, payments: payments, exclusions: exclusions)
-                .filter { $0.kind == TransactionKind.expense.rawValue }
-                .forEach { transaction in
-                    let category = ExpenseCategory(rawValue: transaction.expenseCategory ?? "") ?? .needs
-                    let title = transaction.displayName.isEmpty ? AppStrings.text(.expense) : transaction.displayName
-                    let key = "\(category.rawValue)-\(title)"
-                    let currentAmount = totals[key]?.amount ?? 0
-                    totals[key] = (title, category, currentAmount + transaction.amount)
-                }
-        }
-
-        return totals.values
-            .map { ExpenseTypePoint(title: $0.title, category: $0.category, amount: $0.amount) }
-            .sorted { first, second in
-                if first.amount != second.amount {
-                    return first.amount > second.amount
-                }
-
-                return first.title.localizedCaseInsensitiveCompare(second.title) == .orderedAscending
-            }
+        calculator.expenseTypePoints(in: months, fallbackTitle: AppStrings.text(.expense))
     }
 
     private func incomeTotal(in month: Date) -> Double {
-        transactions
-            .visible(in: month, payments: payments, exclusions: exclusions)
-            .filter { $0.kind == TransactionKind.income.rawValue }
-            .reduce(0) { $0 + $1.amount }
+        calculator.incomeTotal(in: month)
     }
 
     private func paidExpenseTotal(in month: Date) -> Double {
-        transactions
-            .visible(in: month, payments: payments, exclusions: exclusions)
-            .filter { $0.kind == TransactionKind.expense.rawValue }
-            .reduce(0) { $0 + paidAmount(for: $1, in: month) }
+        calculator.paidExpenseTotal(in: month)
     }
 
     private func categoryAmount(in month: Date, category: ExpenseCategory, paidOnly: Bool) -> Double {
-        transactions
-            .visible(in: month, payments: payments, exclusions: exclusions)
-            .filter { transaction in
-                transaction.kind == TransactionKind.expense.rawValue && transaction.expenseCategory == category.rawValue
-            }
-            .reduce(0) { total, transaction in
-                total + (paidOnly ? paidAmount(for: transaction, in: month) : transaction.amount)
-            }
+        calculator.categoryAmount(in: month, category: category, paidOnly: paidOnly)
     }
 
     private func expenseAmount(in month: Date, matching keywords: [String], paidOnly: Bool) -> Double {
-        transactions
-            .visible(in: month, payments: payments, exclusions: exclusions)
-            .filter { transaction in
-                guard transaction.kind == TransactionKind.expense.rawValue else { return false }
-                let searchableText = normalized("\(transaction.displayName) \(transaction.title)")
-                return keywords.contains { searchableText.contains($0) }
-            }
-            .reduce(0) { total, transaction in
-                total + (paidOnly ? paidAmount(for: transaction, in: month) : transaction.amount)
-            }
+        calculator.expenseAmount(in: month, matching: keywords, paidOnly: paidOnly)
     }
 
     private func normalized(_ value: String) -> String {
-        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+        MoneyCalculationService.normalized(value)
+    }
+
+    private func filteredTransactions(in month: Date) -> [MoneyTransaction] {
+        calculator
+            .visibleTransactions(in: month)
+            .filter { transactionMatchesCurrentAccountFilters($0, in: month) }
+    }
+
+    private func transactionMatchesCurrentAccountFilters(_ transaction: MoneyTransaction, in month: Date) -> Bool {
+        if paymentFilter != .all {
+            guard transaction.kind == TransactionKind.expense.rawValue else { return false }
+            let paid = isPaid(transaction, in: month)
+            if paymentFilter == .paid && !paid { return false }
+            if paymentFilter == .unpaid && paid { return false }
+        }
+
+        if !filteredCategories.isEmpty {
+            guard transaction.kind == TransactionKind.expense.rawValue,
+                  let category = ExpenseCategory(rawValue: transaction.expenseCategory ?? ""),
+                  filteredCategories.contains(category)
+            else { return false }
+        }
+
+        if !filteredExpenseType.isEmpty {
+            guard transaction.kind == TransactionKind.expense.rawValue,
+                  transaction.displayName == filteredExpenseType
+            else { return false }
+        }
+
+        let searchText = normalized(freeTextFilter.trimmingCharacters(in: .whitespacesAndNewlines))
+        if !searchText.isEmpty {
+            let transactionText = normalized("\(transaction.displayName) \(transaction.title) \(transaction.detailText(in: month))")
+            guard transactionText.contains(searchText) else { return false }
+        }
+
+        return true
+    }
+
+    private func clearCurrentAccountFilters() {
+        paymentFilter = .all
+        filteredCategories = []
+        filteredExpenseType = ""
+        freeTextFilter = ""
     }
 
     var body: some View {
@@ -382,8 +377,28 @@ struct ContentView: View {
             .sheet(item: $editorRequest) { request in
                 TransactionEditor(request: request)
             }
+            .sheet(item: $paymentEditorRequest) { request in
+                PaymentAmountPicker(
+                    title: request.transaction.displayName,
+                    totalAmount: request.transaction.amount,
+                    initialAmount: request.initialAmount,
+                    onConfirm: { amount in
+                        setPaidAmount(request.transaction, in: request.month, amount: amount)
+                    }
+                )
+            }
             .sheet(isPresented: $showsSettings) {
                 SettingsEditor()
+            }
+            .sheet(isPresented: $showsFilters) {
+                CurrentAccountFilterView(
+                    paymentFilter: $paymentFilter,
+                    filteredCategories: $filteredCategories,
+                    filteredExpenseType: $filteredExpenseType,
+                    freeTextFilter: $freeTextFilter,
+                    expenseTypeOptions: selectedMonthExpenseTypeOptions,
+                    onClear: clearCurrentAccountFilters
+                )
             }
             .alert(item: $expenseNotice) { notice in
                 Alert(
@@ -393,6 +408,13 @@ struct ContentView: View {
                 )
             }
             .onAppear(perform: handleAppear)
+            .task(id: notificationScheduleSignature) {
+                await refreshExpensePaymentNotifications()
+            }
+            .onChange(of: paymentFilter) { _, _ in persistCurrentAccountFilters() }
+            .onChange(of: filteredCategories) { _, _ in persistCurrentAccountFilters() }
+            .onChange(of: filteredExpenseType) { _, _ in persistCurrentAccountFilters() }
+            .onChange(of: freeTextFilter) { _, _ in persistCurrentAccountFilters() }
             .id(selectedCurrencyCode)
         }
     }
@@ -403,22 +425,20 @@ struct ContentView: View {
 
             monthHeader
 
-            TabView(selection: $selectedMonthOffset) {
-                ForEach(monthOffsets, id: \.self) { offset in
-                    let month = Calendar.current.date(byAdding: .month, value: offset, to: Date().monthStart) ?? Date().monthStart
-
-                    MonthPage(
-                        month: month,
-                        transactions: transactions.visible(in: month, payments: payments, exclusions: exclusions),
-                        payments: payments,
-                        onSetPaidAmount: setPaidAmount,
-                        onEdit: { editorRequest = TransactionEditorRequest(transaction: $0, month: month, editScope: $0.isRecurring ? .singleMonth : .normal) },
-                        onDelete: { deleteTransaction($0, in: month) }
-                    )
-                    .tag(offset)
-                }
-            }
-            .monthPagerStyle()
+            MonthPage(
+                month: selectedMonth,
+                transactions: filteredTransactions(in: selectedMonth),
+                payments: payments,
+                creditAccounts: creditAccounts,
+                onPay: { transaction, month, initialAmount in
+                    paymentEditorRequest = PaymentEditorRequest(transaction: transaction, month: month, initialAmount: initialAmount)
+                },
+                onEdit: { editorRequest = TransactionEditorRequest(transaction: $0, month: selectedMonth, editScope: $0.isRecurring ? .singleMonth : .normal) },
+                onDelete: { deleteTransaction($0, in: selectedMonth) }
+            )
+            .id(selectedMonthOffset)
+            .transition(monthPageTransition)
+            .animation(.snappy, value: selectedMonthOffset)
 
             monthNavigationBar
                 .padding(.horizontal)
@@ -428,10 +448,20 @@ struct ContentView: View {
         }
     }
 
+    private var monthPageTransition: AnyTransition {
+        let insertionEdge: Edge = monthNavigationDirection > 0 ? .trailing : .leading
+        let removalEdge: Edge = monthNavigationDirection > 0 ? .leading : .trailing
+
+        return .asymmetric(
+            insertion: .move(edge: insertionEdge).combined(with: .opacity),
+            removal: .move(edge: removalEdge).combined(with: .opacity)
+        )
+    }
+
     private var monthHeader: some View {
         HStack(spacing: 16) {
             monthArrowButton(systemImage: "chevron.left") {
-                selectedMonthOffset = max(selectedMonthOffset - 1, monthOffsets.first ?? 0)
+                moveMonth(by: -1)
             }
             .disabled(selectedMonthOffset <= (monthOffsets.first ?? 0))
             .opacity(selectedMonthOffset <= (monthOffsets.first ?? 0) ? 0.35 : 1)
@@ -444,7 +474,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
 
             monthArrowButton(systemImage: "chevron.right") {
-                selectedMonthOffset = min(selectedMonthOffset + 1, monthOffsets.last ?? 0)
+                moveMonth(by: 1)
             }
             .disabled(selectedMonthOffset >= (monthOffsets.last ?? 0))
             .opacity(selectedMonthOffset >= (monthOffsets.last ?? 0) ? 0.35 : 1)
@@ -453,6 +483,12 @@ struct ContentView: View {
         .padding(.top, 8)
         .padding(.bottom, 6)
         .background(AppPalette.appBackground)
+    }
+
+    private func moveMonth(by value: Int) {
+        monthNavigationDirection = value
+        let nextOffset = selectedMonthOffset + value
+        selectedMonthOffset = min(max(nextOffset, monthOffsets.first ?? 0), monthOffsets.last ?? 0)
     }
 
     private func monthArrowButton(systemImage: String, action: @escaping () -> Void) -> some View {
@@ -479,10 +515,12 @@ struct ContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 chartCard(
-                    title: currentMonthAnalysisTitle,
-                    total: currentMonthExpenseTotal
+                    title: analyticsAnalysisTitle,
+                    total: analyticsExpenseTotal
                 ) {
                     VStack(alignment: .leading, spacing: 14) {
+                        analyticsPeriodControls
+
                         Picker("", selection: $selectedAnalyticsExpenseTab) {
                             Text(AppStrings.text(.whereSpent)).tag(AnalyticsExpenseTab.whereSpent)
                             Text(AppStrings.text(.budgetRule)).tag(AnalyticsExpenseTab.budgetRule)
@@ -492,13 +530,13 @@ struct ContentView: View {
 
                         switch selectedAnalyticsExpenseTab {
                         case .whereSpent:
-                            expenseTypePieChart(points: currentMonthExpenseTypePoints, total: currentMonthExpenseTotal)
+                            expenseTypePieChart(points: analyticsExpenseTypePoints, total: analyticsExpenseTotal)
                         case .budgetRule:
                             HStack(alignment: .top, spacing: 16) {
                                 pieChartColumn(
                                     title: AppStrings.text(.actualExpenses),
-                                    points: currentMonthCategoryExpenses,
-                                    total: currentMonthExpenseTotal
+                                    points: analyticsCategoryExpenses,
+                                    total: analyticsExpenseTotal
                                 )
 
                                 pieChartColumn(
@@ -522,6 +560,56 @@ struct ContentView: View {
             .padding()
         }
         .background(AppPalette.appBackground)
+    }
+
+    private var analyticsPeriodControls: some View {
+        VStack(spacing: 10) {
+            Picker("", selection: $selectedAnalyticsPeriod) {
+                Text(AppStrings.text(.month)).tag(AnalyticsPeriod.month)
+                Text(AppStrings.text(.year)).tag(AnalyticsPeriod.year)
+            }
+            .pickerStyle(.segmented)
+            .tint(AppPalette.background)
+
+            if selectedAnalyticsPeriod == .month {
+                HStack(spacing: 12) {
+                    analyticsMonthArrowButton(systemImage: "chevron.left") {
+                        moveAnalyticsMonth(by: -1)
+                    }
+                    .disabled(selectedAnalyticsMonthOffset <= (monthOffsets.first ?? 0))
+                    .opacity(selectedAnalyticsMonthOffset <= (monthOffsets.first ?? 0) ? 0.35 : 1)
+
+                    Text(selectedAnalyticsMonth.monthTitle)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(AppPalette.background)
+                        .frame(maxWidth: .infinity)
+
+                    analyticsMonthArrowButton(systemImage: "chevron.right") {
+                        moveAnalyticsMonth(by: 1)
+                    }
+                    .disabled(selectedAnalyticsMonthOffset >= (monthOffsets.last ?? 0))
+                    .opacity(selectedAnalyticsMonthOffset >= (monthOffsets.last ?? 0) ? 0.35 : 1)
+                }
+            }
+        }
+    }
+
+    private func analyticsMonthArrowButton(systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(AppPalette.primary)
+                .frame(width: 38, height: 34)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func moveAnalyticsMonth(by value: Int) {
+        let nextOffset = selectedAnalyticsMonthOffset + value
+        withAnimation(.snappy) {
+            selectedAnalyticsMonthOffset = min(max(nextOffset, monthOffsets.first ?? 0), monthOffsets.last ?? 0)
+        }
     }
 
     private var analyticsInsightCarouselCard: some View {
@@ -992,7 +1080,6 @@ struct ContentView: View {
             .resizable()
             .scaledToFit()
             .frame(width: 34, height: 34)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private var settingsToolbarButton: some View {
@@ -1078,6 +1165,8 @@ struct ContentView: View {
 
             Spacer()
 
+            filterButton
+
             Button {
                 withAnimation(.snappy) {
                     showsQuickActions.toggle()
@@ -1096,6 +1185,34 @@ struct ContentView: View {
         }
         .padding(.horizontal)
         .padding(.bottom, 0)
+    }
+
+    private var filterButton: some View {
+        Button {
+            showsFilters = true
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.title2)
+                    .frame(width: 58, height: 58)
+                    .foregroundStyle(AppPalette.background)
+                    .background(AppPalette.surface, in: Circle())
+                    .shadow(color: AppPalette.background.opacity(0.08), radius: 12, y: 7)
+
+                if activeFilterCount > 0 {
+                    Text("\(activeFilterCount)")
+                        .font(.caption2.bold())
+                        .foregroundStyle(AppPalette.surface)
+                        .frame(width: 22, height: 22)
+                        .background(AppPalette.primary, in: Circle())
+                        .offset(x: 2, y: -2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(selectedTab != .currentAccount)
+        .opacity(selectedTab == .currentAccount ? 1 : 0.35)
+        .accessibilityLabel(AppStrings.text(.filters))
     }
 
     private func bottomTabButton(
@@ -1155,7 +1272,125 @@ struct ContentView: View {
     }
 
     private func handleAppear() {
+        loadStoredCurrentAccountFilters()
         checkOverdueExpenses()
+    }
+
+    private func loadStoredCurrentAccountFilters() {
+        guard !didLoadStoredFilters else { return }
+        didLoadStoredFilters = true
+
+        paymentFilter = CurrentAccountPaymentFilter(rawValue: storedPaymentFilter) ?? .all
+        filteredCategories = Set(storedFilteredCategories
+            .split(separator: ",")
+            .compactMap { ExpenseCategory(rawValue: String($0)) })
+        filteredExpenseType = storedFilteredExpenseType
+        freeTextFilter = storedFreeTextFilter
+    }
+
+    private func persistCurrentAccountFilters() {
+        storedPaymentFilter = paymentFilter.rawValue
+        storedFilteredCategories = filteredCategories
+            .map(\.rawValue)
+            .sorted()
+            .joined(separator: ",")
+        storedFilteredExpenseType = filteredExpenseType
+        storedFreeTextFilter = freeTextFilter
+    }
+
+    private func refreshExpensePaymentNotifications() async {
+        let reminders = upcomingExpensePaymentReminders()
+        let center = UNUserNotificationCenter.current()
+        let pendingRequests = await center.pendingNotificationRequests()
+        let existingReminderIDs = pendingRequests
+            .map(\.identifier)
+            .filter { $0.hasPrefix("spendwise-expense-due-") }
+        center.removePendingNotificationRequests(withIdentifiers: existingReminderIDs)
+
+        guard !reminders.isEmpty else { return }
+
+        let settings = await center.notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            break
+        case .notDetermined:
+            do {
+                let isAllowed = try await center.requestAuthorization(options: [.alert, .sound])
+                guard isAllowed else { return }
+            } catch {
+                return
+            }
+        case .denied:
+            return
+        @unknown default:
+            return
+        }
+
+        for reminder in reminders.prefix(60) {
+            let content = UNMutableNotificationContent()
+            content.title = reminder.title
+            content.body = reminder.body
+            content.sound = .default
+
+            let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: reminder.fireDate)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            let request = UNNotificationRequest(identifier: reminder.identifier, content: content, trigger: trigger)
+            try? await center.add(request)
+        }
+    }
+
+    private func upcomingExpensePaymentReminders() -> [ExpensePaymentReminder] {
+        let now = Date()
+        let calendar = Calendar.current
+        let months = (0...4).compactMap { calendar.date(byAdding: .month, value: $0, to: currentMonth) }
+
+        return months
+            .flatMap { month in
+                transactions
+                    .visible(in: month, payments: payments, exclusions: exclusions)
+                    .filter { transaction in
+                        transaction.kind == TransactionKind.expense.rawValue && !isPaid(transaction, in: month)
+                    }
+                    .compactMap { reminder(for: $0, in: month, now: now) }
+            }
+            .filter { $0.fireDate > now }
+            .sorted { $0.fireDate < $1.fireDate }
+    }
+
+    private func reminder(for transaction: MoneyTransaction, in month: Date, now: Date) -> ExpensePaymentReminder? {
+        let calendar = Calendar.current
+        let dueDay = transaction.effectiveDay(in: month)
+        guard let dueDate = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: month.date(day: dueDay)) else {
+            return nil
+        }
+        guard let reminderDay = calendar.date(byAdding: .day, value: -1, to: dueDate) else {
+            return nil
+        }
+
+        var fireDate = reminderDay
+        if fireDate <= now, calendar.isDate(fireDate, inSameDayAs: now), dueDate > now {
+            fireDate = now.addingTimeInterval(60)
+        }
+
+        guard fireDate > now else { return nil }
+
+        let freeText = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let type = transaction.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let primaryText = freeText.isEmpty ? type : freeText
+        let body: String
+        if freeText.isEmpty || type.isEmpty || freeText == type {
+            body = String(format: AppStrings.text(.expenseDueTomorrowBody), primaryText, dueDay)
+        } else {
+            body = String(format: AppStrings.text(.expenseDueTomorrowBodyWithType), primaryText, dueDay, type)
+        }
+
+        let identifier = "spendwise-expense-due-\(transaction.id.uuidString)-\(month.notificationIdentifierDate)"
+        return ExpensePaymentReminder(
+            identifier: identifier,
+            title: AppStrings.text(.expenseDueTomorrowTitle),
+            body: body,
+            fireDate: fireDate
+        )
     }
 
     private func checkOverdueExpenses() {
@@ -1207,11 +1442,7 @@ struct ContentView: View {
             .sorted { first, second in
                 let firstDay = first.effectiveDay(in: month)
                 let secondDay = second.effectiveDay(in: month)
-
-                if firstDay != secondDay {
-                    return firstDay < secondDay
-                }
-
+                if firstDay != secondDay { return firstDay < secondDay }
                 return first.displayName < second.displayName
             }
     }
@@ -1225,22 +1456,15 @@ struct ContentView: View {
     }
 
     private func months(from startMonth: Date, through endMonth: Date) -> [Date] {
-        let monthCount = Calendar.current.dateComponents([.month], from: startMonth.monthStart, to: endMonth.monthStart).month ?? 0
-        guard monthCount >= 0 else { return [] }
-
-        return (0...monthCount).compactMap {
-            Calendar.current.date(byAdding: .month, value: $0, to: startMonth.monthStart)
-        }
+        MoneyCalculationService.months(from: startMonth, through: endMonth)
     }
 
     private func isPaid(_ transaction: MoneyTransaction, in month: Date) -> Bool {
-        paidAmount(for: transaction, in: month) >= transaction.amount
+        calculator.isPaid(transaction, in: month)
     }
 
     private func paidAmount(for transaction: MoneyTransaction, in month: Date) -> Double {
-        guard transaction.kind == TransactionKind.expense.rawValue else { return 0 }
-        guard let payment = payments.first(where: { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }) else { return 0 }
-        return min(payment.amountPaid ?? transaction.amount, transaction.amount)
+        calculator.paidAmount(for: transaction, in: month)
     }
 
     private func setPaidAmount(_ transaction: MoneyTransaction, in month: Date, amount: Double) {
@@ -1255,6 +1479,44 @@ struct ContentView: View {
         } else if clampedAmount > 0 {
             modelContext.insert(ExpensePayment(transactionID: transaction.id, monthStart: month.monthStart, amountPaid: clampedAmount))
         }
+
+        syncLinkedCreditPayment(for: transaction, in: month, paidAmount: clampedAmount)
+    }
+
+    private func syncLinkedCreditPayment(for transaction: MoneyTransaction, in month: Date, paidAmount: Double) {
+        guard let linkedCreditID = transaction.linkedCreditID else { return }
+
+        if paidAmount <= 0 {
+            if let linkedCreditMovementID = transaction.linkedCreditMovementID,
+               let movement = creditMovements.first(where: { $0.id == linkedCreditMovementID }) {
+                modelContext.delete(movement)
+            }
+            transaction.linkedCreditMovementID = nil
+            return
+        }
+
+        let note = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? transaction.displayName
+            : transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let linkedCreditMovementID = transaction.linkedCreditMovementID,
+           let movement = creditMovements.first(where: { $0.id == linkedCreditMovementID }) {
+            movement.creditID = linkedCreditID
+            movement.date = month.date(day: transaction.effectiveDay(in: month))
+            movement.type = CreditMovementKind.payment.rawValue
+            movement.amount = paidAmount
+            movement.note = note
+        } else {
+            let movement = CreditMovement(
+                creditID: linkedCreditID,
+                date: month.date(day: transaction.effectiveDay(in: month)),
+                type: CreditMovementKind.payment.rawValue,
+                amount: paidAmount,
+                note: note
+            )
+            modelContext.insert(movement)
+            transaction.linkedCreditMovementID = movement.id
+        }
     }
 
     private func deleteTransaction(_ transaction: MoneyTransaction, in month: Date) {
@@ -1264,6 +1526,10 @@ struct ContentView: View {
                 .filter { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month) }
                 .forEach(modelContext.delete)
         } else {
+            if let linkedCreditMovementID = transaction.linkedCreditMovementID,
+               let movement = creditMovements.first(where: { $0.id == linkedCreditMovementID }) {
+                modelContext.delete(movement)
+            }
             payments
                 .filter { $0.transactionID == transaction.id }
                 .forEach(modelContext.delete)
@@ -1277,6 +1543,176 @@ struct ContentView: View {
         }
 
         modelContext.insert(RecurrenceExclusion(transactionID: transaction.id, monthStart: month.monthStart))
+    }
+}
+
+private struct CurrentAccountFilterView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var paymentFilter: CurrentAccountPaymentFilter
+    @Binding var filteredCategories: Set<ExpenseCategory>
+    @Binding var filteredExpenseType: String
+    @Binding var freeTextFilter: String
+
+    let expenseTypeOptions: [ExpenseTypePoint]
+    let onClear: () -> Void
+
+    private var visibleExpenseTypeOptions: [ExpenseTypePoint] {
+        expenseTypeOptions.filter { option in
+            filteredCategories.isEmpty || filteredCategories.contains(option.category)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(AppStrings.text(.paymentStatus)) {
+                    Picker(AppStrings.text(.paymentStatus), selection: $paymentFilter) {
+                        ForEach(CurrentAccountPaymentFilter.allCases) { filter in
+                            Text(filter.title).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section(AppStrings.text(.categories)) {
+                    ForEach(ExpenseCategory.allCases) { category in
+                        Toggle(category.title, isOn: Binding(
+                            get: { filteredCategories.contains(category) },
+                            set: { isOn in
+                                if isOn {
+                                    filteredCategories.insert(category)
+                                } else {
+                                    filteredCategories.remove(category)
+                                }
+
+                                let visibleTypes = visibleExpenseTypeOptions.map(\.title)
+                                if !filteredExpenseType.isEmpty && !visibleTypes.contains(filteredExpenseType) {
+                                    filteredExpenseType = ""
+                                }
+                            }
+                        ))
+                    }
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section(AppStrings.text(.expenseTypeFilter)) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            expenseTypeFilterButton(
+                                title: AppStrings.text(.all),
+                                systemImage: "square.grid.2x2.fill",
+                                isSelected: filteredExpenseType.isEmpty
+                            ) {
+                                filteredExpenseType = ""
+                            }
+
+                            ForEach(visibleExpenseTypeOptions) { option in
+                                expenseTypeFilterButton(
+                                    title: option.title,
+                                    systemImage: expenseIconName(for: option.title),
+                                    isSelected: filteredExpenseType == option.title
+                                ) {
+                                    filteredExpenseType = option.title
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section(AppStrings.text(.freeTextFilter)) {
+                    TextField(AppStrings.text(.searchPlaceholder), text: $freeTextFilter)
+                        .textInputAutocapitalization(.never)
+                }
+                .listRowBackground(AppPalette.surface)
+            }
+            .scrollContentBackground(.hidden)
+            .background(AppPalette.appBackground)
+            .foregroundStyle(AppPalette.background)
+            .tint(AppPalette.background)
+            .navigationTitle(AppStrings.text(.filters))
+            .toolbarBackground(AppPalette.appBackground, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(AppStrings.text(.clearFilters), action: onClear)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(AppStrings.text(.ok)) { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func expenseTypeFilterButton(title: String, systemImage: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(isSelected ? AppPalette.primary : AppPalette.mutedText)
+                    .frame(width: 44, height: 44)
+
+                Text(title)
+                    .font(.caption2.weight(isSelected ? .bold : .semibold))
+                    .foregroundStyle(isSelected ? AppPalette.background : AppPalette.mutedText)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 82)
+                    .frame(minHeight: 28)
+            }
+            .frame(width: 92)
+            .frame(minHeight: 78)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func expenseIconName(for title: String) -> String {
+        let normalizedTitle = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+
+        if normalizedTitle.contains("transport") || normalizedTitle.contains("combustivel") || normalizedTitle.contains("carro") {
+            return "car.fill"
+        }
+        if normalizedTitle.contains("aliment") || normalizedTitle.contains("supermercado") || normalizedTitle.contains("refeic") {
+            return "fork.knife"
+        }
+        if normalizedTitle.contains("habit") || normalizedTitle.contains("renda") || normalizedTitle.contains("credito") || normalizedTitle.contains("casa") {
+            return "house.fill"
+        }
+        if normalizedTitle.contains("eletric") || normalizedTitle.contains("gas") || normalizedTitle.contains("agua") || normalizedTitle.contains("telecom") || normalizedTitle.contains("contas") {
+            return "lightbulb.fill"
+        }
+        if normalizedTitle.contains("seguro") {
+            return "shield.fill"
+        }
+        if normalizedTitle.contains("subscr") {
+            return "play.rectangle.fill"
+        }
+        if normalizedTitle.contains("lazer") || normalizedTitle.contains("entreten") {
+            return "sparkles"
+        }
+        if normalizedTitle.contains("viagem") || normalizedTitle.contains("ferias") {
+            return "airplane"
+        }
+        if normalizedTitle.contains("roupa") || normalizedTitle.contains("acessor") || normalizedTitle.contains("compras") {
+            return "bag.fill"
+        }
+        if normalizedTitle.contains("poup") {
+            return "leaf.fill"
+        }
+        if normalizedTitle.contains("divida") || normalizedTitle.contains("amort") {
+            return "creditcard.fill"
+        }
+
+        return "ellipsis.circle.fill"
+    }
+}
+
+private extension Array where Element == String {
+    func uniquedSorted() -> [String] {
+        Array(Set(self)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 }
 

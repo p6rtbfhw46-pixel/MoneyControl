@@ -11,6 +11,8 @@ struct TransactionEditor: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var exclusions: [RecurrenceExclusion]
     @Query private var payments: [ExpensePayment]
+    @Query private var creditAccounts: [CreditAccount]
+    @Query private var creditMovements: [CreditMovement]
     @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
 
     let request: TransactionEditorRequest
@@ -26,9 +28,11 @@ struct TransactionEditor: View {
     @State private var endYear = Calendar.current.component(.year, from: Date())
     @State private var showsDayPicker = false
     @State private var validationMessage: String?
+    @State private var markExpenseAsPaid = false
     @State private var didLoad = false
     @State private var showsSingleMonthRecurringEditInfo = false
     @State private var hasConfirmedSingleMonthRecurringEditInfo = false
+    @State private var selectedCreditID: UUID?
 
     private var mode: TransactionEditorMode { request.mode }
     private var editedTransaction: MoneyTransaction? { request.transaction }
@@ -42,6 +46,26 @@ struct TransactionEditor: View {
     }
     private var isSingleMonthRecurringEdit: Bool {
         request.editScope == .singleMonth && editedTransaction?.isRecurring == true
+    }
+    private var canMarkExpenseAsPaid: Bool {
+        mode == .expense && editedTransaction == nil
+    }
+    private var activeCreditAccounts: [CreditAccount] {
+        creditAccounts
+            .filter { $0.creditStatus == .active }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+    private var shouldShowCreditPicker: Bool {
+        mode == .expense
+            && expenseCategory == .savingsAndDebt
+            && isDebtAmortizationExpense
+            && !activeCreditAccounts.isEmpty
+    }
+    private var isDebtAmortizationExpense: Bool {
+        let normalizedName = expenseName
+            .folding(options: .diacriticInsensitive, locale: .current)
+            .lowercased()
+        return normalizedName.contains("amort") || normalizedName.contains("divida") || normalizedName.contains("debt")
     }
     private var expenseCategoryBinding: Binding<ExpenseCategory?> {
         Binding(
@@ -75,7 +99,7 @@ struct TransactionEditor: View {
                 }
 
                 Form {
-                    if mode.needsExpenseClassification {
+                if mode.needsExpenseClassification {
                     Section(AppStrings.text(.classification)) {
                         HStack(spacing: 10) {
                             Text(AppStrings.text(.category503020))
@@ -107,6 +131,16 @@ struct TransactionEditor: View {
                         .font(.headline)
                         .tint(AppPalette.background)
                         .disabled(expenseCategory == nil)
+
+                        if shouldShowCreditPicker {
+                            Picker(CreditStrings.text(.credit), selection: $selectedCreditID) {
+                                Text(CreditStrings.text(.selectCredit)).tag(nil as UUID?)
+                                ForEach(activeCreditAccounts) { credit in
+                                    Text(credit.name).tag(credit.id as UUID?)
+                                }
+                            }
+                            .tint(AppPalette.background)
+                        }
                     }
                     .listRowBackground(AppPalette.surface)
                 }
@@ -158,7 +192,7 @@ struct TransactionEditor: View {
                         .listRowBackground(AppPalette.appBackground)
                 }
 
-                Section(mode.sectionTitle) {
+                Section {
                     TextField(
                         "",
                         text: $title,
@@ -186,6 +220,22 @@ struct TransactionEditor: View {
                         maximumAmount: 1_000_000,
                         onConfirm: save
                     )
+                } header: {
+                    HStack(spacing: 12) {
+                        Text(mode.sectionTitle)
+
+                        Spacer()
+
+                        if canMarkExpenseAsPaid {
+                            Toggle(isOn: $markExpenseAsPaid) {
+                                Text(markExpenseAsPaid ? AppStrings.text(.paidExpense) : AppStrings.text(.unpaidExpense))
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .toggleStyle(.switch)
+                            .tint(AppPalette.primary)
+                            .fixedSize()
+                        }
+                    }
                 }
                 .listRowBackground(AppPalette.surface)
 
@@ -247,6 +297,7 @@ struct TransactionEditor: View {
         amountValue = transaction.amount
         expenseCategory = ExpenseCategory(rawValue: transaction.expenseCategory ?? "")
         expenseName = transaction.expenseName ?? ""
+        selectedCreditID = transaction.linkedCreditID
         recurrenceMonth = transaction.recurrenceMonth > 0 ? transaction.recurrenceMonth : Calendar.current.component(.month, from: transaction.monthStart)
 
         if let endMonthStart = transaction.recurrenceEndMonthStart?.previousMonthStart {
@@ -340,6 +391,8 @@ struct TransactionEditor: View {
         }
 
         finishSaving(transaction)
+        markAsFullyPaidIfNeeded(transaction, value: value)
+        syncLinkedCreditPaymentIfNeeded(transaction, value: value)
     }
 
     private func saveIncome(value: Double, title: String) {
@@ -397,6 +450,72 @@ struct TransactionEditor: View {
             }
             modelContext.insert(transaction)
         }
+    }
+
+    private func markAsFullyPaidIfNeeded(_ transaction: MoneyTransaction, value: Double) {
+        guard canMarkExpenseAsPaid, markExpenseAsPaid else { return }
+
+        let paymentMonth = request.month.monthStart
+        if let payment = payments.first(where: { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: paymentMonth, toGranularity: .month) }) {
+            payment.amountPaid = value
+        } else {
+            modelContext.insert(ExpensePayment(transactionID: transaction.id, monthStart: paymentMonth, amountPaid: value))
+        }
+    }
+
+    private func syncLinkedCreditPaymentIfNeeded(_ transaction: MoneyTransaction, value: Double) {
+        let shouldLinkPayment = mode == .expense && isDebtAmortizationExpense && selectedCreditID != nil
+
+        guard shouldLinkPayment, let selectedCreditID else {
+            deleteLinkedCreditMovementIfNeeded(for: transaction)
+            transaction.linkedCreditID = nil
+            transaction.linkedCreditMovementID = nil
+            return
+        }
+
+        transaction.linkedCreditID = selectedCreditID
+
+        let paymentMonth = request.month.monthStart
+        let paidAmount = payments
+            .first { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: paymentMonth, toGranularity: .month) }
+            .map { min($0.amountPaid ?? value, value) } ?? 0
+
+        guard paidAmount > 0 else {
+            deleteLinkedCreditMovementIfNeeded(for: transaction)
+            transaction.linkedCreditMovementID = nil
+            return
+        }
+
+        let paymentDate = request.month.date(day: transaction.day)
+        let note = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? transaction.displayName
+            : transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let movementID = transaction.linkedCreditMovementID,
+           let movement = creditMovements.first(where: { $0.id == movementID }) {
+            movement.creditID = selectedCreditID
+            movement.date = paymentDate
+            movement.type = CreditMovementKind.payment.rawValue
+            movement.amount = paidAmount
+            movement.note = note
+        } else {
+            let movement = CreditMovement(
+                creditID: selectedCreditID,
+                date: paymentDate,
+                type: CreditMovementKind.payment.rawValue,
+                amount: paidAmount,
+                note: note
+            )
+            modelContext.insert(movement)
+            transaction.linkedCreditMovementID = movement.id
+        }
+    }
+
+    private func deleteLinkedCreditMovementIfNeeded(for transaction: MoneyTransaction) {
+        guard let movementID = transaction.linkedCreditMovementID,
+              let movement = creditMovements.first(where: { $0.id == movementID })
+        else { return }
+        modelContext.delete(movement)
     }
 
     private func addExclusion(for transaction: MoneyTransaction, in month: Date) {
