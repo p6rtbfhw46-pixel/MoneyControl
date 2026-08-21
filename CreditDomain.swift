@@ -118,6 +118,9 @@ enum CreditTextKey {
     case settingsTitle
     case emptyTitle
     case addCredit
+    case deleteCredit
+    case deleteCreditTitle
+    case deleteCreditMessage
     case newCredit
     case editCredit
     case creditName
@@ -172,6 +175,9 @@ enum CreditStrings {
             .settingsTitle: "Créditos",
             .emptyTitle: "Ainda não tem créditos registados.",
             .addCredit: "Adicionar Crédito",
+            .deleteCredit: "Apagar crédito",
+            .deleteCreditTitle: "Apagar crédito?",
+            .deleteCreditMessage: "Esta ação vai apagar o crédito e todo o seu histórico de movimentos. As despesas da conta corrente associadas deixam apenas de estar ligadas a este crédito.",
             .newCredit: "Novo Crédito",
             .editCredit: "Editar Crédito",
             .creditName: "Nome",
@@ -219,6 +225,9 @@ enum CreditStrings {
             .settingsTitle: "Credits",
             .emptyTitle: "You do not have any credits registered yet.",
             .addCredit: "Add Credit",
+            .deleteCredit: "Delete credit",
+            .deleteCreditTitle: "Delete credit?",
+            .deleteCreditMessage: "This will delete the credit and all of its movement history. Current account expenses linked to it will only be unlinked from this credit.",
             .newCredit: "New Credit",
             .editCredit: "Edit Credit",
             .creditName: "Name",

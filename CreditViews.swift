@@ -165,8 +165,11 @@ struct CreditEditorRequest: Identifiable {
 private struct CreditEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query private var allMovements: [CreditMovement]
+    @Query private var transactions: [MoneyTransaction]
 
     let request: CreditEditorRequest
+    var onDelete: (() -> Void)? = nil
 
     @State private var name = ""
     @State private var type: CreditType = .creditCard
@@ -174,6 +177,8 @@ private struct CreditEditor: View {
     @State private var creditLimit = 0.0
     @State private var status: CreditStatus = .active
     @State private var validationMessage: String?
+    @State private var showsDeleteConfirmation = false
+    @State private var isCreditLimitExpanded = false
 
     private var isEditing: Bool { request.credit != nil }
 
@@ -207,10 +212,29 @@ private struct CreditEditor: View {
                 .listRowBackground(AppPalette.surface)
 
                 Section {
-                    MoneyAmountPicker(title: CreditStrings.text(.currentDebt), amount: $currentDebt, maximumAmount: 1_000_000)
-                    MoneyAmountPicker(title: "\(CreditStrings.text(.creditLimit)) · \(CreditStrings.text(.optionalLimit))", amount: $creditLimit, maximumAmount: 1_000_000)
+                    if !isEditing {
+                        MoneyAmountPicker(title: CreditStrings.text(.currentDebt), amount: $currentDebt, maximumAmount: 1_000_000)
+                        MoneyAmountPicker(title: "\(CreditStrings.text(.creditLimit)) · \(CreditStrings.text(.optionalLimit))", amount: $creditLimit, maximumAmount: 1_000_000)
+                    } else {
+                        creditLimitDisclosure
+                    }
                 }
                 .listRowBackground(AppPalette.surface)
+
+                if isEditing {
+                    Section {
+                        Button(role: .destructive) {
+                            showsDeleteConfirmation = true
+                        } label: {
+                            Label(CreditStrings.text(.deleteCredit), systemImage: "trash")
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .background(AppPalette.destructive, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .listRowBackground(AppPalette.appBackground)
+                }
             }
             .scrollContentBackground(.hidden)
             .background(AppPalette.appBackground)
@@ -226,6 +250,12 @@ private struct CreditEditor: View {
                 }
             }
             .onAppear(perform: loadInitialValues)
+            .alert(CreditStrings.text(.deleteCreditTitle), isPresented: $showsDeleteConfirmation) {
+                Button(AppStrings.text(.cancel), role: .cancel) {}
+                Button(AppStrings.text(.delete), role: .destructive, action: deleteCredit)
+            } message: {
+                Text(CreditStrings.text(.deleteCreditMessage))
+            }
         }
     }
 
@@ -236,6 +266,45 @@ private struct CreditEditor: View {
         currentDebt = credit.initialDebt
         creditLimit = credit.creditLimit ?? 0
         status = credit.creditStatus
+    }
+
+    private var creditLimitDisclosure: some View {
+        VStack(spacing: 10) {
+            Button {
+                withAnimation(.snappy) {
+                    isCreditLimitExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(CreditStrings.text(.creditLimit))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppPalette.background)
+                        Text(creditLimit > 0 ? creditLimit.currencyText : CreditStrings.text(.optionalLimit))
+                            .font(.caption)
+                            .foregroundStyle(AppPalette.mutedText)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption.bold())
+                        .foregroundStyle(AppPalette.mutedText)
+                        .rotationEffect(.degrees(isCreditLimitExpanded ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isCreditLimitExpanded {
+                MoneyAmountPicker(
+                    title: "\(CreditStrings.text(.creditLimit)) · \(CreditStrings.text(.optionalLimit))",
+                    amount: $creditLimit,
+                    maximumAmount: 1_000_000
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
     }
 
     private func save() {
@@ -255,7 +324,9 @@ private struct CreditEditor: View {
         let credit = request.credit ?? CreditAccount(name: trimmedName, type: type.rawValue, initialDebt: currentDebt)
         credit.name = trimmedName
         credit.type = type.rawValue
-        credit.initialDebt = currentDebt
+        if !isEditing {
+            credit.initialDebt = currentDebt
+        }
         credit.creditLimit = creditLimit > 0 ? creditLimit : nil
         credit.status = status.rawValue
 
@@ -263,6 +334,25 @@ private struct CreditEditor: View {
             modelContext.insert(credit)
         }
 
+        dismiss()
+    }
+
+    private func deleteCredit() {
+        guard let credit = request.credit else { return }
+
+        allMovements
+            .filter { $0.creditID == credit.id }
+            .forEach(modelContext.delete)
+
+        transactions
+            .filter { $0.linkedCreditID == credit.id }
+            .forEach { transaction in
+                transaction.linkedCreditID = nil
+                transaction.linkedCreditMovementID = nil
+            }
+
+        modelContext.delete(credit)
+        onDelete?()
         dismiss()
     }
 }
@@ -320,7 +410,9 @@ struct CreditDetailView: View {
                 }
             }
             .sheet(item: $creditEditorRequest) { request in
-                CreditEditor(request: request)
+                CreditEditor(request: request) {
+                    dismiss()
+                }
             }
             .sheet(item: $movementEditorRequest) { request in
                 CreditMovementEditor(request: request)

@@ -10,9 +10,44 @@ enum TransactionKind: String {
     case income
 }
 
-enum RecurrenceType: String {
+enum RecurrenceType: String, CaseIterable, Identifiable {
     case monthly
+    case quarterly
+    case semiannual
+    case annual
     case yearlyMonth
+
+    var id: String { rawValue }
+
+    static var selectableCases: [RecurrenceType] {
+        [.monthly, .quarterly, .semiannual, .annual]
+    }
+
+    var intervalInMonths: Int {
+        switch self {
+        case .monthly:
+            1
+        case .quarterly:
+            3
+        case .semiannual:
+            6
+        case .annual, .yearlyMonth:
+            12
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .monthly:
+            AppStrings.text(.monthlyRecurrence)
+        case .quarterly:
+            AppStrings.text(.quarterlyRecurrence)
+        case .semiannual:
+            AppStrings.text(.semiannualRecurrence)
+        case .annual, .yearlyMonth:
+            AppStrings.text(.annualRecurrence)
+        }
+    }
 }
 
 enum TransactionEditScope {
@@ -120,12 +155,26 @@ struct TransactionEditorRequest: Identifiable {
     let month: Date
     let transaction: MoneyTransaction?
     let editScope: TransactionEditScope
+    let titleOverride: String?
+    let initialExpenseCategory: ExpenseCategory?
+    let initialExpenseName: String?
 
-    init(mode: TransactionEditorMode, month: Date, transaction: MoneyTransaction? = nil, editScope: TransactionEditScope = .normal) {
+    init(
+        mode: TransactionEditorMode,
+        month: Date,
+        transaction: MoneyTransaction? = nil,
+        editScope: TransactionEditScope = .normal,
+        titleOverride: String? = nil,
+        initialExpenseCategory: ExpenseCategory? = nil,
+        initialExpenseName: String? = nil
+    ) {
         self.mode = mode
         self.month = month
         self.transaction = transaction
         self.editScope = editScope
+        self.titleOverride = titleOverride
+        self.initialExpenseCategory = initialExpenseCategory
+        self.initialExpenseName = initialExpenseName
     }
 
     init(transaction: MoneyTransaction, month: Date, editScope: TransactionEditScope = .normal) {
@@ -133,6 +182,9 @@ struct TransactionEditorRequest: Identifiable {
         self.month = month
         self.transaction = transaction
         self.editScope = editScope
+        self.titleOverride = nil
+        self.initialExpenseCategory = nil
+        self.initialExpenseName = nil
     }
 }
 
@@ -171,16 +223,14 @@ extension MoneyTransaction {
     var editorMode: TransactionEditorMode {
         if kind == TransactionKind.expense.rawValue {
             switch recurrence {
-            case .monthly:
+            case .monthly, .quarterly, .semiannual, .annual, .yearlyMonth:
                 return .monthlyExpense
-            case .yearlyMonth:
-                return .periodicExpense
             case nil:
                 return .expense
             }
         }
 
-        return recurrence == .monthly ? .salary : .income
+        return recurrence != nil ? .salary : .income
     }
 
     var displayName: String {
@@ -207,12 +257,13 @@ extension MoneyTransaction {
         }
 
         switch recurrence {
-        case .monthly:
-            parts.append(AppStrings.text(.everyMonth))
+        case .monthly, .quarterly, .semiannual, .annual:
+            parts.append(recurrence?.title ?? AppStrings.text(.everyMonth))
             if let recurrenceEndMonthStart {
                 parts.append("\(AppStrings.text(.endDate)) \(recurrenceEndMonthStart.previousMonthStart.monthTitle)")
             }
         case .yearlyMonth:
+            parts.append(AppStrings.text(.annualRecurrence))
             parts.append(Date.monthName(forMonthNumber: recurrenceMonth))
         case nil:
             break
@@ -246,8 +297,10 @@ extension MoneyTransaction {
         }
 
         switch recurrence {
-        case .monthly:
-            return monthStart >= self.monthStart.monthStart
+        case .monthly, .quarterly, .semiannual, .annual:
+            guard monthStart >= self.monthStart.monthStart else { return false }
+            let distance = Calendar.current.dateComponents([.month], from: self.monthStart.monthStart, to: monthStart).month ?? 0
+            return distance >= 0 && distance.isMultiple(of: recurrence?.intervalInMonths ?? 1)
         case .yearlyMonth:
             return monthStart >= self.monthStart.monthStart && monthStart.monthNumber == recurrenceMonth
         case nil:

@@ -42,6 +42,15 @@ struct ExpenseTypePoint: Identifiable, Equatable {
 struct AnalyticsInsight: Identifiable, Equatable {
     let title: String
     let message: String
+    let infoTitle: String?
+    let infoMessage: String?
+
+    init(title: String, message: String, infoTitle: String? = nil, infoMessage: String? = nil) {
+        self.title = title
+        self.message = message
+        self.infoTitle = infoTitle
+        self.infoMessage = infoMessage
+    }
 
     var id: String { "\(title)-\(message)" }
 }

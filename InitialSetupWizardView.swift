@@ -643,5 +643,5 @@ private struct SetupCategoryTotal: Identifiable {
 
 #Preview {
     InitialSetupWizardView {}
-        .modelContainer(for: [MoneyTransaction.self, ExpensePayment.self, RecurrenceExclusion.self], inMemory: true)
+        .modelContainer(for: [MoneyTransaction.self, ExpensePayment.self, PaymentHistoryEntry.self, RecurrenceExclusion.self, CreditAccount.self, CreditMovement.self, SavingAccount.self, SavingMovement.self], inMemory: true)
 }

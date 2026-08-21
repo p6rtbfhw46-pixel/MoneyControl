@@ -15,6 +15,11 @@
 		78DB1102301D7647009F36E8 /* AppPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB1101301D7647009F36E8 /* AppPalette.swift */; };
 		78DB1104301E2EC2009F36E8 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB1103301E2EC2009F36E8 /* OnboardingView.swift */; };
 		78DB1106301E3E8A009F36E8 /* InitialSetupWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB1105301E3E8A009F36E8 /* InitialSetupWizardView.swift */; };
+		78DB110A302D16EB009F36E8 /* CreditDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB1109302D16EB009F36E8 /* CreditDomain.swift */; };
+		78DB110C302D1760009F36E8 /* CreditViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB110B302D1760009F36E8 /* CreditViews.swift */; };
+		78DB110E302D1EAB009F36E8 /* MoneyCalculationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB110D302D1EAB009F36E8 /* MoneyCalculationService.swift */; };
+		78DB111030334521009F36E8 /* SavingsDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB110F30334521009F36E8 /* SavingsDomain.swift */; };
+		78DB11123033459F009F36E8 /* SavingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB11113033459F009F36E8 /* SavingsViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,6 +51,11 @@
 		78DB1101301D7647009F36E8 /* AppPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPalette.swift; sourceTree = "<group>"; };
 		78DB1103301E2EC2009F36E8 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		78DB1105301E3E8A009F36E8 /* InitialSetupWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InitialSetupWizardView.swift; sourceTree = "<group>"; };
+		78DB1109302D16EB009F36E8 /* CreditDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreditDomain.swift; sourceTree = "<group>"; };
+		78DB110B302D1760009F36E8 /* CreditViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreditViews.swift; sourceTree = "<group>"; };
+		78DB110D302D1EAB009F36E8 /* MoneyCalculationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyCalculationService.swift; sourceTree = "<group>"; };
+		78DB110F30334521009F36E8 /* SavingsDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavingsDomain.swift; sourceTree = "<group>"; };
+		78DB11113033459F009F36E8 /* SavingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavingsViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -106,6 +116,11 @@
 				78DB1101301D7647009F36E8 /* AppPalette.swift */,
 				78DB1103301E2EC2009F36E8 /* OnboardingView.swift */,
 				78DB1105301E3E8A009F36E8 /* InitialSetupWizardView.swift */,
+				78DB1109302D16EB009F36E8 /* CreditDomain.swift */,
+				78DB110B302D1760009F36E8 /* CreditViews.swift */,
+				78DB110D302D1EAB009F36E8 /* MoneyCalculationService.swift */,
+				78DB110F30334521009F36E8 /* SavingsDomain.swift */,
+				78DB11113033459F009F36E8 /* SavingsViews.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -263,11 +278,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				78DB110A302D16EB009F36E8 /* CreditDomain.swift in Sources */,
 				78DB10FC301BFE1E009F36E8 /* MoneyComponents.swift in Sources */,
+				78DB111030334521009F36E8 /* SavingsDomain.swift in Sources */,
 				78DB10FE301BFE35009F36E8 /* SettingsEditor.swift in Sources */,
 				78DB1104301E2EC2009F36E8 /* OnboardingView.swift in Sources */,
+				78DB11123033459F009F36E8 /* SavingsViews.swift in Sources */,
 				78DB10FA301BFDFC009F36E8 /* MoneyDomain.swift in Sources */,
+				78DB110C302D1760009F36E8 /* CreditViews.swift in Sources */,
 				78DB1102301D7647009F36E8 /* AppPalette.swift in Sources */,
+				78DB110E302D1EAB009F36E8 /* MoneyCalculationService.swift in Sources */,
 				78DB1106301E3E8A009F36E8 /* InitialSetupWizardView.swift in Sources */,
 				78DB10F8301BFDD4009F36E8 /* AppStrings.swift in Sources */,
 				78DB1100301BFE5D009F36E8 /* TransactionEditor.swift in Sources */,
