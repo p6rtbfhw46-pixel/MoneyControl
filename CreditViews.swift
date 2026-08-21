@@ -366,6 +366,8 @@ struct CreditDetailView: View {
 
     @State private var creditEditorRequest: CreditEditorRequest?
     @State private var movementEditorRequest: CreditMovementEditorRequest?
+    @State private var isEvolutionExpanded = false
+    @State private var isPaymentEstimateExpanded = false
 
     private var movements: [CreditMovement] { credit.movements(from: allMovements) }
     private var balance: Double { credit.balance(with: allMovements) }
@@ -382,6 +384,7 @@ struct CreditDetailView: View {
                     if credit.creditLimit != nil { limitCard }
                     monthSummaryCard
                     if !balancePoints.isEmpty { evolutionCard }
+                    if !paymentEstimatePoints.isEmpty { paymentEstimateCard }
                     settledSuggestion
                     movementsSection
                 }
@@ -475,11 +478,11 @@ struct CreditDetailView: View {
     }
 
     private var evolutionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(CreditStrings.text(.debtEvolution))
-                .font(.headline.bold())
-                .foregroundStyle(AppPalette.background)
-
+        collapsibleChartCard(
+            title: CreditStrings.text(.debtEvolution),
+            value: balance.currencyText,
+            isExpanded: $isEvolutionExpanded
+        ) {
             Chart(balancePoints) { point in
                 LineMark(
                     x: .value(AppStrings.text(.month), point.monthLabel),
@@ -495,8 +498,30 @@ struct CreditDetailView: View {
             }
             .frame(height: 180)
         }
-        .padding(16)
-        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private var paymentEstimateCard: some View {
+        collapsibleChartCard(
+            title: CreditStrings.text(.paymentEstimateTrajectory),
+            value: projectedBalanceAfterOneYear.currencyText,
+            subtitle: "\(CreditStrings.text(.averageLastThreeMonths)): \(averageMonthlyPaymentLastThreeMonths.currencyText)",
+            isExpanded: $isPaymentEstimateExpanded
+        ) {
+            Chart(paymentEstimatePoints) { point in
+                LineMark(
+                    x: .value(AppStrings.text(.month), point.monthLabel),
+                    y: .value(CreditStrings.text(.debt), point.balance)
+                )
+                .foregroundStyle(AppPalette.positive)
+
+                PointMark(
+                    x: .value(AppStrings.text(.month), point.monthLabel),
+                    y: .value(CreditStrings.text(.debt), point.balance)
+                )
+                .foregroundStyle(AppPalette.primary)
+            }
+            .frame(height: 180)
+        }
     }
 
     @ViewBuilder
@@ -572,6 +597,83 @@ struct CreditDetailView: View {
             let movementsUntilMonth = allMovements.filter { $0.creditID == credit.id && $0.date.monthStart <= month }
             return CreditBalancePoint(month: month, balance: credit.balance(with: movementsUntilMonth))
         }
+    }
+
+    private var paymentEstimatePoints: [CreditBalancePoint] {
+        guard balance > 0, averageMonthlyPaymentLastThreeMonths > 0 else { return [] }
+
+        return (1...12).map { offset in
+            let month = monthAdding(offset, to: monthStart)
+            let projectedBalance = max(balance - (averageMonthlyPaymentLastThreeMonths * Double(offset)), 0)
+            return CreditBalancePoint(month: month, balance: projectedBalance)
+        }
+    }
+
+    private var averageMonthlyPaymentLastThreeMonths: Double {
+        let months = (0..<3).map { monthAdding(-$0, to: monthStart) }
+        let total = months.reduce(0) { total, month in
+            total + credit.monthPaid(in: month, movements: allMovements)
+        }
+        return total / 3
+    }
+
+    private var projectedBalanceAfterOneYear: Double {
+        paymentEstimatePoints.last?.balance ?? balance
+    }
+
+    private func collapsibleChartCard<Content: View>(
+        title: String,
+        value: String,
+        subtitle: String? = nil,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                isExpanded.wrappedValue.toggle()
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(.headline.bold())
+                            .foregroundStyle(AppPalette.background)
+                            .lineLimit(2)
+
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AppPalette.mutedText)
+                                .lineLimit(2)
+                        }
+                    }
+
+                    Spacer()
+
+                    Text(value)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(AppPalette.background)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption.bold())
+                        .foregroundStyle(AppPalette.mutedText)
+                        .rotationEffect(.degrees(isExpanded.wrappedValue ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded.wrappedValue {
+                content()
+            }
+        }
+        .padding(16)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private func monthAdding(_ value: Int, to month: Date) -> Date {
+        Calendar.current.date(byAdding: .month, value: value, to: month.monthStart) ?? month.monthStart
     }
 
     private func infoRow(_ title: String, _ value: String) -> some View {

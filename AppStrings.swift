@@ -24,8 +24,10 @@ enum AppTextKey: String, CaseIterable {
     case balanceThisMonth
     case monthUnpaid
     case monthRemaining
+    case monthBudgetExceeded
     case expense
     case income
+    case today
     case noTransactions
     case noTransactionsDescription
     case cancel
@@ -72,7 +74,10 @@ enum AppTextKey: String, CaseIterable {
     case newExpense
     case editExpense
     case newSavingExpense
+    case creditPaymentExpenseButton
     case newCreditPaymentExpense
+    case newRecurringSavingExpense
+    case newRecurringCreditPaymentExpense
     case newIncome
     case editIncome
     case newMonthlyExpense
@@ -98,6 +103,8 @@ enum AppTextKey: String, CaseIterable {
     case savingsAndDebtCategory
     case futureEditTitle
     case futureEditMessage
+    case currentAndFutureEditTitle
+    case currentAndFutureEditMessage
     case futureDeleteTitle
     case futureDeleteMessage
     case continueAction
@@ -113,6 +120,7 @@ enum AppTextKey: String, CaseIterable {
     case pay
     case paid
     case notPaid
+    case canStillSpend
     case paidExpense
     case unpaidExpense
     case paidToggleHelpTitle
@@ -305,6 +313,17 @@ enum AppTextKey: String, CaseIterable {
     case overpaymentMessage
     case valueBelowPaidTitle
     case valueBelowPaidMessage
+    case receivedDate
+    case useInBudget
+    case budgetMonth
+    case budgetAllocationCurrentMonth
+    case budgetAllocationNextMonth
+    case budgetAllocationCustomMonth
+    case reservedForBudgetSummary
+    case reservedBalanceHelpTitle
+    case reservedBalanceHelpMessage
+    case futureIncomeReceivedInsight
+    case futureIncomeReservedInsight
 }
 
 enum AppStrings {
@@ -401,8 +420,10 @@ enum AppStrings {
             .balanceThisMonth: "Saldo disponível",
             .monthUnpaid: "Falta pagar este mês",
             .monthRemaining: "Pode gastar este mês",
+            .monthBudgetExceeded: "Ultrapassou o orçamento",
             .expense: "Despesa",
             .income: "Receita",
+            .today: "Hoje",
             .noTransactions: "Sem movimentos",
             .noTransactionsDescription: "Adiciona despesas ou receitas deste mês.",
             .cancel: "Cancelar",
@@ -446,17 +467,20 @@ enum AppStrings {
             .fillFreeText: "Preenche o texto livre.",
             .newPrefix: "Novo",
             .editPrefix: "Editar",
-            .newExpense: "Nova Despesa",
+            .newExpense: "Agendar nova despesa",
             .editExpense: "Editar Despesa",
-            .newSavingExpense: "Nova poupança",
-            .newCreditPaymentExpense: "Pagamento de crédito",
+            .newSavingExpense: "Agendar nova poupança",
+            .creditPaymentExpenseButton: "Pagamento de crédito",
+            .newCreditPaymentExpense: "Agendar pagamento de crédito",
+            .newRecurringSavingExpense: "Agendar Nova Poupança Recorrente",
+            .newRecurringCreditPaymentExpense: "Agendar Pagamento de Crédito Recorrente",
             .newIncome: "Nova Receita",
             .editIncome: "Editar Receita",
-            .newMonthlyExpense: "Nova Despesa Recorrente",
+            .newMonthlyExpense: "Agendar Nova Despesa Recorrente",
             .editMonthlyExpense: "Editar Despesa Recorrente",
             .newPeriodicExpense: "Nova Despesa Anual",
             .editPeriodicExpense: "Editar Despesa Anual",
-            .newSalary: "Novo Rendimento Recorrente",
+            .newSalary: "Agendar Novo Rendimento Recorrente",
             .editSalary: "Editar Rendimento Recorrente",
             .everyMonth: "todos os meses",
             .periodicity: "Periodicidade",
@@ -475,6 +499,8 @@ enum AppStrings {
             .savingsAndDebtCategory: "20% Pagamentos e Poupança",
             .futureEditTitle: "Editar meses seguintes",
             .futureEditMessage: "Esta alteração só vai afetar os meses seguintes. Para alterar o mês corrente, edita a despesa ou receita diretamente no mês.",
+            .currentAndFutureEditTitle: "Editar mês atual e seguintes",
+            .currentAndFutureEditMessage: "Esta alteração vai afetar o mês corrente e os meses seguintes, porque ainda não foi registado nenhum pagamento desta despesa no mês corrente.",
             .futureDeleteTitle: "Apagar meses seguintes",
             .futureDeleteMessage: "Esta ação só vai apagar os meses seguintes. Para apagar o mês corrente, apaga diretamente no mês.",
             .continueAction: "Continuar",
@@ -485,11 +511,12 @@ enum AppStrings {
             .overdueExpenseDueDay: "devia ter sido paga no dia",
             .balanceThisMonthHelp: "Mostra o saldo disponível até ao dia de hoje. Soma todos os vencimentos e receitas recebidos até hoje e subtrai apenas as despesas até hoje que já foram marcadas como pagas.",
             .monthUnpaidHelp: "Mostra o total das despesas do mês apresentado que ainda não foram marcadas como pagas.",
-            .monthRemainingHelp: "Mostra o valor restante do mês apresentado. É calculado somando todos os vencimentos e receitas desse mês e subtraindo todas as despesas previstas para o mesmo período.",
-            .monthRemainingHelpNote: "Nota: este valor é apenas referente a este mês e não reflete diferenças deixadas nos meses passados.",
+            .monthRemainingHelp: "Mostra quanto pode gastar no mês apresentado, considerando o acumulado do orçamento até esse mês. Soma o remanescente positivo ou negativo dos meses anteriores aos rendimentos atribuídos ao mês apresentado e subtrai as despesas previstas desse mês.",
+            .monthRemainingHelpNote: "Este cartão só é mostrado no mês corrente e nos dois meses seguintes. Nesses meses futuros, mostra o acumulado previsto até esse mês: sobras aumentam o valor disponível e meses em excesso reduzem-no.",
             .pay: "Pagar",
             .paid: "Pago",
             .notPaid: "Por pagar",
+            .canStillSpend: "Ainda pode gastar",
             .paidExpense: "Paga",
             .unpaidExpense: "Por pagar",
             .paidToggleHelpTitle: "Estado do pagamento",
@@ -559,7 +586,7 @@ enum AppStrings {
             .expenseValueRequired: "Indique o valor da despesa.",
             .addIncomeToContinue: "Adicione pelo menos um rendimento para continuar.",
             .onlyThisMonth: "só este mês",
-            .setupExpensesTitle: "Despesas mensais",
+            .setupExpensesTitle: "Despesas Recorrentes",
             .setupExpensesSubtitle: "Quais destas despesas paga todos os meses?",
             .setupExpenseCardTitle: "Despesa",
             .optionalFreeText: "Texto livre opcional",
@@ -584,7 +611,7 @@ enum AppStrings {
             .setupAvailableThisMonth: "Pode gastar este mês",
             .visualSummary: "Resumo visual",
             .automaticAnalysis: "Análise automática",
-            .setupFinalNote: "Este é apenas o ponto de partida. Continue a registar os seus movimentos e acompanhe a evolução do seu orçamento todos os meses.",
+            .setupFinalNote: "Este é apenas o ponto de partida. Pode melhorar sempre o orçamento ao adicionar registos na área Gestão, onde pode gerir e adicionar mais despesas recorrentes, registar poupanças e créditos para ter uma visão mais completa da sua situação.",
             .back: "Voltar",
             .next: "Seguinte",
             .startUsingSpendWise: "Começar a utilizar a\nSpendWise",
@@ -611,7 +638,7 @@ enum AppStrings {
             .budgetStatusDetailAvailableMessage: "Tem %@ do orçamento por utilizar.",
             .budgetStatusDetailHealthyExplanation: "Mantendo este ritmo, continua dentro do orçamento recomendado.",
             .budgetStatusDetailExceededExplanation: "Está acima do orçamento recomendado. Considere reduzir despesas nas categorias com maior impacto.",
-            .subscriptionsThisMonth: "Subscrições do mês",
+            .subscriptionsThisMonth: "Subscrições",
             .yearSavings: "Poupanças do ano",
             .incomeVsExpenses: "Receitas vs Despesas",
             .paidInsights: "Análises de pagamentos",
@@ -681,15 +708,28 @@ enum AppStrings {
             .overpaymentTitle: "Valor superior à dívida",
             .overpaymentMessage: "O valor que está a pagar é superior ao valor em dívida. Se continuar, o total da despesa sobe para refletir o pagamento total registado.",
             .valueBelowPaidTitle: "Valor inferior ao já pago",
-            .valueBelowPaidMessage: "Esta despesa já tem pagamentos registados superiores ao novo valor. Se continuar, o valor da despesa será ajustado para o total já pago."
+            .valueBelowPaidMessage: "Esta despesa já tem pagamentos registados superiores ao novo valor. Se continuar, o valor da despesa será ajustado para o total já pago.",
+            .receivedDate: "Data de recebimento",
+            .useInBudget: "Utilizar no orçamento",
+            .budgetMonth: "Mês do orçamento",
+            .budgetAllocationCurrentMonth: "Mês em que é recebido",
+            .budgetAllocationNextMonth: "Mês seguinte",
+            .budgetAllocationCustomMonth: "Selecionar manualmente",
+            .reservedForBudgetSummary: "%@ reservados para %@",
+            .reservedBalanceHelpTitle: "Saldo disponível",
+            .reservedBalanceHelpMessage: "Tem atualmente %@ na conta.\n\nDeste valor, %@ estão reservados para o orçamento de %@ e não são considerados no valor que pode gastar em %@.",
+            .futureIncomeReceivedInsight: "📅 Recebeu %@, mas este valor está reservado para o orçamento de %@.",
+            .futureIncomeReservedInsight: "🔒 %@ do seu saldo estão reservados para o orçamento de %@."
         ],
         .english: [
             .appName: "SpendWise",
             .balanceThisMonth: "Available balance",
             .monthUnpaid: "Left to pay this month",
             .monthRemaining: "Still available this month",
+            .monthBudgetExceeded: "Over budget",
             .expense: "Expense",
             .income: "Income",
+            .today: "Today",
             .noTransactions: "No transactions",
             .noTransactionsDescription: "Add expenses or income for this month.",
             .cancel: "Cancel",
@@ -733,17 +773,20 @@ enum AppStrings {
             .fillFreeText: "Fill in the free text.",
             .newPrefix: "New",
             .editPrefix: "Edit",
-            .newExpense: "New Expense",
+            .newExpense: "Schedule new expense",
             .editExpense: "Edit Expense",
-            .newSavingExpense: "New saving",
-            .newCreditPaymentExpense: "Credit payment",
+            .newSavingExpense: "Schedule new saving",
+            .creditPaymentExpenseButton: "Credit payment",
+            .newCreditPaymentExpense: "Schedule credit payment",
+            .newRecurringSavingExpense: "Schedule New Recurring Saving",
+            .newRecurringCreditPaymentExpense: "Schedule Recurring Credit Payment",
             .newIncome: "New Income",
             .editIncome: "Edit Income",
-            .newMonthlyExpense: "New Recurring Expense",
+            .newMonthlyExpense: "Schedule New Recurring Expense",
             .editMonthlyExpense: "Edit Recurring Expense",
             .newPeriodicExpense: "New Annual Expense",
             .editPeriodicExpense: "Edit Annual Expense",
-            .newSalary: "New Recurring Income",
+            .newSalary: "Schedule New Recurring Income",
             .editSalary: "Edit Recurring Income",
             .everyMonth: "every month",
             .periodicity: "Frequency",
@@ -762,6 +805,8 @@ enum AppStrings {
             .savingsAndDebtCategory: "20% Payments and Savings",
             .futureEditTitle: "Edit following months",
             .futureEditMessage: "This change will only affect following months. To change the current month, edit the expense or income directly in that month.",
+            .currentAndFutureEditTitle: "Edit current and following months",
+            .currentAndFutureEditMessage: "This change will affect the current month and following months because no payment has been registered for this expense in the current month.",
             .futureDeleteTitle: "Delete following months",
             .futureDeleteMessage: "This action will only delete following months. To delete the current month, delete it directly in that month.",
             .continueAction: "Continue",
@@ -772,11 +817,12 @@ enum AppStrings {
             .overdueExpenseDueDay: "should have been paid on day",
             .balanceThisMonthHelp: "Shows the available balance up to today. It sums all salaries and income received up to today and subtracts only expenses up to today that have been marked as paid.",
             .monthUnpaidHelp: "Shows the total expenses in the displayed month that have not been marked as paid.",
-            .monthRemainingHelp: "Shows the remaining amount for the displayed month. It is calculated by summing all salaries and income in that month and subtracting all expected expenses for the same period.",
-            .monthRemainingHelpNote: "Note: this value only refers to this month and does not reflect differences left from previous months.",
+            .monthRemainingHelp: "Shows how much you can spend in the displayed month, considering the accumulated budget up to that month. It adds positive or negative remaining amounts from previous months to the income assigned to the displayed month and subtracts that month's expected expenses.",
+            .monthRemainingHelpNote: "This card is only shown for the current month and the next two months. In those future months, it shows the forecast accumulated up to that month: surplus increases what is available and overspending reduces it.",
             .pay: "Pay",
             .paid: "Paid",
             .notPaid: "To pay",
+            .canStillSpend: "Can still spend",
             .paidExpense: "Paid",
             .unpaidExpense: "To pay",
             .paidToggleHelpTitle: "Payment status",
@@ -846,7 +892,7 @@ enum AppStrings {
             .expenseValueRequired: "Enter the expense amount.",
             .addIncomeToContinue: "Add at least one income to continue.",
             .onlyThisMonth: "only this month",
-            .setupExpensesTitle: "Monthly expenses",
+            .setupExpensesTitle: "Recurring expenses",
             .setupExpensesSubtitle: "Which of these expenses do you pay every month?",
             .setupExpenseCardTitle: "Expense",
             .optionalFreeText: "Optional free text",
@@ -871,7 +917,7 @@ enum AppStrings {
             .setupAvailableThisMonth: "Available to spend this month",
             .visualSummary: "Visual summary",
             .automaticAnalysis: "Automatic analysis",
-            .setupFinalNote: "This is only the starting point. Keep recording your movements and follow your budget evolution every month.",
+            .setupFinalNote: "This is only the starting point. You can keep improving your budget by adding records in Management, where you can manage and add more recurring expenses, register savings and credit accounts, and get a clearer view of your situation.",
             .back: "Back",
             .next: "Next",
             .startUsingSpendWise: "Start using\nSpendWise",
@@ -898,7 +944,7 @@ enum AppStrings {
             .budgetStatusDetailAvailableMessage: "You have %@ of the budget left to use.",
             .budgetStatusDetailHealthyExplanation: "Keeping this rhythm, you remain within the recommended budget.",
             .budgetStatusDetailExceededExplanation: "You are above the recommended budget. Consider reducing expenses in the categories with the highest impact.",
-            .subscriptionsThisMonth: "This month's subscriptions",
+            .subscriptionsThisMonth: "Subscriptions",
             .yearSavings: "Year savings",
             .incomeVsExpenses: "Income vs Expenses",
             .paidInsights: "Payment insights",
@@ -968,7 +1014,18 @@ enum AppStrings {
             .overpaymentTitle: "Amount above debt",
             .overpaymentMessage: "The amount you are paying is higher than the amount due. If you continue, the expense total will increase to reflect the total registered payment.",
             .valueBelowPaidTitle: "Value below amount already paid",
-            .valueBelowPaidMessage: "This expense already has registered payments above the new value. If you continue, the expense value will be adjusted to the total already paid."
+            .valueBelowPaidMessage: "This expense already has registered payments above the new value. If you continue, the expense value will be adjusted to the total already paid.",
+            .receivedDate: "Received date",
+            .useInBudget: "Use in budget",
+            .budgetMonth: "Budget month",
+            .budgetAllocationCurrentMonth: "Month received",
+            .budgetAllocationNextMonth: "Next month",
+            .budgetAllocationCustomMonth: "Select manually",
+            .reservedForBudgetSummary: "%@ reserved for %@",
+            .reservedBalanceHelpTitle: "Available balance",
+            .reservedBalanceHelpMessage: "You currently have %@ in the account.\n\nOf this amount, %@ is reserved for the %@ budget and is not considered in the amount you can spend in %@.",
+            .futureIncomeReceivedInsight: "📅 You received %@, but this amount is reserved for the %@ budget.",
+            .futureIncomeReservedInsight: "🔒 %@ of your balance is reserved for the %@ budget."
         ]
     ]
 
@@ -984,7 +1041,7 @@ enum AppStrings {
             ],
             .wants: [
                 "Refeições fora de casa",
-                "Subscrições mensais",
+                "Subscrições",
                 "Atividades de lazer e entretenimento",
                 "Viagens e férias",
                 "Roupa e acessórios",
@@ -1007,7 +1064,7 @@ enum AppStrings {
             ],
             .wants: [
                 "Eating out",
-                "Monthly subscriptions",
+                "Subscriptions",
                 "Leisure and entertainment",
                 "Travel and holidays",
                 "Clothing and accessories",

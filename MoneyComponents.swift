@@ -16,8 +16,10 @@ struct MonthPage: View {
     let onEdit: (MoneyTransaction) -> Void
     let onDelete: (MoneyTransaction) -> Void
 
+    @State private var expandedTransactionID: UUID?
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             if transactions.isEmpty {
                 ContentUnavailableView(
                     AppStrings.text(.noTransactions),
@@ -28,23 +30,20 @@ struct MonthPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(transactions) { transaction in
-                        let paidAmount = amountPaid(for: transaction)
+                    if !todayTransactions.isEmpty {
+                        todaySection
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowBackground(AppPalette.appBackground)
+                    }
 
-                        TransactionCard(
-                            transaction: transaction,
-                            month: month,
-                            amountPaid: paidAmount,
-                            hasPaymentHistory: hasPaymentHistory(for: transaction),
-                            creditAccounts: creditAccounts,
-                            savingAccounts: savingAccounts,
-                            onPay: { onPay(transaction, month, paidAmount) },
-                            onEdit: { onEdit(transaction) },
-                            onDelete: { onDelete(transaction) }
-                        )
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        .listRowBackground(AppPalette.appBackground)
+                    if !remainingTransactions.isEmpty {
+                        ForEach(remainingTransactions, id: \.id) { transaction in
+                            transactionCard(for: transaction, includesHorizontalPadding: false)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowBackground(AppPalette.appBackground)
+                        }
                     }
                 }
                 .listStyle(.plain)
@@ -52,7 +51,76 @@ struct MonthPage: View {
                 .background(AppPalette.appBackground)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppPalette.appBackground)
+    }
+
+    private var todayTransactions: [MoneyTransaction] {
+        let calendar = Calendar.current
+        guard calendar.isDate(month, equalTo: Date(), toGranularity: .month) else { return [] }
+
+        let todayDay = calendar.component(.day, from: Date())
+        return transactions.filter { $0.effectiveDay(in: month) == todayDay }
+    }
+
+    private var remainingTransactions: [MoneyTransaction] {
+        let todayIDs = Set(todayTransactions.map(\.id))
+        return transactions.filter { !todayIDs.contains($0.id) }
+    }
+
+    private var todaySection: some View {
+        todaySectionCard
+    }
+
+    private var todaySectionCard: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(AppStrings.text(.today))
+                .font(.subheadline.bold())
+                .foregroundStyle(AppPalette.background)
+                .frame(height: 18, alignment: .center)
+
+            todayTransactionsList
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 7)
+        .padding(.bottom, 12)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(AppPalette.separator, lineWidth: 1)
+        }
+        .shadow(color: AppPalette.background.opacity(0.08), radius: 14, y: 8)
+    }
+
+    @ViewBuilder
+    private var todayTransactionsList: some View {
+        VStack(spacing: 8) {
+            ForEach(todayTransactions, id: \.id) { transaction in
+                transactionCard(for: transaction, includesHorizontalPadding: false)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func transactionCard(for transaction: MoneyTransaction, includesHorizontalPadding: Bool) -> some View {
+        let paidAmount = amountPaid(for: transaction)
+
+        return TransactionCard(
+            transaction: transaction,
+            month: month,
+            amountPaid: paidAmount,
+            hasPaymentHistory: hasPaymentHistory(for: transaction),
+            creditAccounts: creditAccounts,
+            savingAccounts: savingAccounts,
+            isExpanded: expandedTransactionID == transaction.id,
+            onExpansionChange: { isExpanded in
+                expandedTransactionID = isExpanded ? transaction.id : nil
+            },
+            onPay: { onPay(transaction, month, paidAmount) },
+            onEdit: { onEdit(transaction) },
+            onDelete: { onDelete(transaction) }
+        )
+        .padding(.horizontal, includesHorizontalPadding ? 16 : 0)
     }
 
     private func amountPaid(for transaction: MoneyTransaction) -> Double {
@@ -74,13 +142,18 @@ struct BudgetStatusCard: View {
     let month: Date
     let transactions: [MoneyTransaction]
     let payments: [ExpensePayment]
+    var budgetIncome: Double? = nil
     var isCompact = false
 
     @State private var showsDetails = false
     @State private var emojiShake = 0.0
 
     private var income: Double {
-        transactions
+        if let budgetIncome {
+            return budgetIncome
+        }
+
+        return transactions
             .filter { $0.kind == TransactionKind.income.rawValue }
             .reduce(0) { $0 + $1.amount }
     }
@@ -256,11 +329,12 @@ struct TransactionCard: View {
     let hasPaymentHistory: Bool
     let creditAccounts: [CreditAccount]
     let savingAccounts: [SavingAccount]
+    let isExpanded: Bool
+    let onExpansionChange: (Bool) -> Void
     let onPay: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
 
-    @State private var isExpanded = false
     @State private var showsDeleteConfirmation = false
 
     private var category: ExpenseCategory? {
@@ -319,10 +393,25 @@ struct TransactionCard: View {
             return AppStrings.text(.paid)
         }
         if hasPartialPayment {
-            return "\(AppStrings.text(.notPaid)) \(max(transaction.amount - amountPaid, 0).currencyText)"
+            let prefix = usesRemainingSpendStatus ? AppStrings.text(.canStillSpend) : AppStrings.text(.notPaid)
+            return "\(prefix) \(max(transaction.amount - amountPaid, 0).currencyText)"
         }
         return AppStrings.text(.notPaid)
     }
+
+    private var usesRemainingSpendStatus: Bool {
+        guard isExpense else { return false }
+        return Self.remainingSpendExpenseNames.contains(normalized(transaction.displayName))
+    }
+
+    private static let remainingSpendExpenseNames: Set<String> = [
+        "alimentacao: compras de supermercado",
+        "transportes: transporte publico, prestacoes e combustivel",
+        "refeicoes fora de casa",
+        "viagens e ferias",
+        "atividades de lazer e entretenimento",
+        "roupa e acessorios"
+    ]
 
     private var linkedCreditName: String? {
         guard let linkedCreditID = transaction.linkedCreditID else { return nil }
@@ -434,9 +523,7 @@ struct TransactionCard: View {
             }
 
             Button {
-                withAnimation(.snappy) {
-                    isExpanded.toggle()
-                }
+                onExpansionChange(!isExpanded)
             } label: {
                 HStack(spacing: 8) {
                     transactionIcon
@@ -483,6 +570,10 @@ struct TransactionCard: View {
                             .foregroundStyle(AppPalette.mutedText)
 
                         paymentProgressSummary
+                    } else {
+                        Text(transaction.detailText(in: month))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppPalette.mutedText)
                     }
 
                     HStack(spacing: 10) {
@@ -529,7 +620,6 @@ struct TransactionCard: View {
                 .foregroundStyle(AppPalette.background)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
@@ -545,9 +635,7 @@ struct TransactionCard: View {
     }
 
     private func collapse() {
-        withAnimation(.snappy) {
-            isExpanded = false
-        }
+        onExpansionChange(false)
     }
 
     private var paymentButtonTitle: String {
@@ -566,18 +654,76 @@ struct TransactionCard: View {
         isFullyPaid && !hasPaymentHistory ? AppPalette.separator : AppPalette.mintSurface
     }
 
+    @ViewBuilder
     private var compactSubtitleView: some View {
-        HStack(spacing: 0) {
-            Text("\(AppStrings.text(.day)) ")
-            Text("\(transaction.effectiveDay(in: month))")
-                .fontWeight(.bold)
-            if isExpense {
-                Text(" - \(transaction.displayName)")
+        if let subscriptionRecurrenceData {
+            SubscriptionRecurrenceLabel(
+                day: subscriptionRecurrenceData.day,
+                monthName: subscriptionRecurrenceData.monthName,
+                recurrenceTitle: subscriptionRecurrenceData.recurrenceTitle
+            )
+            .font(.caption)
+            .foregroundStyle(AppPalette.mutedText)
+            .lineLimit(1)
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 0) {
+                    Text("\(AppStrings.text(.day)) ")
+                    Text("\(transaction.effectiveDay(in: month))")
+                        .fontWeight(.bold)
+                    if isExpense {
+                        Text(" - \(transaction.displayName)")
+                    }
+                }
+                .lineLimit(1)
+
+                if let recurrenceMonthName = recurrenceMonthName(in: month) {
+                    RecurrenceMonthLabel(monthName: recurrenceMonthName)
+                        .lineLimit(1)
+                }
             }
+            .font(.caption)
+            .foregroundStyle(AppPalette.mutedText)
         }
-        .font(.caption)
-        .foregroundStyle(AppPalette.mutedText)
-        .lineLimit(1)
+    }
+
+    private var subscriptionRecurrenceData: (day: Int, monthName: String?, recurrenceTitle: String?)? {
+        guard isSubscriptionExpense else { return nil }
+        return subscriptionRecurrenceData(day: transaction.effectiveDay(in: month), month: month)
+    }
+
+    private var isSubscriptionExpense: Bool {
+        isExpense && normalized("\(transaction.displayName) \(transaction.title)").contains("subscr")
+    }
+
+    private func subscriptionRecurrenceData(day: Int, month: Date) -> (day: Int, monthName: String?, recurrenceTitle: String?) {
+        switch transaction.recurrence {
+        case .monthly:
+            return (day, nil, RecurrenceType.monthly.title)
+        case .quarterly, .semiannual, .annual:
+            return (day, Date.monthName(forMonthNumber: month.monthNumber), transaction.recurrence?.title)
+        case .yearlyMonth:
+            return (day, Date.monthName(forMonthNumber: transaction.recurrenceMonth), AppStrings.text(.annualRecurrence))
+        case nil:
+            return (day, nil, nil)
+        }
+    }
+
+    private func normalized(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+    }
+
+    private func recurrenceMonthName(in month: Date) -> String? {
+        guard isExpense else { return nil }
+
+        switch transaction.recurrence {
+        case .monthly, nil:
+            return nil
+        case .quarterly, .semiannual, .annual:
+            return month.monthTitle
+        case .yearlyMonth:
+            return Date.monthName(forMonthNumber: transaction.recurrenceMonth)
+        }
     }
 
     private var expandedDetailText: String {
@@ -610,10 +756,10 @@ struct TransactionCard: View {
         let iconBackground: Color
         let iconColor: Color
 
-        if let category {
-            iconName = category.iconName
-            iconBackground = category.color.opacity(0.18)
-            iconColor = category.color
+        if isExpense {
+            iconName = ExpenseTypeIcon.name(for: transaction.displayName)
+            iconBackground = (category?.color ?? AppPalette.primary).opacity(0.18)
+            iconColor = category?.color ?? AppPalette.primary
         } else {
             iconName = "banknote.fill"
             iconBackground = AppPalette.mintSurface
@@ -642,12 +788,49 @@ private struct CompactActionLabel: View {
     }
 }
 
+private struct SubscriptionRecurrenceLabel: View {
+    let day: Int
+    let monthName: String?
+    let recurrenceTitle: String?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("\(AppStrings.text(.day)) ")
+            Text("\(day)")
+                .fontWeight(.bold)
+
+            if let monthName {
+                Text(" - ")
+                Text(monthName)
+                    .fontWeight(.bold)
+            }
+
+            if let recurrenceTitle {
+                Text(" - \(recurrenceTitle)")
+            }
+        }
+    }
+}
+
+private struct RecurrenceMonthLabel: View {
+    let monthName: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("\(AppStrings.text(.month)) ")
+            Text(monthName)
+                .fontWeight(.bold)
+        }
+    }
+}
+
 struct SettingsTransactionCard: View {
     let transaction: MoneyTransaction
+    let isExpanded: Bool
+    let onExpansionChange: (Bool) -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
 
-    @State private var isExpanded = false
     @State private var showsDeleteConfirmation = false
 
     private var category: ExpenseCategory? {
@@ -699,9 +882,7 @@ struct SettingsTransactionCard: View {
     var body: some View {
         VStack(spacing: 0) {
             Button {
-                withAnimation(.snappy) {
-                    isExpanded.toggle()
-                }
+                onExpansionChange(!isExpanded)
             } label: {
                 HStack(spacing: 8) {
                     transactionIcon
@@ -739,7 +920,10 @@ struct SettingsTransactionCard: View {
                         .foregroundStyle(AppPalette.mutedText)
 
                     HStack(spacing: 10) {
-                        Button(action: onEdit) {
+                        Button {
+                            onExpansionChange(false)
+                            onEdit()
+                        } label: {
                             CompactActionLabel(title: AppStrings.text(.editPrefix), systemImage: "pencil")
                                 .foregroundStyle(AppPalette.background)
                                 .frame(maxWidth: .infinity, minHeight: 40)
@@ -762,7 +946,6 @@ struct SettingsTransactionCard: View {
                 .foregroundStyle(AppPalette.background)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
@@ -770,7 +953,10 @@ struct SettingsTransactionCard: View {
         .shadow(color: AppPalette.background.opacity(0.08), radius: 12, y: 6)
         .alert(deleteConfirmationTitle, isPresented: $showsDeleteConfirmation) {
             Button(AppStrings.text(.cancel), role: .cancel) {}
-            Button(AppStrings.text(.delete), role: .destructive, action: onDelete)
+            Button(AppStrings.text(.delete), role: .destructive) {
+                onExpansionChange(false)
+                onDelete()
+            }
         }
     }
 
@@ -779,18 +965,76 @@ struct SettingsTransactionCard: View {
         return "\(AppStrings.text(.deleteConfirmation)) - \(type) \(transaction.amount.currencyText)"
     }
 
+    @ViewBuilder
     private var compactSubtitleView: some View {
-        HStack(spacing: 0) {
-            Text("\(AppStrings.text(.day)) ")
-            Text("\(transaction.day)")
-                .fontWeight(.bold)
-            if isExpense {
-                Text(" - \(transaction.displayName)")
+        if let subscriptionRecurrenceData {
+            SubscriptionRecurrenceLabel(
+                day: subscriptionRecurrenceData.day,
+                monthName: subscriptionRecurrenceData.monthName,
+                recurrenceTitle: subscriptionRecurrenceData.recurrenceTitle
+            )
+            .font(.caption)
+            .foregroundStyle(AppPalette.mutedText)
+            .lineLimit(1)
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 0) {
+                    Text("\(AppStrings.text(.day)) ")
+                    Text("\(transaction.day)")
+                        .fontWeight(.bold)
+                    if isExpense {
+                        Text(" - \(transaction.displayName)")
+                    }
+                }
+                .lineLimit(1)
+
+                if let recurrenceMonthName {
+                    RecurrenceMonthLabel(monthName: recurrenceMonthName)
+                        .lineLimit(1)
+                }
             }
+            .font(.caption)
+            .foregroundStyle(AppPalette.mutedText)
         }
-        .font(.caption)
-        .foregroundStyle(AppPalette.mutedText)
-        .lineLimit(1)
+    }
+
+    private var subscriptionRecurrenceData: (day: Int, monthName: String?, recurrenceTitle: String?)? {
+        guard isSubscriptionExpense else { return nil }
+        return subscriptionRecurrenceData(day: transaction.day, month: transaction.monthStart)
+    }
+
+    private var isSubscriptionExpense: Bool {
+        isExpense && normalized("\(transaction.displayName) \(transaction.title)").contains("subscr")
+    }
+
+    private func subscriptionRecurrenceData(day: Int, month: Date) -> (day: Int, monthName: String?, recurrenceTitle: String?) {
+        switch transaction.recurrence {
+        case .monthly:
+            return (day, nil, RecurrenceType.monthly.title)
+        case .quarterly, .semiannual, .annual:
+            return (day, Date.monthName(forMonthNumber: month.monthNumber), transaction.recurrence?.title)
+        case .yearlyMonth:
+            return (day, Date.monthName(forMonthNumber: transaction.recurrenceMonth), AppStrings.text(.annualRecurrence))
+        case nil:
+            return (day, nil, nil)
+        }
+    }
+
+    private func normalized(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+    }
+
+    private var recurrenceMonthName: String? {
+        guard isExpense else { return nil }
+
+        switch transaction.recurrence {
+        case .monthly, nil:
+            return nil
+        case .quarterly, .semiannual, .annual:
+            return transaction.monthStart.monthTitle
+        case .yearlyMonth:
+            return Date.monthName(forMonthNumber: transaction.recurrenceMonth)
+        }
     }
 
     private var expandedDetailText: String {
@@ -1196,7 +1440,7 @@ struct MoneyAmountPicker: View {
                         syncTextFromAmount()
                     }
                 } label: {
-                    Label(AppStrings.text(.confirm), systemImage: "checkmark.circle.fill")
+                    Label(AppStrings.text(.confirm), systemImage: "keyboard.chevron.compact.down")
                         .font(.subheadline.bold())
                         .foregroundStyle(AppPalette.surface)
                         .frame(maxWidth: .infinity, minHeight: 42)
@@ -1265,6 +1509,8 @@ struct SummaryTile: View {
     let value: Double
     let helpText: String
     var boldHelpNote: String = ""
+    var footnote: String = ""
+    var helpTitle: String? = nil
 
     @State private var showsHelp = false
 
@@ -1282,6 +1528,13 @@ struct SummaryTile: View {
                     .foregroundStyle(value < 0 ? AppPalette.primary : AppPalette.background)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                if !footnote.isEmpty {
+                    Text(footnote)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppPalette.mutedText)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.78)
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
             .padding(.horizontal, 10)
@@ -1300,7 +1553,7 @@ struct SummaryTile: View {
         }
         .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 16))
         .shadow(color: AppPalette.background.opacity(0.07), radius: 16, y: 8)
-        .alert(title, isPresented: $showsHelp) {
+        .alert(helpTitle ?? title, isPresented: $showsHelp) {
             Button(AppStrings.text(.ok)) {}
         } message: {
             if boldHelpNote.isEmpty {
@@ -1319,6 +1572,8 @@ struct RecurringList: View {
     let onEdit: (MoneyTransaction) -> Void
     let onDelete: (MoneyTransaction) -> Void
 
+    @State private var expandedTransactionID: UUID?
+
     var body: some View {
         if transactions.isEmpty {
             ContentUnavailableView(emptyTitle, systemImage: "list.bullet.rectangle")
@@ -1327,9 +1582,13 @@ struct RecurringList: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    ForEach(transactions) { transaction in
+                    ForEach(transactions, id: \.id) { transaction in
                         SettingsTransactionCard(
                             transaction: transaction,
+                            isExpanded: expandedTransactionID == transaction.id,
+                            onExpansionChange: { isExpanded in
+                                expandedTransactionID = isExpanded ? transaction.id : nil
+                            },
                             onEdit: { onEdit(transaction) },
                             onDelete: { onDelete(transaction) }
                         )

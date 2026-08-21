@@ -41,6 +41,9 @@ struct TransactionEditor: View {
     @State private var selectedCreditID: UUID?
     @State private var selectedSavingID: UUID?
     @State private var selectedTransactionDate = Date()
+    @State private var budgetAllocation: BudgetAllocation = .currentMonth
+    @State private var customBudgetMonth = Calendar.current.component(.month, from: Date())
+    @State private var customBudgetYear = Calendar.current.component(.year, from: Date())
 
     private var mode: TransactionEditorMode { request.mode }
     private var editedTransaction: MoneyTransaction? { request.transaction }
@@ -102,6 +105,46 @@ struct TransactionEditor: View {
     private var canMoveEditedExpenseDate: Bool {
         mode.needsExpenseClassification && editedTransaction != nil && (mode == .expense || request.editScope == .singleMonth)
     }
+    private var isIncomeMode: Bool {
+        mode == .income || mode == .salary
+    }
+    private var canUseIncomeReceivedDatePicker: Bool {
+        mode == .income
+    }
+    private var shouldShowBudgetAllocation: Bool {
+        isIncomeMode
+    }
+    private var availableBudgetAllocations: [BudgetAllocation] {
+        mode == .income ? BudgetAllocation.allCases : [.currentMonth, .nextMonth]
+    }
+    private var selectedIncomeReceivedMonthStart: Date {
+        canUseIncomeReceivedDatePicker ? selectedTransactionDate.monthStart : request.month.monthStart
+    }
+    private var selectedIncomeReceivedDay: Int {
+        canUseIncomeReceivedDatePicker ? Calendar.current.component(.day, from: selectedTransactionDate) : day
+    }
+    private var selectedCustomBudgetMonthStart: Date {
+        Date.monthStart(month: customBudgetMonth, year: customBudgetYear)
+    }
+    private var selectedBudgetMonthStart: Date {
+        switch budgetAllocation {
+        case .currentMonth:
+            selectedIncomeReceivedMonthStart
+        case .nextMonth:
+            selectedIncomeReceivedMonthStart.nextMonthStart
+        case .custom:
+            selectedCustomBudgetMonthStart
+        }
+    }
+    private var shouldShowRecurrenceMonthHint: Bool {
+        (mode == .monthlyExpense || mode == .salary)
+            && selectedRecurrenceType != .monthly
+            && !isSingleMonthRecurringEdit
+    }
+    private var selectedRecurrenceStartMonth: Date {
+        let year = Calendar.current.component(.year, from: request.month)
+        return Date.monthStart(month: recurrenceMonth, year: year)
+    }
     private var selectedExpenseMonthStart: Date {
         canMoveEditedExpenseDate ? selectedTransactionDate.monthStart : request.month.monthStart
     }
@@ -159,15 +202,35 @@ struct TransactionEditor: View {
 
                         ExpenseCategorySegmentedPicker(selection: expenseCategoryBinding)
 
-                        Picker(AppStrings.text(.expenseType), selection: $expenseName) {
-                            Text(AppStrings.text(.select)).tag("")
-                            ForEach(expenseCategory?.names ?? [], id: \.self) { name in
-                                Text(name).tag(name)
+                        if let expenseCategory {
+                            Picker(AppStrings.text(.expenseType), selection: $expenseName) {
+                                Text(AppStrings.text(.select)).tag("")
+                                ForEach(expenseCategory.names, id: \.self) { name in
+                                    Label(name, systemImage: ExpenseTypeIcon.name(for: name))
+                                        .tag(name)
+                                }
                             }
+                            .font(.headline)
+                            .tint(AppPalette.background)
+                        } else {
+                            Button {
+                                showValidation(AppStrings.text(.selectExpenseType))
+                            } label: {
+                                HStack {
+                                    Text(AppStrings.text(.expenseType))
+                                    Spacer()
+                                    Text(AppStrings.text(.select))
+                                        .foregroundStyle(AppPalette.mutedText)
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(AppPalette.mutedText)
+                                }
+                                .font(.headline)
+                                .foregroundStyle(AppPalette.background)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .font(.headline)
-                        .tint(AppPalette.background)
-                        .disabled(expenseCategory == nil)
 
                         if shouldShowCreditPicker {
                             HStack(spacing: 10) {
@@ -275,7 +338,7 @@ struct TransactionEditor: View {
                         showsDayPicker = true
                     } label: {
                         HStack {
-                            Text(AppStrings.text(.day))
+                            Text(dateFieldTitle)
                             Spacer()
                             Text(daySelectionText)
                                 .foregroundStyle(AppPalette.mutedText)
@@ -283,12 +346,46 @@ struct TransactionEditor: View {
                     }
                     .foregroundStyle(AppPalette.background)
 
+                    if shouldShowRecurrenceMonthHint {
+                        Picker(AppStrings.text(.month), selection: $recurrenceMonth) {
+                            ForEach(1...12, id: \.self) { month in
+                                Text(Date.monthName(forMonthNumber: month)).tag(month)
+                            }
+                        }
+                        .tint(AppPalette.background)
+                    }
+
                     MoneyAmountPicker(
                         title: AppStrings.text(.value),
                         amount: $amountValue,
                         maximumAmount: 1_000_000,
                         onConfirm: save
                     )
+
+                    if shouldShowBudgetAllocation {
+                        Picker(AppStrings.text(.useInBudget), selection: $budgetAllocation) {
+                            ForEach(availableBudgetAllocations) { allocation in
+                                Text(budgetAllocationTitle(for: allocation)).tag(allocation)
+                            }
+                        }
+                        .tint(AppPalette.background)
+
+                        if budgetAllocation == .custom {
+                            Picker(AppStrings.text(.budgetMonth), selection: $customBudgetMonth) {
+                                ForEach(1...12, id: \.self) { month in
+                                    Text(Date.monthName(forMonthNumber: month)).tag(month)
+                                }
+                            }
+                            .tint(AppPalette.background)
+
+                            Picker(AppStrings.text(.year), selection: $customBudgetYear) {
+                                ForEach(endYearRange, id: \.self) { year in
+                                    Text("\(year)").tag(year)
+                                }
+                            }
+                            .tint(AppPalette.background)
+                        }
+                    }
                 } header: {
                     HStack(spacing: 12) {
                         Text(mode.sectionTitle)
@@ -335,8 +432,8 @@ struct TransactionEditor: View {
                 }
             }
             .sheet(isPresented: $showsDayPicker) {
-                if canMoveEditedExpenseDate {
-                    TransactionDatePicker(selectedDate: $selectedTransactionDate)
+                if canMoveEditedExpenseDate || canUseIncomeReceivedDatePicker {
+                    TransactionDatePicker(selectedDate: $selectedTransactionDate, title: dateFieldTitle)
                 } else {
                     DayPicker(month: mode == .periodicExpense ? pickerMonth : request.month, selectedDay: $day)
                 }
@@ -369,7 +466,7 @@ struct TransactionEditor: View {
     }
 
     private var daySelectionText: String {
-        if canMoveEditedExpenseDate {
+        if canMoveEditedExpenseDate || canUseIncomeReceivedDatePicker {
             let formatter = DateFormatter()
             formatter.locale = SpendWiseRegionalFormat.locale
             formatter.calendar = SpendWiseRegionalFormat.calendar
@@ -378,6 +475,21 @@ struct TransactionEditor: View {
             return formatter.string(from: selectedTransactionDate)
         }
         return "\(day)"
+    }
+
+    private var dateFieldTitle: String {
+        isIncomeMode ? AppStrings.text(.receivedDate) : AppStrings.text(.day)
+    }
+
+    private func budgetAllocationTitle(for allocation: BudgetAllocation) -> String {
+        switch allocation {
+        case .currentMonth:
+            return AppStrings.text(.budgetAllocationCurrentMonth)
+        case .nextMonth:
+            return AppStrings.text(.budgetAllocationNextMonth)
+        case .custom:
+            return allocation.title
+        }
     }
 
     private var singleMonthRecurringEditMessage: String {
@@ -404,6 +516,8 @@ struct TransactionEditor: View {
             recurrenceMonth = Calendar.current.component(.month, from: request.month)
             day = min(Calendar.current.component(.day, from: Date()), request.month.daysInMonth)
             selectedTransactionDate = request.month.date(day: day)
+            customBudgetMonth = Calendar.current.component(.month, from: request.month)
+            customBudgetYear = Calendar.current.component(.year, from: request.month)
             expenseCategory = request.initialExpenseCategory
             expenseName = request.initialExpenseName ?? ""
             return
@@ -422,6 +536,10 @@ struct TransactionEditor: View {
         selectedCreditID = transaction.linkedCreditID
         selectedSavingID = transaction.linkedSavingID
         recurrenceMonth = transaction.recurrenceMonth > 0 ? transaction.recurrenceMonth : Calendar.current.component(.month, from: transaction.monthStart)
+        budgetAllocation = mode == .salary && transaction.budgetAllocation == .custom ? .currentMonth : transaction.budgetAllocation
+        let budgetMonth = transaction.budgetMonth(forReceivedMonth: initialMonth)
+        customBudgetMonth = Calendar.current.component(.month, from: budgetMonth)
+        customBudgetYear = Calendar.current.component(.year, from: budgetMonth)
 
         if let endMonthStart = transaction.recurrenceEndMonthStart?.previousMonthStart {
             hasEndDate = true
@@ -512,7 +630,7 @@ struct TransactionEditor: View {
                 transaction.recurrenceType = selectedRecurrenceType.rawValue
                 transaction.recurrenceMonth = 0
                 transaction.recurrenceEndMonthStart = hasEndDate ? selectedEndMonthStart.nextMonthStart : nil
-                transaction.monthStart = request.month.monthStart
+                transaction.monthStart = selectedRecurrenceType == .monthly ? request.month.monthStart : selectedRecurrenceStartMonth
             case .periodicExpense:
                 transaction.repeatsEveryMonth = false
                 transaction.recurrenceType = RecurrenceType.yearlyMonth.rawValue
@@ -539,7 +657,7 @@ struct TransactionEditor: View {
     private func saveIncome(value: Double, title: String) {
         let transaction = targetTransaction()
         transaction.title = title
-        transaction.day = day
+        transaction.day = selectedIncomeReceivedDay
         transaction.amount = value
         transaction.kind = TransactionKind.income.rawValue
         transaction.expenseCategory = nil
@@ -548,13 +666,18 @@ struct TransactionEditor: View {
         if mode == .salary && request.editScope != .singleMonth {
             transaction.repeatsEveryMonth = selectedRecurrenceType == .monthly
             transaction.recurrenceType = selectedRecurrenceType.rawValue
+            transaction.budgetAllocation = budgetAllocation == .custom ? .currentMonth : budgetAllocation
         } else {
             transaction.repeatsEveryMonth = false
             transaction.recurrenceType = nil
+            transaction.budgetAllocation = budgetAllocation
         }
 
         transaction.recurrenceMonth = 0
-        transaction.monthStart = request.month.monthStart
+        transaction.monthStart = mode == .income
+            ? selectedIncomeReceivedMonthStart
+            : (selectedRecurrenceType == .monthly ? request.month.monthStart : selectedRecurrenceStartMonth)
+        transaction.budgetMonthStart = transaction.budgetMonth(forReceivedMonth: transaction.monthStart)
         finishSaving(transaction)
     }
 
@@ -851,11 +974,12 @@ struct DayPicker: View {
 struct TransactionDatePicker: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var selectedDate: Date
+    var title = AppStrings.text(.day)
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                DatePicker(AppStrings.text(.day), selection: $selectedDate, displayedComponents: .date)
+                DatePicker(title, selection: $selectedDate, displayedComponents: .date)
                     .datePickerStyle(.graphical)
                     .tint(AppPalette.primary)
                     .padding(.horizontal)
@@ -868,7 +992,7 @@ struct TransactionDatePicker: View {
             .background(AppPalette.appBackground.ignoresSafeArea())
             .environment(\.locale, SpendWiseRegionalFormat.locale)
             .environment(\.calendar, SpendWiseRegionalFormat.calendar)
-            .navigationTitle(AppStrings.text(.day))
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(AppPalette.appBackground, for: .navigationBar)
             .toolbarColorScheme(.light, for: .navigationBar)

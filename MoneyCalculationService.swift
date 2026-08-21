@@ -10,10 +10,20 @@ struct TransactionOccurrence {
     let month: Date
 }
 
+struct ReservedIncomeSummary: Equatable {
+    let budgetMonth: Date
+    let amount: Double
+}
+
 struct AccountSummary: Equatable {
     let availableBalance: Double
     let incomeUntilToday: Double
     let paidExpensesUntilToday: Double
+    let reservedForFutureBudgets: [ReservedIncomeSummary]
+
+    var reservedForFutureBudgetsTotal: Double {
+        reservedForFutureBudgets.reduce(0) { $0 + $1.amount }
+    }
 }
 
 struct MonthBudgetSummary: Equatable {
@@ -97,7 +107,8 @@ struct MoneyCalculationService {
         return AccountSummary(
             availableBalance: income - paidExpenses,
             incomeUntilToday: income,
-            paidExpensesUntilToday: paidExpenses
+            paidExpensesUntilToday: paidExpenses,
+            reservedForFutureBudgets: reservedIncomeForFutureBudgets(until: now)
         )
     }
 
@@ -124,9 +135,7 @@ struct MoneyCalculationService {
 
     func monthSummary(in month: Date) -> MonthBudgetSummary {
         let visible = visibleTransactions(in: month)
-        let income = visible
-            .filter { $0.kind == TransactionKind.income.rawValue }
-            .reduce(0) { $0 + $1.amount }
+        let income = incomeTotal(in: month)
         let expenses = visible
             .filter { $0.kind == TransactionKind.expense.rawValue }
             .reduce(0) { $0 + $1.amount }
@@ -135,6 +144,13 @@ struct MoneyCalculationService {
             .reduce(0) { $0 + max($1.amount - paidAmount(for: $1, in: month), 0) }
 
         return MonthBudgetSummary(income: income, expenses: expenses, unpaidExpenses: unpaid)
+    }
+
+    func cumulativeBudgetRemaining(through month: Date) -> Double {
+        guard let firstMonth = firstBudgetRelevantMonth(through: month) else { return 0 }
+
+        return Self.months(from: firstMonth, through: month.monthStart)
+            .reduce(0) { $0 + monthSummary(in: $1).remaining }
     }
 
     func categoryExpenses(in month: Date) -> [CategoryExpensePoint] {
@@ -176,9 +192,57 @@ struct MoneyCalculationService {
     }
 
     func incomeTotal(in month: Date) -> Double {
-        visibleTransactions(in: month)
-            .filter { $0.kind == TransactionKind.income.rawValue }
+        incomeOccurrences(budgetedIn: month)
             .reduce(0) { $0 + $1.amount }
+    }
+
+    func incomeOccurrences(budgetedIn budgetMonth: Date) -> [MoneyTransaction] {
+        guard let firstMonth = transactions
+            .filter({ $0.kind == TransactionKind.income.rawValue })
+            .map(\.monthStart.monthStart)
+            .min()
+        else { return [] }
+
+        return Self.months(from: firstMonth, through: budgetMonth.monthStart)
+            .flatMap { receivedMonth in
+                visibleTransactions(in: receivedMonth)
+                    .filter {
+                        $0.kind == TransactionKind.income.rawValue
+                            && $0.isBudgeted(in: budgetMonth, receivedMonth: receivedMonth)
+                    }
+            }
+    }
+
+    func reservedIncomeForFutureBudgets(until now: Date) -> [ReservedIncomeSummary] {
+        let currentMonth = now.monthStart
+        let receivedIncome = accountOccurrencesUntilToday(now: now)
+            .filter { $0.transaction.kind == TransactionKind.income.rawValue }
+            .filter { $0.transaction.budgetMonth(forReceivedMonth: $0.month) > currentMonth }
+
+        let totals = receivedIncome.reduce(into: [Date: Double]()) { result, occurrence in
+            let budgetMonth = occurrence.transaction.budgetMonth(forReceivedMonth: occurrence.month)
+            result[budgetMonth, default: 0] += occurrence.transaction.amount
+        }
+
+        return totals
+            .map { ReservedIncomeSummary(budgetMonth: $0.key, amount: $0.value) }
+            .sorted { $0.budgetMonth < $1.budgetMonth }
+    }
+
+    private func firstBudgetRelevantMonth(through month: Date) -> Date? {
+        let receivedMonths = transactions.map(\.monthStart.monthStart)
+        let budgetMonths = transactions
+            .filter { $0.kind == TransactionKind.income.rawValue }
+            .compactMap { transaction -> Date? in
+                if transaction.budgetAllocation == .custom {
+                    return transaction.budgetMonthStart?.monthStart
+                }
+                return transaction.monthStart.monthStart
+            }
+
+        return (receivedMonths + budgetMonths)
+            .filter { $0 <= month.monthStart }
+            .min()
     }
 
     func paidExpenseTotal(in month: Date) -> Double {

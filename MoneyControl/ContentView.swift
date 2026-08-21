@@ -64,6 +64,22 @@ private enum AnalyticsListTab: String, CaseIterable, Identifiable {
     }
 }
 
+private enum SubscriptionAnalysisScope: String, CaseIterable, Identifiable {
+    case monthly
+    case all
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .monthly:
+            AppStrings.text(.monthlyRecurrence)
+        case .all:
+            AppStrings.text(.all)
+        }
+    }
+}
+
 private struct ExpenseNotice: Identifiable {
     let id = UUID()
     let title: String
@@ -121,6 +137,7 @@ struct ContentView: View {
     @State private var selectedAnalyticsPeriod: AnalyticsPeriod = .month
     @State private var selectedAnalyticsMonthOffset = 0
     @State private var selectedAnalyticsListTab: AnalyticsListTab = .subscriptions
+    @State private var selectedSubscriptionAnalysisScope: SubscriptionAnalysisScope = .monthly
     @State private var selectedInsightIndex = 0
     @State private var selectedAdviceIndex = 0
     @State private var editorRequest: TransactionEditorRequest?
@@ -128,7 +145,6 @@ struct ContentView: View {
     @State private var showsSettings = false
     @State private var settingsInitialTab: SettingsTab = .budget
     @State private var showsQuickActions = false
-    @State private var quickActionIconPulse = false
     @State private var showsFilters = false
     @State private var paymentFilter: CurrentAccountPaymentFilter = .all
     @State private var filteredCategories: Set<ExpenseCategory> = []
@@ -212,6 +228,40 @@ struct ContentView: View {
     private var accountOccurrencesUntilToday: [TransactionOccurrence] {
         calculator.accountOccurrencesUntilToday(now: Date())
     }
+    private var accountSummary: AccountSummary {
+        calculator.accountSummary(until: Date())
+    }
+    private var futureBudgetReservations: [ReservedIncomeSummary] {
+        accountSummary.reservedForFutureBudgets
+    }
+    private var firstFutureBudgetReservation: ReservedIncomeSummary? {
+        futureBudgetReservations.first
+    }
+    private var futureBudgetReservationTotal: Double {
+        accountSummary.reservedForFutureBudgetsTotal
+    }
+    private var futureBudgetReservationFootnote: String {
+        guard let firstFutureBudgetReservation else { return "" }
+        let total = futureBudgetReservationTotal
+        return String(
+            format: AppStrings.text(.reservedForBudgetSummary),
+            total.currencyText,
+            firstFutureBudgetReservation.budgetMonth.monthTitle
+        )
+    }
+    private var balanceHelpText: String {
+        guard let firstFutureBudgetReservation, futureBudgetReservationTotal > 0 else {
+            return AppStrings.text(.balanceThisMonthHelp)
+        }
+
+        return String(
+            format: AppStrings.text(.reservedBalanceHelpMessage),
+            inAccount.currencyText,
+            futureBudgetReservationTotal.currencyText,
+            firstFutureBudgetReservation.budgetMonth.monthTitle,
+            currentMonth.monthTitle
+        )
+    }
 
     private var monthUnpaidExpenses: Double {
         calculator.monthSummary(in: selectedMonth).unpaidExpenses
@@ -226,15 +276,25 @@ struct ContentView: View {
     }
 
     private var incomeUntilToday: Double {
-        calculator.accountSummary(until: Date()).incomeUntilToday
+        accountSummary.incomeUntilToday
     }
 
     private var paidExpensesUntilToday: Double {
-        calculator.accountSummary(until: Date()).paidExpensesUntilToday
+        accountSummary.paidExpensesUntilToday
     }
 
-    private var inAccount: Double { calculator.accountSummary(until: Date()).availableBalance }
-    private var monthRemaining: Double { calculator.monthSummary(in: selectedMonth).remaining }
+    private var inAccount: Double { accountSummary.availableBalance }
+    private var isSelectedMonthInSpendableWindow: Bool {
+        guard let maximumMonth = Calendar.current.date(byAdding: .month, value: 2, to: currentMonth) else {
+            return Calendar.current.isDate(selectedMonth, equalTo: currentMonth, toGranularity: .month)
+        }
+
+        return selectedMonth >= currentMonth && selectedMonth <= maximumMonth.monthStart
+    }
+    private var monthRemaining: Double? {
+        guard isSelectedMonthInSpendableWindow else { return nil }
+        return calculator.cumulativeBudgetRemaining(through: selectedMonth)
+    }
     private var selectedAnalyticsMonth: Date {
         Calendar.current.date(byAdding: .month, value: selectedAnalyticsMonthOffset, to: Date().monthStart) ?? Date().monthStart
     }
@@ -263,12 +323,28 @@ struct ContentView: View {
     private var annualBalanceTotal: Double {
         annualBalancePoints.reduce(0) { $0 + $1.balance }
     }
-    private var currentMonthSubscriptions: [MoneyTransaction] {
-        currentMonthTransactions
+    private var configuredSubscriptions: [MoneyTransaction] {
+        transactions
             .filter { transaction in
-                transaction.kind == TransactionKind.expense.rawValue && normalized(transaction.displayName).contains("subscr")
+                transaction.kind == TransactionKind.expense.rawValue
+                    && transaction.isRecurring
+                    && transaction.isActiveForSettingsList
+                    && normalized(transaction.displayName).contains("subscr")
             }
-            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+            .sorted { first, second in
+                if first.displayName != second.displayName {
+                    return first.displayName.localizedCaseInsensitiveCompare(second.displayName) == .orderedAscending
+                }
+                return first.monthStart < second.monthStart
+            }
+    }
+    private var displayedConfiguredSubscriptions: [MoneyTransaction] {
+        switch selectedSubscriptionAnalysisScope {
+        case .monthly:
+            configuredSubscriptions.filter { $0.recurrence == .monthly }
+        case .all:
+            configuredSubscriptions
+        }
     }
     private var yearSavingsPoints: [MonthlyBalancePoint] {
         let currentAccountPoints = calculator.yearSavingsPoints(in: currentYearMonths)
@@ -359,7 +435,46 @@ struct ContentView: View {
         savingAccounts.first { $0.id == id }?.name ?? SavingsStrings.text(.saving)
     }
     private var analyticsInsights: [AnalyticsInsight] {
-        calculator.analyticsInsights(currentMonth: currentMonth) + savingInsights + creditInsights
+        calculator.analyticsInsights(currentMonth: currentMonth) + futureBudgetInsights + savingInsights + creditInsights
+    }
+
+    private var futureBudgetInsights: [AnalyticsInsight] {
+        guard let firstFutureBudgetReservation, futureBudgetReservationTotal > 0 else { return [] }
+
+        let receivedThisMonth = accountOccurrencesUntilToday
+            .filter { occurrence in
+                occurrence.transaction.kind == TransactionKind.income.rawValue
+                    && Calendar.current.isDate(occurrence.month, equalTo: currentMonth, toGranularity: .month)
+                    && occurrence.transaction.budgetMonth(forReceivedMonth: occurrence.month) > currentMonth
+            }
+            .reduce(0) { $0 + $1.transaction.amount }
+
+        var insights: [AnalyticsInsight] = []
+        if receivedThisMonth > 0 {
+            insights.append(
+                AnalyticsInsight(
+                    title: AppStrings.text(.paidInsights),
+                    message: String(
+                        format: AppStrings.text(.futureIncomeReceivedInsight),
+                        receivedThisMonth.currencyText,
+                        firstFutureBudgetReservation.budgetMonth.monthTitle
+                    )
+                )
+            )
+        }
+
+        insights.append(
+            AnalyticsInsight(
+                title: AppStrings.text(.paidInsights),
+                message: String(
+                    format: AppStrings.text(.futureIncomeReservedInsight),
+                    futureBudgetReservationTotal.currencyText,
+                    firstFutureBudgetReservation.budgetMonth.monthTitle
+                )
+            )
+        )
+
+        return insights
     }
 
     private var savingInsights: [AnalyticsInsight] {
@@ -1040,6 +1155,7 @@ struct ContentView: View {
             month: selectedMonth,
             transactions: selectedTransactions,
             payments: payments,
+            budgetIncome: monthIncome,
             isCompact: true
         )
     }
@@ -1325,7 +1441,14 @@ struct ContentView: View {
     }
 
     private var analyticsListsCard: some View {
-        chartCard(title: selectedAnalyticsListTab.title, total: analyticsListTotal(for: selectedAnalyticsListTab)) {
+        chartCard(
+            title: selectedAnalyticsListTab.title,
+            total: analyticsListTotal(for: selectedAnalyticsListTab)
+        ) {
+            if selectedAnalyticsListTab == .subscriptions {
+                subscriptionScopePicker
+            }
+        } content: {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("", selection: $selectedAnalyticsListTab) {
                     ForEach(AnalyticsListTab.allCases) { tab in
@@ -1337,7 +1460,7 @@ struct ContentView: View {
 
                 switch selectedAnalyticsListTab {
                 case .subscriptions:
-                    transactionList(currentMonthSubscriptions, emptySystemImage: "play.rectangle")
+                    subscriptionList(displayedConfiguredSubscriptions, emptySystemImage: "play.rectangle")
                 case .savings:
                     yearlySavingsList
                 case .incomeVsExpenses:
@@ -1350,12 +1473,23 @@ struct ContentView: View {
     private func analyticsListTotal(for tab: AnalyticsListTab) -> Double {
         switch tab {
         case .subscriptions:
-            currentMonthSubscriptions.reduce(0) { $0 + $1.amount }
+            displayedConfiguredSubscriptions.reduce(0) { $0 + $1.amount }
         case .savings:
             yearSavingsPoints.reduce(0) { $0 + $1.expenses }
         case .incomeVsExpenses:
             annualBalancePoints.reduce(0) { $0 + $1.balance }
         }
+    }
+
+    private var subscriptionScopePicker: some View {
+        Picker("", selection: $selectedSubscriptionAnalysisScope) {
+            ForEach(SubscriptionAnalysisScope.allCases) { scope in
+                Text(scope.title).tag(scope)
+            }
+        }
+        .pickerStyle(.segmented)
+        .tint(AppPalette.background)
+        .frame(width: 150)
     }
 
     private var analyticsNetWorthCard: some View {
@@ -1471,16 +1605,16 @@ struct ContentView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func transactionList(_ transactions: [MoneyTransaction], emptySystemImage: String) -> some View {
+    private func subscriptionList(_ transactions: [MoneyTransaction], emptySystemImage: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if transactions.isEmpty {
                 analyticsEmptyRow(systemImage: emptySystemImage)
             } else {
                 ForEach(transactions) { transaction in
                     analyticsRow(
-                        icon: expenseIconName(for: transaction.displayName),
+                        icon: ExpenseTypeIcon.name(for: transaction.displayName),
                         title: analyticsTransactionTitle(for: transaction),
-                        subtitle: analyticsTransactionSubtitle(for: transaction, in: currentMonth),
+                        subtitle: analyticsConfiguredSubscriptionSubtitle(for: transaction),
                         value: transaction.amount.currencyText,
                         tint: AppPalette.primary
                     )
@@ -1564,20 +1698,28 @@ struct ContentView: View {
         return trimmedTitle.isEmpty ? transaction.displayName : trimmedTitle
     }
 
-    private func analyticsTransactionSubtitle(for transaction: MoneyTransaction, in month: Date) -> String {
-        var parts = ["\(AppStrings.text(.day)) \(transaction.effectiveDay(in: month))"]
-        if let category = ExpenseCategory(rawValue: transaction.expenseCategory ?? "") {
-            parts.append(category.title)
-        }
+    private func analyticsConfiguredSubscriptionSubtitle(for transaction: MoneyTransaction) -> String {
+        let displayMonth = transaction.recurrence == .yearlyMonth
+            ? Date.monthStart(forMonthNumber: transaction.recurrenceMonth)
+            : transaction.monthStart
+        var parts = ["\(AppStrings.text(.day)) \(transaction.day)"]
+
         switch transaction.recurrence {
-        case .monthly, .quarterly, .semiannual, .annual:
-            parts.append(transaction.recurrence?.title ?? AppStrings.text(.everyMonth))
+        case .monthly:
+            parts.append(RecurrenceType.monthly.title)
+        case .quarterly, .semiannual, .annual:
+            parts.append(Date.monthName(forMonthNumber: displayMonth.monthNumber))
+            if let recurrence = transaction.recurrence {
+                parts.append(recurrence.title)
+            }
         case .yearlyMonth:
             parts.append(Date.monthName(forMonthNumber: transaction.recurrenceMonth))
+            parts.append(AppStrings.text(.annualRecurrence))
         case nil:
             break
         }
-        return parts.joined(separator: " · ")
+
+        return parts.joined(separator: " - ")
     }
 
     private var incomeVsExpensesList: some View {
@@ -1611,7 +1753,7 @@ struct ContentView: View {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(AppPalette.mutedText)
-                        .lineLimit(3)
+                        .lineLimit(4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if !freeText.isEmpty {
@@ -1720,6 +1862,19 @@ struct ContentView: View {
     }
 
     private func chartCard<Content: View>(title: String, total: Double, @ViewBuilder content: () -> Content) -> some View {
+        chartCard(title: title, total: total) {
+            EmptyView()
+        } content: {
+            content()
+        }
+    }
+
+    private func chartCard<HeaderAccessory: View, Content: View>(
+        title: String,
+        total: Double,
+        @ViewBuilder headerAccessory: () -> HeaderAccessory,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(title)
@@ -1727,6 +1882,8 @@ struct ContentView: View {
                     .foregroundStyle(AppPalette.background)
 
                 Spacer()
+
+                headerAccessory()
 
                 Text(total.currencyText)
                     .font(.subheadline.bold())
@@ -1798,7 +1955,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(points.filter { $0.amount > 0 }) { point in
                         HStack(spacing: 10) {
-                            Image(systemName: expenseIconName(for: point.title))
+                            Image(systemName: ExpenseTypeIcon.name(for: point.title))
                                 .font(.caption.bold())
                                 .foregroundStyle(point.category.color)
                                 .frame(width: 28, height: 28)
@@ -1835,56 +1992,6 @@ struct ContentView: View {
                     .frame(height: 180)
             }
         }
-    }
-
-    private func expenseIconName(for title: String) -> String {
-        let normalizedTitle = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
-
-        if normalizedTitle.contains("transport") || normalizedTitle.contains("combustivel") || normalizedTitle.contains("carro") {
-            return "car.fill"
-        }
-
-        if normalizedTitle.contains("aliment") || normalizedTitle.contains("supermercado") || normalizedTitle.contains("refeic") {
-            return "fork.knife"
-        }
-
-        if normalizedTitle.contains("habit") || normalizedTitle.contains("renda") || normalizedTitle.contains("credito") || normalizedTitle.contains("casa") {
-            return "house.fill"
-        }
-
-        if normalizedTitle.contains("eletric") || normalizedTitle.contains("gas") || normalizedTitle.contains("agua") || normalizedTitle.contains("telecom") || normalizedTitle.contains("contas") {
-            return "lightbulb.fill"
-        }
-
-        if normalizedTitle.contains("seguro") {
-            return "shield.fill"
-        }
-
-        if normalizedTitle.contains("subscr") {
-            return "play.rectangle.fill"
-        }
-
-        if normalizedTitle.contains("lazer") || normalizedTitle.contains("entreten") {
-            return "sparkles"
-        }
-
-        if normalizedTitle.contains("viagem") || normalizedTitle.contains("ferias") {
-            return "airplane"
-        }
-
-        if normalizedTitle.contains("roupa") || normalizedTitle.contains("acessor") || normalizedTitle.contains("compras") {
-            return "bag.fill"
-        }
-
-        if normalizedTitle.contains("poup") {
-            return "leaf.fill"
-        }
-
-        if normalizedTitle.contains("divida") || normalizedTitle.contains("amort") {
-            return "creditcard.fill"
-        }
-
-        return "ellipsis.circle.fill"
     }
 
     private func categoryShortTitle(_ category: ExpenseCategory) -> String {
@@ -1929,7 +2036,9 @@ struct ContentView: View {
             SummaryTile(
                 title: AppStrings.text(.balanceThisMonth),
                 value: inAccount,
-                helpText: AppStrings.text(.balanceThisMonthHelp)
+                helpText: balanceHelpText,
+                footnote: futureBudgetReservationFootnote,
+                helpTitle: futureBudgetReservationTotal > 0 ? AppStrings.text(.reservedBalanceHelpTitle) : nil
             )
 
             HStack(spacing: 8) {
@@ -1938,12 +2047,14 @@ struct ContentView: View {
                     value: monthUnpaidExpenses,
                     helpText: AppStrings.text(.monthUnpaidHelp)
                 )
-                SummaryTile(
-                    title: AppStrings.text(.monthRemaining),
-                    value: monthRemaining,
-                    helpText: AppStrings.text(.monthRemainingHelp),
-                    boldHelpNote: AppStrings.text(.monthRemainingHelpNote)
-                )
+                if let monthRemaining {
+                    SummaryTile(
+                        title: monthRemaining < 0 ? AppStrings.text(.monthBudgetExceeded) : AppStrings.text(.monthRemaining),
+                        value: monthRemaining,
+                        helpText: AppStrings.text(.monthRemainingHelp),
+                        boldHelpNote: AppStrings.text(.monthRemainingHelpNote)
+                    )
+                }
             }
         }
         .padding(.horizontal)
@@ -2121,12 +2232,6 @@ struct ContentView: View {
         }
         .padding(.horizontal)
         .transition(.move(edge: .bottom).combined(with: .opacity))
-        .onAppear {
-            quickActionIconPulse = false
-            withAnimation(.easeInOut(duration: 0.6).repeatCount(2, autoreverses: true)) {
-                quickActionIconPulse = true
-            }
-        }
     }
 
     private var hasActiveSavings: Bool {
@@ -2155,7 +2260,7 @@ struct ContentView: View {
 
     private var creditQuickActionButton: some View {
         quickActionButton(
-            title: AppStrings.text(.newCreditPaymentExpense),
+            title: AppStrings.text(.creditPaymentExpenseButton),
             systemImage: "creditcard.fill",
             iconColor: AppPalette.primary,
             textColor: AppPalette.surface,
@@ -2197,15 +2302,15 @@ struct ContentView: View {
                 Image(systemName: systemImage)
                     .font(.headline.bold())
                     .foregroundStyle(iconColor)
-                    .scaleEffect(quickActionIconPulse ? 1.12 : 1)
 
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .minimumScaleFactor(0.75)
+                    .multilineTextAlignment(.leading)
             }
             .foregroundStyle(textColor)
-            .frame(maxWidth: .infinity, minHeight: 46)
+            .frame(maxWidth: .infinity, minHeight: 54)
             .background(background, in: RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
@@ -2736,7 +2841,7 @@ private struct CurrentAccountFilterView: View {
                             ForEach(visibleExpenseTypeOptions) { option in
                                 expenseTypeFilterButton(
                                     title: option.title,
-                                    systemImage: expenseIconName(for: option.title),
+                                    systemImage: ExpenseTypeIcon.name(for: option.title),
                                     isSelected: filteredExpenseType == option.title
                                 ) {
                                     filteredExpenseType = option.title
@@ -2795,45 +2900,6 @@ private struct CurrentAccountFilterView: View {
         .buttonStyle(.plain)
     }
 
-    private func expenseIconName(for title: String) -> String {
-        let normalizedTitle = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
-
-        if normalizedTitle.contains("transport") || normalizedTitle.contains("combustivel") || normalizedTitle.contains("carro") {
-            return "car.fill"
-        }
-        if normalizedTitle.contains("aliment") || normalizedTitle.contains("supermercado") || normalizedTitle.contains("refeic") {
-            return "fork.knife"
-        }
-        if normalizedTitle.contains("habit") || normalizedTitle.contains("renda") || normalizedTitle.contains("credito") || normalizedTitle.contains("casa") {
-            return "house.fill"
-        }
-        if normalizedTitle.contains("eletric") || normalizedTitle.contains("gas") || normalizedTitle.contains("agua") || normalizedTitle.contains("telecom") || normalizedTitle.contains("contas") {
-            return "lightbulb.fill"
-        }
-        if normalizedTitle.contains("seguro") {
-            return "shield.fill"
-        }
-        if normalizedTitle.contains("subscr") {
-            return "play.rectangle.fill"
-        }
-        if normalizedTitle.contains("lazer") || normalizedTitle.contains("entreten") {
-            return "sparkles"
-        }
-        if normalizedTitle.contains("viagem") || normalizedTitle.contains("ferias") {
-            return "airplane"
-        }
-        if normalizedTitle.contains("roupa") || normalizedTitle.contains("acessor") || normalizedTitle.contains("compras") {
-            return "bag.fill"
-        }
-        if normalizedTitle.contains("poup") {
-            return "leaf.fill"
-        }
-        if normalizedTitle.contains("divida") || normalizedTitle.contains("amort") {
-            return "creditcard.fill"
-        }
-
-        return "ellipsis.circle.fill"
-    }
 }
 
 private extension Array where Element == String {

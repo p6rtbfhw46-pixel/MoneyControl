@@ -55,6 +55,72 @@ struct MoneyControlTests {
         #expect(summary.unpaidExpenses == 750)
     }
 
+    @Test func cumulativeBudgetRemainingCarriesPastMonthsIntoSelectedMonth() {
+        let august = Date.monthStart(month: 8, year: 2026)
+        let september = Date.monthStart(month: 9, year: 2026)
+        let service = MoneyCalculationService(
+            transactions: [
+                makeIncome(title: "Salario agosto", day: 1, month: august, amount: 1_000),
+                makeExpense(title: "Renda agosto", day: 5, month: august, amount: 700),
+                makeIncome(title: "Salario setembro", day: 1, month: september, amount: 1_000),
+                makeExpense(title: "Renda setembro", day: 5, month: september, amount: 1_200)
+            ],
+            payments: [],
+            exclusions: []
+        )
+
+        #expect(service.monthSummary(in: august).remaining == 300)
+        #expect(service.monthSummary(in: september).remaining == -200)
+        #expect(service.cumulativeBudgetRemaining(through: september) == 100)
+    }
+
+    @Test func futureBudgetIncomeIsInRealBalanceButNotCurrentBudget() {
+        let august = Date.monthStart(month: 8, year: 2026)
+        let september = Date.monthStart(month: 9, year: 2026)
+        let salary = makeIncome(
+            title: "Salario",
+            day: 20,
+            month: august,
+            amount: 1_800,
+            budgetAllocation: .nextMonth
+        )
+        let augustExpense = makeExpense(title: "Renda", day: 5, month: august, amount: 700)
+        let service = MoneyCalculationService(
+            transactions: [salary, augustExpense],
+            payments: [],
+            exclusions: []
+        )
+
+        let account = service.accountSummary(until: august.date(day: 21))
+        let augustSummary = service.monthSummary(in: august)
+        let septemberSummary = service.monthSummary(in: september)
+
+        #expect(account.availableBalance == 1_800)
+        #expect(account.reservedForFutureBudgetsTotal == 1_800)
+        #expect(account.reservedForFutureBudgets.first?.budgetMonth == september)
+        #expect(augustSummary.income == 0)
+        #expect(augustSummary.remaining == -700)
+        #expect(septemberSummary.income == 1_800)
+    }
+
+    @Test func customBudgetMonthMovesOneOffIncomeAnalysisOnly() {
+        let august = Date.monthStart(month: 8, year: 2026)
+        let october = Date.monthStart(month: 10, year: 2026)
+        let income = makeIncome(
+            title: "Bonus",
+            day: 15,
+            month: august,
+            amount: 500,
+            budgetAllocation: .custom,
+            budgetMonth: october
+        )
+        let service = MoneyCalculationService(transactions: [income], payments: [], exclusions: [])
+
+        #expect(service.accountSummary(until: august.date(day: 16)).availableBalance == 500)
+        #expect(service.monthSummary(in: august).income == 0)
+        #expect(service.monthSummary(in: october).income == 500)
+    }
+
     @Test func paidAmountIsClampedToExpenseValue() {
         let month = Date.monthStart(month: 8, year: 2026)
         let expense = makeExpense(title: "Cartao", day: 3, month: month, amount: 100)
@@ -155,7 +221,7 @@ struct MoneyControlTests {
         let augustRestaurant = makeExpense(title: "Jantar", day: 1, month: august, amount: 150, expenseName: "Refeições fora de casa")
         let julyGroceries = makeExpense(title: "Mercado", day: 2, month: july, amount: 200, expenseName: "Alimentação: compras e supermercados")
         let augustGroceries = makeExpense(title: "Mercado", day: 2, month: august, amount: 100, expenseName: "Alimentação: compras e supermercados")
-        let subscription = makeExpense(title: "Streaming", day: 3, month: august, amount: 70, expenseName: "Subscrições mensais")
+        let subscription = makeExpense(title: "Streaming", day: 3, month: august, amount: 70, expenseName: "Subscrições")
         let income = makeIncome(title: "Salario", day: 1, month: august, amount: 1_000)
         let payments = [julyRestaurant, augustRestaurant, julyGroceries, augustGroceries, subscription].map {
             ExpensePayment(transactionID: $0.id, monthStart: $0.monthStart, amountPaid: $0.amount)
@@ -179,7 +245,9 @@ struct MoneyControlTests {
         day: Int,
         month: Date,
         amount: Double,
-        recurrenceType: RecurrenceType? = nil
+        recurrenceType: RecurrenceType? = nil,
+        budgetAllocation: BudgetAllocation = .currentMonth,
+        budgetMonth: Date? = nil
     ) -> MoneyTransaction {
         MoneyTransaction(
             title: title,
@@ -188,7 +256,9 @@ struct MoneyControlTests {
             amount: amount,
             kind: TransactionKind.income.rawValue,
             repeatsEveryMonth: recurrenceType == .monthly,
-            recurrenceType: recurrenceType?.rawValue
+            recurrenceType: recurrenceType?.rawValue,
+            budgetAllocationType: budgetAllocation.rawValue,
+            budgetMonthStart: budgetMonth?.monthStart ?? (budgetAllocation == .nextMonth ? month.nextMonthStart : month.monthStart)
         )
     }
 

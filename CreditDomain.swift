@@ -151,6 +151,8 @@ enum CreditTextKey {
     case adjustment
     case noMovements
     case debtEvolution
+    case paymentEstimateTrajectory
+    case averageLastThreeMonths
     case monthSummary
     case newDebtThisMonth
     case paidThisMonth
@@ -208,6 +210,8 @@ enum CreditStrings {
             .adjustment: "Ajuste",
             .noMovements: "Ainda não existem movimentos.",
             .debtEvolution: "Evolução da dívida",
+            .paymentEstimateTrajectory: "Estimativa de pagamentos a 1 ano",
+            .averageLastThreeMonths: "Média dos últimos 3 meses",
             .monthSummary: "Resumo do mês",
             .newDebtThisMonth: "Novas dívidas este mês",
             .paidThisMonth: "Pago este mês",
@@ -258,6 +262,8 @@ enum CreditStrings {
             .adjustment: "Adjustment",
             .noMovements: "There are no movements yet.",
             .debtEvolution: "Debt evolution",
+            .paymentEstimateTrajectory: "1-year payment estimate",
+            .averageLastThreeMonths: "Average over the last 3 months",
             .monthSummary: "Month summary",
             .newDebtThisMonth: "New debt this month",
             .paidThisMonth: "Paid this month",

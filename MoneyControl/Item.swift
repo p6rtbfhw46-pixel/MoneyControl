@@ -23,6 +23,8 @@ final class MoneyTransaction {
     var recurrenceType: String?
     var recurrenceMonth: Int
     var recurrenceEndMonthStart: Date?
+    var budgetAllocationType: String?
+    var budgetMonthStart: Date?
     var linkedCreditID: UUID?
     var linkedCreditMovementID: UUID?
     var linkedSavingID: UUID?
@@ -41,6 +43,8 @@ final class MoneyTransaction {
         recurrenceType: String? = nil,
         recurrenceMonth: Int = 0,
         recurrenceEndMonthStart: Date? = nil,
+        budgetAllocationType: String? = nil,
+        budgetMonthStart: Date? = nil,
         linkedCreditID: UUID? = nil,
         linkedCreditMovementID: UUID? = nil,
         linkedSavingID: UUID? = nil,
@@ -59,6 +63,8 @@ final class MoneyTransaction {
         self.recurrenceType = recurrenceType
         self.recurrenceMonth = recurrenceMonth
         self.recurrenceEndMonthStart = recurrenceEndMonthStart
+        self.budgetAllocationType = budgetAllocationType
+        self.budgetMonthStart = budgetMonthStart
         self.linkedCreditID = linkedCreditID
         self.linkedCreditMovementID = linkedCreditMovementID
         self.linkedSavingID = linkedSavingID

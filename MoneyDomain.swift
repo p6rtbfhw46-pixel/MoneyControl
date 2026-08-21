@@ -10,6 +10,25 @@ enum TransactionKind: String {
     case income
 }
 
+enum BudgetAllocation: String, CaseIterable, Identifiable {
+    case currentMonth
+    case nextMonth
+    case custom
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .currentMonth:
+            AppStrings.text(.budgetAllocationCurrentMonth)
+        case .nextMonth:
+            AppStrings.text(.budgetAllocationNextMonth)
+        case .custom:
+            AppStrings.text(.budgetAllocationCustomMonth)
+        }
+    }
+}
+
 enum RecurrenceType: String, CaseIterable, Identifiable {
     case monthly
     case quarterly
@@ -54,6 +73,48 @@ enum TransactionEditScope {
     case normal
     case singleMonth
     case futureMonths
+}
+
+enum ExpenseTypeIcon {
+    static func name(for title: String) -> String {
+        let normalizedTitle = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+
+        if normalizedTitle.contains("transport") || normalizedTitle.contains("combustivel") || normalizedTitle.contains("fuel") || normalizedTitle.contains("carro") {
+            return "car.fill"
+        }
+        if normalizedTitle.contains("aliment") || normalizedTitle.contains("supermercado") || normalizedTitle.contains("refeic") || normalizedTitle.contains("food") || normalizedTitle.contains("grocer") || normalizedTitle.contains("eating") {
+            return "fork.knife"
+        }
+        if normalizedTitle.contains("habit") || normalizedTitle.contains("renda") || normalizedTitle.contains("mortgage") || normalizedTitle.contains("housing") || normalizedTitle.contains("rent") || normalizedTitle.contains("casa") {
+            return "house.fill"
+        }
+        if normalizedTitle.contains("eletric") || normalizedTitle.contains("electric") || normalizedTitle.contains("gas") || normalizedTitle.contains("agua") || normalizedTitle.contains("water") || normalizedTitle.contains("telecom") || normalizedTitle.contains("contas") || normalizedTitle.contains("bills") {
+            return "lightbulb.fill"
+        }
+        if normalizedTitle.contains("seguro") || normalizedTitle.contains("insurance") {
+            return "shield.fill"
+        }
+        if normalizedTitle.contains("subscr") || normalizedTitle.contains("subscription") {
+            return "play.rectangle.fill"
+        }
+        if normalizedTitle.contains("lazer") || normalizedTitle.contains("entreten") || normalizedTitle.contains("leisure") || normalizedTitle.contains("entertainment") {
+            return "sparkles"
+        }
+        if normalizedTitle.contains("viagem") || normalizedTitle.contains("ferias") || normalizedTitle.contains("travel") || normalizedTitle.contains("holiday") {
+            return "airplane"
+        }
+        if normalizedTitle.contains("roupa") || normalizedTitle.contains("acessor") || normalizedTitle.contains("clothing") || normalizedTitle.contains("accessor") || normalizedTitle.contains("compras") {
+            return "bag.fill"
+        }
+        if normalizedTitle.contains("poup") || normalizedTitle.contains("saving") {
+            return "leaf.fill"
+        }
+        if normalizedTitle.contains("divida") || normalizedTitle.contains("amort") || normalizedTitle.contains("debt") {
+            return "creditcard.fill"
+        }
+
+        return "ellipsis.circle.fill"
+    }
 }
 
 enum TransactionEditorMode: String {
@@ -220,6 +281,20 @@ extension MoneyTransaction {
         return repeatsEveryMonth ? .monthly : nil
     }
 
+    var budgetAllocation: BudgetAllocation {
+        get {
+            guard kind == TransactionKind.income.rawValue,
+                  let budgetAllocationType,
+                  let allocation = BudgetAllocation(rawValue: budgetAllocationType)
+            else { return .currentMonth }
+
+            return allocation
+        }
+        set {
+            budgetAllocationType = kind == TransactionKind.income.rawValue ? newValue.rawValue : nil
+        }
+    }
+
     var editorMode: TransactionEditorMode {
         if kind == TransactionKind.expense.rawValue {
             switch recurrence {
@@ -256,6 +331,15 @@ extension MoneyTransaction {
             parts.append(title)
         }
 
+        if kind == TransactionKind.income.rawValue, let month {
+            let budgetMonth = budgetMonth(forReceivedMonth: month)
+            if !Calendar.current.isDate(budgetMonth, equalTo: month.monthStart, toGranularity: .month) {
+                parts.append("\(AppStrings.text(.budgetMonth)) \(budgetMonth.monthTitle)")
+            }
+        } else if kind == TransactionKind.income.rawValue, recurrence != nil {
+            parts.append("\(AppStrings.text(.useInBudget)) \(budgetAllocation.title)")
+        }
+
         switch recurrence {
         case .monthly, .quarterly, .semiannual, .annual:
             parts.append(recurrence?.title ?? AppStrings.text(.everyMonth))
@@ -274,6 +358,33 @@ extension MoneyTransaction {
 
     func effectiveDay(in month: Date) -> Int {
         min(day, month.daysInMonth)
+    }
+
+    func budgetMonth(forReceivedMonth receivedMonth: Date) -> Date {
+        guard kind == TransactionKind.income.rawValue else {
+            return receivedMonth.monthStart
+        }
+
+        switch budgetAllocation {
+        case .currentMonth:
+            return receivedMonth.monthStart
+        case .nextMonth:
+            return receivedMonth.nextMonthStart
+        case .custom:
+            return budgetMonthStart?.monthStart ?? receivedMonth.monthStart
+        }
+    }
+
+    func isBudgeted(in targetBudgetMonth: Date, receivedMonth: Date) -> Bool {
+        Calendar.current.isDate(
+            budgetMonth(forReceivedMonth: receivedMonth),
+            equalTo: targetBudgetMonth.monthStart,
+            toGranularity: .month
+        )
+    }
+
+    func receivedDate(in receivedMonth: Date) -> Date {
+        receivedMonth.monthStart.date(day: effectiveDay(in: receivedMonth))
     }
 
     var isRecurring: Bool {

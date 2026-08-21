@@ -180,13 +180,46 @@ struct InitialSetupWizardView: View {
     }
 
     private var expenseStep: some View {
-        wizardScroll {
-            stepTitle(
-                title: AppStrings.text(.setupExpensesTitle),
-                subtitle: AppStrings.text(.setupExpensesSubtitle)
-            )
+        GeometryReader { proxy in
+            if proxy.size.width > proxy.size.height {
+                wizardScroll {
+                    stepTitle(
+                        title: AppStrings.text(.setupExpensesTitle),
+                        subtitle: AppStrings.text(.setupExpensesSubtitle)
+                    )
 
-            inputCard(title: AppStrings.text(.setupExpenseCardTitle), systemImage: "creditcard.fill", tint: AppPalette.primary) {
+                    HStack(alignment: .top, spacing: 16) {
+                        expenseInputCard
+                            .frame(maxWidth: .infinity, alignment: .top)
+
+                        expenseDraftList
+                            .frame(maxWidth: .infinity, alignment: .top)
+                    }
+
+                    noteCard(AppStrings.text(.setupExpensesNote))
+                }
+            } else {
+                wizardScroll {
+                    stepTitle(
+                        title: AppStrings.text(.setupExpensesTitle),
+                        subtitle: AppStrings.text(.setupExpensesSubtitle)
+                    )
+
+                    expenseInputCard
+
+                    expenseDraftList
+
+                    noteCard(AppStrings.text(.setupExpensesNote))
+                }
+            }
+        }
+        .sheet(isPresented: $showsExpenseDayPicker) {
+            DayPicker(month: Date().monthStart, selectedDay: $expenseDraft.day)
+        }
+    }
+
+    private var expenseInputCard: some View {
+        inputCard(title: AppStrings.text(.setupExpenseCardTitle), systemImage: "creditcard.fill", tint: AppPalette.primary) {
                 HStack(spacing: 10) {
                     Text(AppStrings.text(.category503020))
                         .font(.subheadline.bold())
@@ -200,13 +233,7 @@ struct InitialSetupWizardView: View {
                     Spacer()
                 }
 
-                Picker(AppStrings.text(.category503020), selection: $expenseDraft.category) {
-                    ForEach(ExpenseCategory.allCases) { category in
-                        Text(category.title).tag(category)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .tint(AppPalette.background)
+                SetupExpenseCategoryPicker(selection: $expenseDraft.category)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(AppStrings.text(.expenseType))
@@ -216,7 +243,7 @@ struct InitialSetupWizardView: View {
                     Picker(AppStrings.text(.expenseType), selection: $expenseDraft.expenseName) {
                         Text(AppStrings.text(.select)).tag("")
                         ForEach(expenseDraft.category.names, id: \.self) { name in
-                            Text(name).tag(name)
+                            Label(name, systemImage: ExpenseTypeIcon.name(for: name)).tag(name)
                         }
                     }
                     .font(.headline)
@@ -226,7 +253,7 @@ struct InitialSetupWizardView: View {
                     .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
                 }
 
-                TextField(AppStrings.text(.name), text: $expenseDraft.name, prompt: Text(AppStrings.text(.optionalFreeText)).foregroundStyle(AppPalette.secondaryText))
+                TextField(AppStrings.text(.name), text: $expenseDraft.name, prompt: Text(AppStrings.text(.freeText)).foregroundStyle(AppPalette.secondaryText))
                     .textFieldStyle(.plain)
                     .foregroundStyle(AppPalette.background)
                     .padding(12)
@@ -260,10 +287,30 @@ struct InitialSetupWizardView: View {
                 }
                 .buttonStyle(.plain)
 
-                Toggle(AppStrings.text(.everyMonth), isOn: $expenseDraft.repeatsEveryMonth)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(AppPalette.background)
-                    .tint(AppPalette.primary)
+                VStack(alignment: .center, spacing: 8) {
+                    Text(AppStrings.text(.recurrence))
+                        .font(.subheadline.bold())
+                        .foregroundStyle(AppPalette.background)
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                    Picker(AppStrings.text(.periodicity), selection: $expenseDraft.recurrenceType) {
+                        ForEach(RecurrenceType.selectableCases) { recurrence in
+                            Text(recurrence.title).tag(recurrence)
+                        }
+                    }
+                    .tint(AppPalette.background)
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                    if expenseDraft.recurrenceType != .monthly {
+                        Picker(AppStrings.text(.month), selection: $expenseDraft.recurrenceMonth) {
+                            ForEach(1...12, id: \.self) { month in
+                                Text(Date.monthName(forMonthNumber: month)).tag(month)
+                            }
+                        }
+                        .tint(AppPalette.background)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                }
                     .padding(12)
                     .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
 
@@ -279,15 +326,15 @@ struct InitialSetupWizardView: View {
                 .buttonStyle(.plain)
             }
             .id(expenseDraft.id)
+    }
 
-            draftList(title: AppStrings.text(.addedExpenses), drafts: expenses.map { $0.listText }, emptyText: AppStrings.text(.noAddedExpenses)) { index in
-                expenses.remove(at: index)
+    private var sortedExpenses: [SetupExpenseDraft] {
+        expenses.sorted {
+            if $0.day != $1.day {
+                return $0.day < $1.day
             }
 
-            noteCard(AppStrings.text(.setupExpensesNote))
-        }
-        .sheet(isPresented: $showsExpenseDayPicker) {
-            DayPicker(month: Date().monthStart, selectedDay: $expenseDraft.day)
+            return $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending
         }
     }
 
@@ -306,6 +353,8 @@ struct InitialSetupWizardView: View {
             .padding(16)
             .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 18))
             .shadow(color: AppPalette.background.opacity(0.07), radius: 16, y: 8)
+
+            noteCard(AppStrings.text(.setupFinalNote))
 
             inputCard(title: AppStrings.text(.visualSummary), systemImage: "chart.pie.fill", tint: AppPalette.secondary) {
                 Chart {
@@ -346,8 +395,6 @@ struct InitialSetupWizardView: View {
                     .foregroundStyle(AppPalette.bodyText)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            noteCard(AppStrings.text(.setupFinalNote))
         }
     }
 
@@ -466,6 +513,65 @@ struct InitialSetupWizardView: View {
         }
     }
 
+    private var expenseDraftList: some View {
+        inputCard(title: AppStrings.text(.addedExpenses), systemImage: "list.bullet.rectangle", tint: AppPalette.secondary) {
+            if expenses.isEmpty {
+                Text(AppStrings.text(.noAddedExpenses))
+                    .font(.subheadline)
+                    .foregroundStyle(AppPalette.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(sortedExpenses) { expense in
+                        HStack(spacing: 10) {
+                            Image(systemName: expense.typeIconName)
+                                .font(.headline)
+                                .foregroundStyle(AppPalette.background)
+                                .frame(width: 38, height: 38)
+                                .background(AppPalette.secondary.opacity(0.25), in: Circle())
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(expense.displayTitle)
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(AppPalette.background)
+                                    .lineLimit(1)
+
+                                HStack(spacing: 0) {
+                                    Text("\(AppStrings.text(.day)) ")
+                                        .font(.caption)
+                                    Text("\(expense.day)")
+                                        .font(.caption.bold())
+                                    Text(" - \(expense.recurrenceSummary)")
+                                        .font(.caption)
+                                }
+                                .foregroundStyle(AppPalette.mediumBlue)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Text(expense.amount.currencyText)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(AppPalette.primary)
+
+                            Button {
+                                expenses.removeAll { $0.id == expense.id }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(AppPalette.primary)
+                                    .frame(width: 34, height: 34)
+                                    .background(AppPalette.paleOrange, in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(12)
+                        .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }
+        }
+    }
+
     private func noteCard(_ text: String) -> some View {
         Text(text)
             .font(.footnote)
@@ -514,12 +620,23 @@ struct InitialSetupWizardView: View {
             return
         }
 
-        guard expenseDraft.amount > 0 else {
-            validationMessage = AppStrings.text(.expenseValueRequired)
+        guard expenseDraft.category.names.contains(expenseDraft.expenseName) else {
+            validationMessage = AppStrings.text(.selectExpenseName)
             return
         }
 
-        expenseDraft.name = expenseDraft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = expenseDraft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            validationMessage = AppStrings.text(.fillFreeText)
+            return
+        }
+
+        guard expenseDraft.amount > 0 else {
+            validationMessage = AppStrings.text(.fillValue)
+            return
+        }
+
+        expenseDraft.name = name
         expenses.append(expenseDraft)
         expenseDraft = SetupExpenseDraft()
     }
@@ -560,13 +677,14 @@ struct InitialSetupWizardView: View {
     }
 
     private func saveSetup() {
-        let monthStart = Date().monthStart
+        let setupMonthStart = Date().monthStart
+        let setupYear = Calendar.current.component(.year, from: setupMonthStart)
 
         for income in incomes {
             modelContext.insert(MoneyTransaction(
                 title: income.name,
                 day: 1,
-                monthStart: monthStart,
+                monthStart: setupMonthStart,
                 amount: income.amount,
                 kind: TransactionKind.income.rawValue,
                 repeatsEveryMonth: true,
@@ -575,16 +693,20 @@ struct InitialSetupWizardView: View {
         }
 
         for expense in expenses {
+            let expenseMonthStart = expense.recurrenceType == .monthly
+                ? setupMonthStart
+                : Date.monthStart(month: expense.recurrenceMonth, year: setupYear)
+
             modelContext.insert(MoneyTransaction(
                 title: expense.name,
                 day: expense.day,
-                monthStart: monthStart,
+                monthStart: expenseMonthStart,
                 amount: expense.amount,
                 kind: TransactionKind.expense.rawValue,
-                repeatsEveryMonth: expense.repeatsEveryMonth,
+                repeatsEveryMonth: expense.recurrenceType == .monthly,
                 expenseCategory: expense.category.rawValue,
                 expenseName: expense.expenseName,
-                recurrenceType: expense.repeatsEveryMonth ? RecurrenceType.monthly.rawValue : nil,
+                recurrenceType: expense.recurrenceType.rawValue,
                 recurrenceMonth: 0
             ))
         }
@@ -624,13 +746,131 @@ private struct SetupExpenseDraft: Identifiable {
     var name = ""
     var amount = 0.0
     var day = 1
-    var repeatsEveryMonth = true
+    var recurrenceType: RecurrenceType = .monthly
+    var recurrenceMonth = Calendar.current.component(.month, from: Date())
 
-    var hasRequiredValues: Bool { !expenseName.isEmpty && amount > 0 }
-    var listText: String {
-        let title = name.isEmpty ? expenseName : name
-        let recurrenceText = repeatsEveryMonth ? AppStrings.text(.everyMonth) : AppStrings.text(.onlyThisMonth)
-        return "\(title) · \(amount.currencyText) · \(AppStrings.text(.day).lowercased()) \(day) · \(recurrenceText) · \(category.title)"
+    var hasRequiredValues: Bool {
+        !expenseName.isEmpty && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && amount > 0
+    }
+
+    var displayTitle: String {
+        name.isEmpty ? expenseName : name
+    }
+
+    var typeIconName: String {
+        ExpenseTypeIcon.name(for: expenseName)
+    }
+
+    var recurrenceSummary: String {
+        if recurrenceType == .monthly {
+            return recurrenceType.title
+        }
+
+        return "\(Date.monthName(forMonthNumber: recurrenceMonth)) - \(recurrenceType.title)"
+    }
+}
+
+private struct SetupExpenseCategoryPicker: View {
+    @Binding var selection: ExpenseCategory
+
+    var body: some View {
+        GeometryReader { proxy in
+            HStack(spacing: 0) {
+                ForEach(ExpenseCategory.allCases) { category in
+                    Button {
+                        select(category)
+                    } label: {
+                        Text(category.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                            .allowsTightening(true)
+                            .padding(.horizontal, 6)
+                            .foregroundStyle(selection == category ? AppPalette.surface : AppPalette.background)
+                            .frame(maxWidth: .infinity, minHeight: 42)
+                            .background {
+                                if selection == category {
+                                    selectedSegmentBackground(for: category)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selection == category ? .isSelected : [])
+                }
+            }
+            .contentShape(Capsule())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        selectCategory(at: value.location.x, width: proxy.size.width)
+                    }
+            )
+            .padding(4)
+            .setupSegmentContainerBackground()
+        }
+        .frame(height: 52)
+    }
+
+    @ViewBuilder
+    private func selectedSegmentBackground(for category: ExpenseCategory) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            Capsule()
+                .fill(category.color.opacity(0.78))
+                .glassEffect(.regular.tint(category.color).interactive(), in: Capsule())
+        } else {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [category.color.opacity(0.92), category.color],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    Capsule()
+                        .stroke(AppPalette.surface.opacity(0.55), lineWidth: 1)
+                }
+                .shadow(color: category.color.opacity(0.25), radius: 6, y: 2)
+        }
+    }
+
+    private func select(_ category: ExpenseCategory) {
+        withAnimation(.snappy(duration: 0.18)) {
+            selection = category
+        }
+    }
+
+    private func selectCategory(at locationX: CGFloat, width: CGFloat) {
+        guard width > 0 else { return }
+        let segmentWidth = width / CGFloat(ExpenseCategory.allCases.count)
+        let rawIndex = Int((locationX / segmentWidth).rounded(.down))
+        let index = min(max(rawIndex, 0), ExpenseCategory.allCases.count - 1)
+        let category = ExpenseCategory.allCases[index]
+
+        guard selection != category else { return }
+        select(category)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func setupSegmentContainerBackground() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self
+                .glassEffect(.regular.interactive(), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(AppPalette.surface.opacity(0.55), lineWidth: 1)
+                }
+        } else {
+            self
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(AppPalette.surface.opacity(0.75), lineWidth: 1)
+                }
+                .shadow(color: AppPalette.background.opacity(0.06), radius: 8, y: 3)
+        }
     }
 }
 

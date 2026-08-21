@@ -459,7 +459,7 @@ struct SettingsEditor: View {
                 emptyTitle: AppStrings.text(.recurringExpenses),
                 transactions: recurringExpenses,
                 payments: payments,
-                onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
+                onEdit: editRecurringTransaction,
                 onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
             )
         } else {
@@ -467,7 +467,7 @@ struct SettingsEditor: View {
                 emptyTitle: AppStrings.text(.recurringIncome),
                 transactions: recurringIncome,
                 payments: payments,
-                onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
+                onEdit: editRecurringTransaction,
                 onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
             )
         }
@@ -515,6 +515,35 @@ struct SettingsEditor: View {
         guard index != selectedList else { return }
         selectedListDirection = index > selectedList ? 1 : -1
         selectedList = min(max(index, 0), 1)
+    }
+
+    private func editRecurringTransaction(_ transaction: MoneyTransaction) {
+        if let editStartMonth = confirmedEditStartMonth(for: transaction) {
+            pendingAction = SettingsListAction(kind: .edit, transaction: transaction, editStartMonth: editStartMonth)
+        } else {
+            editorRequest = TransactionEditorRequest(transaction: transaction, month: nextMonth, editScope: .futureMonths)
+        }
+    }
+
+    private func confirmedEditStartMonth(for transaction: MoneyTransaction) -> Date? {
+        let currentMonth = Date().monthStart
+        guard transaction.kind == TransactionKind.expense.rawValue,
+              transaction.occurs(in: currentMonth, exclusions: exclusions) else {
+            return nil
+        }
+
+        let payment = payments.first {
+            $0.transactionID == transaction.id &&
+            Calendar.current.isDate($0.monthStart, equalTo: currentMonth, toGranularity: .month)
+        }
+        let paidAmount = payment?.amountPaid ?? (payment == nil ? 0 : transaction.amount)
+        if paidAmount <= 0 {
+            return currentMonth
+        }
+        if paidAmount < transaction.amount {
+            return nextMonth
+        }
+        return nil
     }
 
     private func settingsListArrow(systemImage: String, action: @escaping () -> Void) -> some View {
@@ -657,7 +686,7 @@ struct SettingsEditor: View {
     private func perform(_ action: SettingsListAction) {
         switch action.kind {
         case .edit:
-            editorRequest = TransactionEditorRequest(transaction: action.transaction, month: nextMonth, editScope: .futureMonths)
+            editorRequest = TransactionEditorRequest(transaction: action.transaction, month: action.editStartMonth ?? nextMonth, editScope: .futureMonths)
         case .delete:
             action.transaction.recurrenceEndMonthStart = nextMonth
             payments
@@ -689,6 +718,7 @@ struct BudgetSettingsView: View {
     @Query private var transactions: [MoneyTransaction]
     @Query private var payments: [ExpensePayment]
     @Query private var paymentHistory: [PaymentHistoryEntry]
+    @Query private var exclusions: [RecurrenceExclusion]
     @Query private var creditAccounts: [CreditAccount]
     @Query private var savingAccounts: [SavingAccount]
     @State private var editorRequest: TransactionEditorRequest?
@@ -696,7 +726,6 @@ struct BudgetSettingsView: View {
     @State private var pendingAction: SettingsListAction?
     @State private var helpNotice: BackupNotice?
     @State private var showsRecurringActions = false
-    @State private var recurringActionIconPulse = false
 
     private var nextMonth: Date {
         Date().monthStart.nextMonthStart
@@ -805,7 +834,7 @@ struct BudgetSettingsView: View {
                 emptyTitle: AppStrings.text(.recurringExpenses),
                 transactions: recurringExpenses,
                 payments: payments,
-                onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
+                onEdit: editRecurringTransaction,
                 onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
             )
         } else {
@@ -813,7 +842,7 @@ struct BudgetSettingsView: View {
                 emptyTitle: AppStrings.text(.recurringIncome),
                 transactions: recurringIncome,
                 payments: payments,
-                onEdit: { pendingAction = SettingsListAction(kind: .edit, transaction: $0) },
+                onEdit: editRecurringTransaction,
                 onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
             )
         }
@@ -840,6 +869,35 @@ struct BudgetSettingsView: View {
         withAnimation(.snappy) {
             selectedList = min(max(index, 0), 1)
         }
+    }
+
+    private func editRecurringTransaction(_ transaction: MoneyTransaction) {
+        if let editStartMonth = confirmedEditStartMonth(for: transaction) {
+            pendingAction = SettingsListAction(kind: .edit, transaction: transaction, editStartMonth: editStartMonth)
+        } else {
+            editorRequest = TransactionEditorRequest(transaction: transaction, month: nextMonth, editScope: .futureMonths)
+        }
+    }
+
+    private func confirmedEditStartMonth(for transaction: MoneyTransaction) -> Date? {
+        let currentMonth = Date().monthStart
+        guard transaction.kind == TransactionKind.expense.rawValue,
+              transaction.occurs(in: currentMonth, exclusions: exclusions) else {
+            return nil
+        }
+
+        let payment = payments.first {
+            $0.transactionID == transaction.id &&
+            Calendar.current.isDate($0.monthStart, equalTo: currentMonth, toGranularity: .month)
+        }
+        let paidAmount = payment?.amountPaid ?? (payment == nil ? 0 : transaction.amount)
+        if paidAmount <= 0 {
+            return currentMonth
+        }
+        if paidAmount < transaction.amount {
+            return nextMonth
+        }
+        return nil
     }
 
     private func recurringNavigatorButton(title: String, systemImage: String, index: Int) -> some View {
@@ -913,12 +971,6 @@ struct BudgetSettingsView: View {
         .frame(maxWidth: .infinity)
         .background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
         .shadow(color: AppPalette.background.opacity(0.10), radius: 18, y: 8)
-        .onAppear {
-            recurringActionIconPulse = false
-            withAnimation(.easeInOut(duration: 0.6).repeatCount(2, autoreverses: true)) {
-                recurringActionIconPulse = true
-            }
-        }
     }
 
     private var hasActiveSavings: Bool {
@@ -941,19 +993,19 @@ struct BudgetSettingsView: View {
             textColor: AppPalette.background,
             background: AppPalette.mintSurface
         ) {
-            openPresetRecurringExpense(title: AppStrings.text(.newSavingExpense), expenseName: recurringSavingExpenseName)
+            openPresetRecurringExpense(title: AppStrings.text(.newRecurringSavingExpense), expenseName: recurringSavingExpenseName)
         }
     }
 
     private var recurringCreditPaymentActionButton: some View {
         recurringActionButton(
-            title: AppStrings.text(.newCreditPaymentExpense),
+            title: AppStrings.text(.creditPaymentExpenseButton),
             systemImage: "creditcard.fill",
             iconColor: AppPalette.primary,
             textColor: AppPalette.surface,
             background: AppPalette.background
         ) {
-            openPresetRecurringExpense(title: AppStrings.text(.newCreditPaymentExpense), expenseName: recurringCreditPaymentExpenseName)
+            openPresetRecurringExpense(title: AppStrings.text(.newRecurringCreditPaymentExpense), expenseName: recurringCreditPaymentExpenseName)
         }
     }
 
@@ -991,15 +1043,15 @@ struct BudgetSettingsView: View {
                 Image(systemName: systemImage)
                     .font(.headline.bold())
                     .foregroundStyle(iconColor)
-                    .scaleEffect(recurringActionIconPulse ? 1.12 : 1)
 
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .minimumScaleFactor(0.72)
+                    .multilineTextAlignment(.leading)
             }
             .foregroundStyle(textColor)
-            .frame(maxWidth: .infinity, minHeight: 46)
+            .frame(maxWidth: .infinity, minHeight: 54)
             .background(background, in: RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
@@ -1038,7 +1090,7 @@ struct BudgetSettingsView: View {
     private func perform(_ action: SettingsListAction) {
         switch action.kind {
         case .edit:
-            editorRequest = TransactionEditorRequest(transaction: action.transaction, month: nextMonth, editScope: .futureMonths)
+            editorRequest = TransactionEditorRequest(transaction: action.transaction, month: action.editStartMonth ?? nextMonth, editScope: .futureMonths)
         case .delete:
             action.transaction.recurrenceEndMonthStart = nextMonth
             payments
@@ -1069,11 +1121,17 @@ private struct SettingsListAction: Identifiable {
     let id = UUID()
     let kind: Kind
     let transaction: MoneyTransaction
+    var editStartMonth: Date? = nil
+
+    private var editsCurrentMonth: Bool {
+        guard let editStartMonth else { return false }
+        return Calendar.current.isDate(editStartMonth, equalTo: Date().monthStart, toGranularity: .month)
+    }
 
     var title: String {
         switch kind {
         case .edit:
-            AppStrings.text(.futureEditTitle)
+            editsCurrentMonth ? AppStrings.text(.currentAndFutureEditTitle) : AppStrings.text(.futureEditTitle)
         case .delete:
             AppStrings.text(.futureDeleteTitle)
         }
@@ -1082,7 +1140,7 @@ private struct SettingsListAction: Identifiable {
     var message: String {
         switch kind {
         case .edit:
-            AppStrings.text(.futureEditMessage)
+            editsCurrentMonth ? AppStrings.text(.currentAndFutureEditMessage) : AppStrings.text(.futureEditMessage)
         case .delete:
             AppStrings.text(.futureDeleteMessage)
         }
@@ -1278,6 +1336,8 @@ private struct BackupTransaction: Codable, Sendable {
     let recurrenceType: String?
     let recurrenceMonth: Int
     let recurrenceEndMonthStart: Date?
+    let budgetAllocationType: String?
+    let budgetMonthStart: Date?
     let linkedCreditID: UUID?
     let linkedCreditMovementID: UUID?
     let linkedSavingID: UUID?
@@ -1297,6 +1357,8 @@ private struct BackupTransaction: Codable, Sendable {
         recurrenceType = transaction.recurrenceType
         recurrenceMonth = transaction.recurrenceMonth
         recurrenceEndMonthStart = transaction.recurrenceEndMonthStart
+        budgetAllocationType = transaction.budgetAllocationType
+        budgetMonthStart = transaction.budgetMonthStart
         linkedCreditID = transaction.linkedCreditID
         linkedCreditMovementID = transaction.linkedCreditMovementID
         linkedSavingID = transaction.linkedSavingID
@@ -1317,6 +1379,8 @@ private struct BackupTransaction: Codable, Sendable {
             recurrenceType: recurrenceType,
             recurrenceMonth: recurrenceMonth,
             recurrenceEndMonthStart: recurrenceEndMonthStart,
+            budgetAllocationType: budgetAllocationType,
+            budgetMonthStart: budgetMonthStart,
             linkedCreditID: linkedCreditID,
             linkedCreditMovementID: linkedCreditMovementID,
             linkedSavingID: linkedSavingID,
