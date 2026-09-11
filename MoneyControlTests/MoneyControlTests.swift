@@ -134,6 +134,23 @@ struct MoneyControlTests {
         #expect(service.isPaid(expense, in: month))
     }
 
+    @Test func nonWeeklyPaymentsSavedWithOccurrenceDayStillCountForMonth() {
+        let month = Date.monthStart(month: 8, year: 2026)
+        let expense = makeExpense(title: "Renda", day: 5, month: month, amount: 500, recurrenceType: .monthly)
+        let service = MoneyCalculationService(
+            transactions: [expense],
+            payments: [
+                ExpensePayment(transactionID: expense.id, monthStart: month, amountPaid: 300, occurrenceDay: 5),
+                ExpensePayment(transactionID: expense.id, monthStart: month, amountPaid: 300)
+            ],
+            exclusions: []
+        )
+
+        #expect(service.paidAmount(for: expense, in: month) == 500)
+        #expect(service.isPaid(expense, in: month))
+        #expect(service.monthSummary(in: month).unpaidExpenses == 0)
+    }
+
     @Test func effectiveDayUsesLastDayWhenMonthIsShorter() {
         let transaction = makeExpense(day: 31, month: Date.monthStart(month: 1, year: 2026))
 
@@ -169,6 +186,56 @@ struct MoneyControlTests {
         #expect(transaction.occurs(in: Date.monthStart(month: 8, year: 2027), exclusions: []))
     }
 
+    @Test func annualRecurrenceDoesNotAppearBeforeFirstSelectedMonth() {
+        let transaction = makeExpense(
+            day: 5,
+            month: Date.monthStart(month: 8, year: 2026),
+            amount: 100,
+            recurrenceType: .annual,
+            recurrenceMonth: 1
+        )
+
+        #expect(!transaction.occurs(in: Date.monthStart(month: 1, year: 2026), exclusions: []))
+        #expect(!transaction.occurs(in: Date.monthStart(month: 8, year: 2026), exclusions: []))
+        #expect(transaction.occurs(in: Date.monthStart(month: 1, year: 2027), exclusions: []))
+    }
+
+    @Test func recurringActivationDateSkipsPastDayInCurrentMonth() {
+        let activationDate = Date.firstRecurringOccurrenceDate(
+            recurrence: .monthly,
+            recurrenceMonth: 0,
+            day: 5,
+            onOrAfter: Date.monthStart(month: 8, year: 2026),
+            today: Date.monthStart(month: 8, year: 2026).date(day: 26)
+        )
+
+        #expect(activationDate == Date.monthStart(month: 9, year: 2026).date(day: 5))
+    }
+
+    @Test func recurringActivationDateUsesFutureSelectedMonthInSameYear() {
+        let activationDate = Date.firstRecurringOccurrenceDate(
+            recurrence: .annual,
+            recurrenceMonth: 9,
+            day: 5,
+            onOrAfter: Date.monthStart(month: 8, year: 2026),
+            today: Date.monthStart(month: 8, year: 2026).date(day: 26)
+        )
+
+        #expect(activationDate == Date.monthStart(month: 9, year: 2026).date(day: 5))
+    }
+
+    @Test func weeklyOccurrenceDaysIgnoreDaysBeforeActivationDate() {
+        let transaction = makeExpense(
+            day: 2,
+            month: Date.monthStart(month: 8, year: 2026).date(day: 26),
+            amount: 25,
+            recurrenceType: .weekly
+        )
+
+        #expect(transaction.occurrenceDays(in: Date.monthStart(month: 8, year: 2026)) == [31])
+        #expect(transaction.occurrenceDays(in: Date.monthStart(month: 9, year: 2026)) == [7, 14, 21, 28])
+    }
+
     @Test func recurrenceExclusionHidesOnlyThatMonth() {
         let transaction = makeExpense(
             day: 10,
@@ -195,6 +262,113 @@ struct MoneyControlTests {
         #expect(visible.map(\.id) == [unpaidExpense.id, income.id, paidExpense.id])
     }
 
+    @Test func weeklyExpenseExpandsToAllMatchingWeekdaysInMonth() {
+        let month = Date.monthStart(month: 8, year: 2026)
+        let mondayExpense = makeExpense(day: 2, month: month, amount: 25, recurrenceType: .weekly)
+
+        #expect(mondayExpense.weeklyOccurrenceDays(in: month) == [3, 10, 17, 24, 31])
+        #expect(mondayExpense.scheduledAmount(in: month) == 125)
+    }
+
+    @Test func weeklyExpenseMonthlySummaryUsesAllOccurrences() {
+        let month = Date.monthStart(month: 8, year: 2026)
+        let mondayExpense = makeExpense(day: 2, month: month, amount: 25, recurrenceType: .weekly)
+        let service = MoneyCalculationService(transactions: [mondayExpense], payments: [], exclusions: [])
+
+        #expect(service.monthSummary(in: month).expenses == 125)
+        #expect(service.monthSummary(in: month).unpaidExpenses == 125)
+    }
+
+    @Test func weeklyExpenseLegacyMonthlyPaymentIsAllocatedAcrossOccurrences() {
+        let month = Date.monthStart(month: 8, year: 2026)
+        let mondayExpense = makeExpense(day: 2, month: month, amount: 25, recurrenceType: .weekly)
+        let service = MoneyCalculationService(
+            transactions: [mondayExpense],
+            payments: [ExpensePayment(transactionID: mondayExpense.id, monthStart: month, amountPaid: 95)],
+            exclusions: []
+        )
+
+        #expect(service.paidAmount(for: mondayExpense, in: month, occurrenceDay: 3) == 25)
+        #expect(service.paidAmount(for: mondayExpense, in: month, occurrenceDay: 10) == 25)
+        #expect(service.paidAmount(for: mondayExpense, in: month, occurrenceDay: 17) == 25)
+        #expect(service.paidAmount(for: mondayExpense, in: month, occurrenceDay: 24) == 20)
+        #expect(service.paidAmount(for: mondayExpense, in: month, occurrenceDay: 31) == 0)
+        #expect(service.monthSummary(in: month).unpaidExpenses == 30)
+    }
+
+    @Test func weeklyExpenseOccurrencePaymentOnlyPaysThatOccurrence() {
+        let month = Date.monthStart(month: 8, year: 2026)
+        let mondayExpense = makeExpense(day: 2, month: month, amount: 25, recurrenceType: .weekly)
+        let service = MoneyCalculationService(
+            transactions: [mondayExpense],
+            payments: [ExpensePayment(transactionID: mondayExpense.id, monthStart: month, amountPaid: 25, occurrenceDay: 17)],
+            exclusions: []
+        )
+
+        #expect(service.paidAmount(for: mondayExpense, in: month, occurrenceDay: 3) == 0)
+        #expect(service.paidAmount(for: mondayExpense, in: month, occurrenceDay: 17) == 25)
+        #expect(service.paidAmount(for: mondayExpense, in: month) == 25)
+        #expect(service.monthSummary(in: month).unpaidExpenses == 100)
+    }
+
+    @Test func weeklyExpenseSummaryIgnoresExcludedOccurrences() {
+        let month = Date.monthStart(month: 8, year: 2026)
+        let mondayExpense = makeExpense(day: 2, month: month, amount: 10, recurrenceType: .weekly)
+        let payments = [
+            ExpensePayment(transactionID: mondayExpense.id, monthStart: month, amountPaid: 10, occurrenceDay: 3),
+            ExpensePayment(transactionID: mondayExpense.id, monthStart: month, amountPaid: 10, occurrenceDay: 10),
+            ExpensePayment(transactionID: mondayExpense.id, monthStart: month, amountPaid: 10, occurrenceDay: 17),
+            ExpensePayment(transactionID: mondayExpense.id, monthStart: month, amountPaid: 10, occurrenceDay: 24)
+        ]
+        let service = MoneyCalculationService(
+            transactions: [mondayExpense],
+            payments: payments,
+            exclusions: [RecurrenceExclusion(transactionID: mondayExpense.id, monthStart: month, occurrenceDay: 31)]
+        )
+
+        #expect(service.scheduledAmount(for: mondayExpense, in: month) == 40)
+        #expect(service.paidAmount(for: mondayExpense, in: month) == 40)
+        #expect(service.monthSummary(in: month).expenses == 40)
+        #expect(service.monthSummary(in: month).unpaidExpenses == 0)
+    }
+
+    @Test func analyticsPaidOnlyExpensesIgnoreUnpaidTransactions() {
+        let month = Date.monthStart(month: 8, year: 2026)
+        let paidExpense = makeExpense(
+            title: "Renda",
+            day: 1,
+            month: month,
+            amount: 500,
+            expenseCategory: .needs,
+            expenseName: "Habitacao"
+        )
+        let unpaidExpense = makeExpense(
+            title: "Lazer",
+            day: 2,
+            month: month,
+            amount: 200,
+            expenseCategory: .wants,
+            expenseName: "Viagens"
+        )
+        let income = makeIncome(title: "Salario", day: 1, month: month, amount: 1_000)
+        let service = MoneyCalculationService(
+            transactions: [income, paidExpense, unpaidExpense],
+            payments: [ExpensePayment(transactionID: paidExpense.id, monthStart: month, amountPaid: 500)],
+            exclusions: []
+        )
+
+        let categoryPoints = service.categoryExpenses(in: month, paidOnly: true)
+        let typePoints = service.expenseTypePoints(in: [month], fallbackTitle: "Despesa", paidOnly: true)
+        let annualPoint = service.annualBalancePoints(in: [month], paidOnly: true).first
+
+        #expect(categoryPoints.first { $0.category == .needs }?.amount == 500)
+        #expect(categoryPoints.first { $0.category == .wants }?.amount == 0)
+        #expect(typePoints.map(\.title) == ["Habitacao"])
+        #expect(annualPoint?.income == 1_000)
+        #expect(annualPoint?.expenses == 500)
+        #expect(annualPoint?.balance == 500)
+    }
+
     @Test func selectedCurrencyCodeUsesManualValueAndFallsBackToDeviceRegion() {
         let key = AppPreferences.selectedCurrencyCodeKey
         let previousValue = UserDefaults.standard.string(forKey: key)
@@ -212,32 +386,6 @@ struct MoneyControlTests {
 
         UserDefaults.standard.removeObject(forKey: key)
         #expect(!AppPreferences.selectedCurrencyCode.isEmpty)
-    }
-
-    @Test func analyticsDetectsPaidSpendingChangesAndSubscriptionsRatio() {
-        let july = Date.monthStart(month: 7, year: 2026)
-        let august = Date.monthStart(month: 8, year: 2026)
-        let julyRestaurant = makeExpense(title: "Jantar", day: 1, month: july, amount: 100, expenseName: "Refeições fora de casa")
-        let augustRestaurant = makeExpense(title: "Jantar", day: 1, month: august, amount: 150, expenseName: "Refeições fora de casa")
-        let julyGroceries = makeExpense(title: "Mercado", day: 2, month: july, amount: 200, expenseName: "Alimentação: compras e supermercados")
-        let augustGroceries = makeExpense(title: "Mercado", day: 2, month: august, amount: 100, expenseName: "Alimentação: compras e supermercados")
-        let subscription = makeExpense(title: "Streaming", day: 3, month: august, amount: 70, expenseName: "Subscrições")
-        let income = makeIncome(title: "Salario", day: 1, month: august, amount: 1_000)
-        let payments = [julyRestaurant, augustRestaurant, julyGroceries, augustGroceries, subscription].map {
-            ExpensePayment(transactionID: $0.id, monthStart: $0.monthStart, amountPaid: $0.amount)
-        }
-        let service = MoneyCalculationService(
-            transactions: [julyRestaurant, augustRestaurant, julyGroceries, augustGroceries, subscription, income],
-            payments: payments,
-            exclusions: []
-        )
-
-        let insights = service.analyticsInsights(currentMonth: august)
-
-        #expect(insights.count == 3)
-        #expect(insights.contains { $0.message.contains("Restaurantes") || $0.message.contains("Restaurants") })
-        #expect(insights.contains { $0.message.contains("supermercado") || $0.message.contains("Supermarket") })
-        #expect(insights.contains { $0.message.contains("subscrições") || $0.message.contains("Subscription") })
     }
 
     private func makeIncome(

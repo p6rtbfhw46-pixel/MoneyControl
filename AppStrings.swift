@@ -28,8 +28,11 @@ enum AppTextKey: String, CaseIterable {
     case expense
     case income
     case today
+    case overdue
     case noTransactions
     case noTransactionsDescription
+    case noFilteredTransactions
+    case noFilteredTransactionsDescription
     case cancel
     case delete
     case deleteConfirmation
@@ -37,8 +40,12 @@ enum AppTextKey: String, CaseIterable {
     case settings
     case add
     case currentAccount
+    case currentAccountHeroSubtitle
+    case currentAccountMonthlyList
+    case currentAccountCalendar
     case credits
     case management
+    case managementHeroSubtitle
     case monthlyExpense
     case periodicExpense
     case salary
@@ -61,9 +68,17 @@ enum AppTextKey: String, CaseIterable {
     case year
     case freeText
     case day
+    case monthExpense
+    case noSpecificDay
+    case autoMarkPaidOnDay
+    case autoPaidOnDaySummary
+    case nextMonthBudgetOnlySummary
+    case fillDay
     case value
     case save
     case ok
+    case yes
+    case no
     case fillValue
     case selectExpenseType
     case selectExpenseName
@@ -88,6 +103,7 @@ enum AppTextKey: String, CaseIterable {
     case editSalary
     case everyMonth
     case periodicity
+    case weeklyRecurrence
     case monthlyRecurrence
     case quarterlyRecurrence
     case semiannualRecurrence
@@ -110,6 +126,7 @@ enum AppTextKey: String, CaseIterable {
     case continueAction
     case overdueExpensesTitle
     case overdueExpensesMessagePrefix
+    case dueTodayExpensesMessagePrefix
     case previousMonthUnpaidExpensesMessagePrefix
     case pastMonthsUnpaidExpensesMessagePrefix
     case overdueExpenseDueDay
@@ -121,18 +138,42 @@ enum AppTextKey: String, CaseIterable {
     case paid
     case notPaid
     case canStillSpend
+    case unusedExpense
     case paidExpense
     case unpaidExpense
     case paidToggleHelpTitle
     case paidToggleHelpMessage
     case paidAmount
+    case paymentNote
+    case paymentNotePlaceholder
     case ofAmount
     case amountToPay
     case total
     case payFullAmount
     case futurePaymentTitle
     case futurePaymentMessage
+    case futureFlexiblePaymentMessage
     case monthAnalysis
+    case analyticsHeroTitle
+    case analyticsHeroSubtitle
+    case analyticsMenuTitle
+    case analyticsOverview
+    case analyticsMonthYear
+    case analyticsSummaries
+    case analyticsSavingsCredits
+    case availableBalanceSummary
+    case totalSavedSummary
+    case totalDebtSummary
+    case netWorthTitle
+    case previousMonthComparison
+    case netWorthVariationTitle
+    case noVariation
+    case quickSummary
+    case seeAll
+    case noSavings
+    case noCredits
+    case movementHistory
+    case movementHistoryDescription
     case whereSpent
     case budgetRule
     case annualBalance
@@ -150,6 +191,7 @@ enum AppTextKey: String, CaseIterable {
     case appDataPrivacyNote
     case appSecurityTitle
     case appSecurityMessage
+    case appSecurityICloudBackupMessage
     case aboutSpendWisePurposeTitle
     case aboutSpendWisePurposeMessage
     case linkedTrackingOptionalHelpTitle
@@ -180,6 +222,13 @@ enum AppTextKey: String, CaseIterable {
     case importBackupSuccessMessage
     case importBackupFailureTitle
     case importBackupFailureMessage
+    case iCloudSyncTitle
+    case iCloudSyncMessage
+    case iCloudSyncRestartNote
+    case iCloudSyncPromptTitle
+    case iCloudSyncPromptMessage
+    case iCloudSyncEnable
+    case iCloudSyncNotNow
     case confirm
     case clear
     case category503020
@@ -313,6 +362,8 @@ enum AppTextKey: String, CaseIterable {
     case overpaymentMessage
     case valueBelowPaidTitle
     case valueBelowPaidMessage
+    case valueAbovePaidTitle
+    case valueAbovePaidMessage
     case receivedDate
     case useInBudget
     case budgetMonth
@@ -324,6 +375,68 @@ enum AppTextKey: String, CaseIterable {
     case reservedBalanceHelpMessage
     case futureIncomeReceivedInsight
     case futureIncomeReservedInsight
+    case accounts
+    case accountsSubtitle
+    case accountSingular
+    case accountPlural
+    case totalSummaryLabel
+    case totalAllAccountsSummary
+    case netWorthAccountsFormula
+    case addAccount
+    case moveMoney
+    case noAccounts
+    case accountsMigrationHint
+    case totalInAccounts
+    case totalInAccountsDescription
+    case primaryAccountBadge
+    case editAccount
+    case adjustBalance
+    case setPrimaryAccount
+    case deleteAccount
+    case accountHistory
+    case noAccountMovements
+    case newAccount
+    case editAccountTitle
+    case account
+    case accountNamePlaceholder
+    case initialBalance
+    case primaryAccount
+    case icon
+    case color
+    case accountNameValidation
+    case chooseDifferentAccounts
+    case sourceAccountInsufficientBalance
+    case fromAccount
+    case toAccount
+    case swapAccounts
+    case note
+    case currentBalance
+    case newBalance
+    case deletePrimaryAccountMessage
+    case deleteAccountWithBalanceMessage
+    case deleteAccountBlockedTitle
+    case deleteAccountWithRecurringIncomeMessage
+    case colorBlue
+    case colorGreen
+    case colorOrange
+    case colorPurple
+    case colorTeal
+    case colorGray
+    case accountMovementInitial
+    case accountMovementIncome
+    case accountMovementExpensePayment
+    case accountMovementTransferIn
+    case accountMovementTransferOut
+    case accountMovementAdjustment
+    case accountIconBank
+    case accountIconWallet
+    case accountIconCash
+    case accountIconCard
+    case accountIconTravel
+    case accountIconHome
+    case accountIconOther
+    case transferInAccountTitle
+    case transferOutAccountTitle
 }
 
 enum AppStrings {
@@ -418,14 +531,17 @@ enum AppStrings {
         .portuguese: [
             .appName: "SpendWise",
             .balanceThisMonth: "Saldo disponível",
-            .monthUnpaid: "Falta pagar este mês",
-            .monthRemaining: "Pode gastar este mês",
+            .monthUnpaid: "Ainda por Pagar",
+            .monthRemaining: "Disponível no mês",
             .monthBudgetExceeded: "Ultrapassou o orçamento",
             .expense: "Despesa",
             .income: "Receita",
             .today: "Hoje",
+            .overdue: "Em Atraso",
             .noTransactions: "Sem movimentos",
             .noTransactionsDescription: "Adiciona despesas ou receitas deste mês.",
+            .noFilteredTransactions: "Sem resultados",
+            .noFilteredTransactionsDescription: "Existem filtros aplicados. Ajusta ou limpa os filtros para voltar a ver os movimentos.",
             .cancel: "Cancelar",
             .delete: "Apagar",
             .deleteConfirmation: "Tem a certeza que quer apagar?",
@@ -433,8 +549,12 @@ enum AppStrings {
             .settings: "Configurações",
             .add: "Adicionar",
             .currentAccount: "Conta Corrente",
+            .currentAccountHeroSubtitle: "Acompanhe as suas despesas\ne mantenha o controlo do mês.",
+            .currentAccountMonthlyList: "Lista do Mês",
+            .currentAccountCalendar: "Calendário",
             .credits: "Análises",
             .management: "Gestão",
+            .managementHeroSubtitle: "Organize rendimentos,\ndespesas e planeie\no seu orçamento.",
             .monthlyExpense: "Despesa Recorrente",
             .periodicExpense: "Despesa Anual",
             .salary: "Rendimento Recorrente",
@@ -455,22 +575,30 @@ enum AppStrings {
             .endDate: "Data fim",
             .noEndDate: "Sem data fim",
             .year: "Ano",
-            .freeText: "Texto livre",
+            .freeText: "Nome da Despesa",
             .day: "Dia",
+            .monthExpense: "Mensal",
+            .noSpecificDay: "Flexível nenhum dia",
+            .autoMarkPaidOnDay: "Marcar automaticamente como paga no dia",
+            .autoPaidOnDaySummary: "Paga automaticamente no dia",
+            .nextMonthBudgetOnlySummary: "Apenas no orçamento do mês seguinte",
+            .fillDay: "Seleciona o dia da despesa ou escolhe Flexível nenhum dia.",
             .value: "Valor",
             .save: "Guardar",
             .ok: "OK",
+            .yes: "Sim",
+            .no: "Não",
             .fillValue: "Preenche o valor.",
             .selectExpenseType: "Seleciona a categoria da despesa 50/30/20.",
             .selectExpenseName: "Seleciona o tipo de despesa.",
             .fillName: "Preenche o nome.",
-            .fillFreeText: "Preenche o texto livre.",
+            .fillFreeText: "Preencha o Nome da Despesa.",
             .newPrefix: "Novo",
             .editPrefix: "Editar",
             .newExpense: "Agendar nova despesa",
             .editExpense: "Editar Despesa",
             .newSavingExpense: "Agendar nova poupança",
-            .creditPaymentExpenseButton: "Pagamento de crédito",
+            .creditPaymentExpenseButton: "Crédito",
             .newCreditPaymentExpense: "Agendar pagamento de crédito",
             .newRecurringSavingExpense: "Agendar Nova Poupança Recorrente",
             .newRecurringCreditPaymentExpense: "Agendar Pagamento de Crédito Recorrente",
@@ -484,6 +612,7 @@ enum AppStrings {
             .editSalary: "Editar Rendimento Recorrente",
             .everyMonth: "todos os meses",
             .periodicity: "Periodicidade",
+            .weeklyRecurrence: "Semanal",
             .monthlyRecurrence: "Mensal",
             .quarterlyRecurrence: "Trimestral",
             .semiannualRecurrence: "Semestral",
@@ -506,29 +635,54 @@ enum AppStrings {
             .continueAction: "Continuar",
             .overdueExpensesTitle: "Despesas por pagar",
             .overdueExpensesMessagePrefix: "Existem despesas no mês corrente que já deviam estar pagas:",
+            .dueTodayExpensesMessagePrefix: "Existem despesas no dia de hoje por pagar:",
             .previousMonthUnpaidExpensesMessagePrefix: "Ficaram despesas por pagar no mês passado:",
             .pastMonthsUnpaidExpensesMessagePrefix: "Existem despesas por pagar em meses anteriores:",
             .overdueExpenseDueDay: "devia ter sido paga no dia",
             .balanceThisMonthHelp: "Mostra o saldo disponível até ao dia de hoje. Soma todos os vencimentos e receitas recebidos até hoje e subtrai apenas as despesas até hoje que já foram marcadas como pagas.",
             .monthUnpaidHelp: "Mostra o total das despesas do mês apresentado que ainda não foram marcadas como pagas.",
-            .monthRemainingHelp: "Mostra quanto pode gastar no mês apresentado, considerando o acumulado do orçamento até esse mês. Soma o remanescente positivo ou negativo dos meses anteriores aos rendimentos atribuídos ao mês apresentado e subtrai as despesas previstas desse mês.",
-            .monthRemainingHelpNote: "Este cartão só é mostrado no mês corrente e nos dois meses seguintes. Nesses meses futuros, mostra o acumulado previsto até esse mês: sobras aumentam o valor disponível e meses em excesso reduzem-no.",
+            .monthRemainingHelp: "No mês atual, mostra quanto sobra depois de subtrair ao saldo total em contas as despesas do mês que ainda estão por pagar. Nos meses seguintes, parte do disponível do mês anterior, soma os rendimentos previstos desse mês e subtrai as despesas desse mês que ainda estão por pagar.",
+            .monthRemainingHelpNote: "Este cartão é apresentado apenas no mês atual e nos dois meses seguintes. O saldo total em contas já inclui valores remanescentes de meses anteriores, por isso esses valores não são somados novamente.",
             .pay: "Pagar",
             .paid: "Pago",
             .notPaid: "Por pagar",
             .canStillSpend: "Ainda pode gastar",
+            .unusedExpense: "Por utilizar",
             .paidExpense: "Paga",
             .unpaidExpense: "Por pagar",
             .paidToggleHelpTitle: "Estado do pagamento",
             .paidToggleHelpMessage: "Pode criar a despesa como por pagar ou marcá-la logo como paga. Ao escolher paga, o pagamento total é registado imediatamente e o saldo disponível da Conta Corrente é atualizado.",
             .paidAmount: "Valor pago",
+            .paymentNote: "Nota",
+            .paymentNotePlaceholder: "Adicionar nota ao histórico",
             .ofAmount: "de",
             .amountToPay: "Valor a pagar",
             .total: "Total",
             .payFullAmount: "Pagar totalidade",
             .futurePaymentTitle: "Pagamento futuro",
             .futurePaymentMessage: "Está a registar um pagamento de %@ para uma despesa marcada para %@.",
+            .futureFlexiblePaymentMessage: "Está a registar um pagamento de %@ para uma despesa flexível de %@.",
             .monthAnalysis: "Análise do Mês",
+            .analyticsHeroTitle: "Análise",
+            .analyticsHeroSubtitle: "Veja os seus padrões de gastos\ne evolua as suas finanças.",
+            .analyticsMenuTitle: "Análise",
+            .analyticsOverview: "Visão Geral",
+            .analyticsMonthYear: "Análise Mês e Ano",
+            .analyticsSummaries: "Resumos",
+            .analyticsSavingsCredits: "Poupanças e Créditos",
+            .availableBalanceSummary: "Saldo disponível",
+            .totalSavedSummary: "Total poupado",
+            .totalDebtSummary: "Total em dívida",
+            .netWorthTitle: "Património líquido",
+            .previousMonthComparison: "vs mês anterior",
+            .netWorthVariationTitle: "Variação do património",
+            .noVariation: "Sem variação",
+            .quickSummary: "Resumo rápido",
+            .seeAll: "Ver todos",
+            .noSavings: "Sem poupanças",
+            .noCredits: "Sem créditos",
+            .movementHistory: "Histórico de movimentos",
+            .movementHistoryDescription: "Ver detalhes dos movimentos registados",
             .whereSpent: "Onde gastou",
             .budgetRule: "50 / 30 / 20",
             .annualBalance: "Balanço do ano",
@@ -546,6 +700,7 @@ enum AppStrings {
             .appDataPrivacyNote: "Os seus dados ficam guardados apenas neste dispositivo, exceto quando exporta um backup manualmente.",
             .appSecurityTitle: "Segurança dos dados",
             .appSecurityMessage: "A SpendWise não se liga a servidores externos, não cria contas e não envia os seus dados para terceiros. Toda a informação registada fica no dispositivo. Os backups são ficheiros criados manualmente por si e só são partilhados se escolher guardar ou enviar esse ficheiro.",
+            .appSecurityICloudBackupMessage: "Se selecionar Sincronizar com iCloud, os dados também ficam guardados no seu iCloud e podem ser sincronizados ou recuperados nos seus dispositivos Apple com a mesma conta. Este backup/sincronização fica associado ao seu iCloud e não é enviado para servidores da SpendWise.",
             .aboutSpendWisePurposeTitle: "Para que serve a SpendWise",
             .aboutSpendWisePurposeMessage: "A SpendWise ajuda a acompanhar o dinheiro disponível, despesas, rendimentos, poupanças e créditos num só lugar. O objetivo é dar uma visão simples do mês, apoiar a regra 50/30/20 e ajudar a tomar decisões financeiras com mais clareza, sem funcionar como banco ou simulador financeiro. As notas informativas apresentadas na app são apenas orientações gerais. A SpendWise não se responsabiliza pelas decisões tomadas pelo utilizador; qualquer decisão financeira deve ser tomada de forma consciente e com base na sua própria situação.",
             .linkedTrackingOptionalHelpTitle: "Ligação opcional",
@@ -561,14 +716,14 @@ enum AppStrings {
             .periodicExpenseHelp: "Permite adicionar uma despesa que acontece uma vez por ano num mês específico, como seguros, impostos ou pagamentos anuais.",
             .deleteAllData: "Apagar todos os dados",
             .deleteAllDataTitle: "Apagar todos os dados?",
-            .deleteAllDataMessage: "Esta ação vai apagar todas as despesas, receitas, vencimentos, pagamentos, histórico de pagamentos, exceções, créditos e movimentos de crédito guardados na app. Não é possível anular.",
+            .deleteAllDataMessage: "Esta ação vai apagar todas as despesas, receitas, vencimentos, pagamentos, histórico de pagamentos, exceções, contas, transferências, créditos e movimentos de crédito guardados na app. Não é possível anular.",
             .exportBackup: "Exportar backup",
             .importBackup: "Importar backup",
             .backupInfoTitle: "Backup",
-            .exportBackupHelp: "Cria um ficheiro JSON apenas com os dados registados pelo utilizador: vencimentos, despesas, pagamentos, exceções, créditos e movimentos de crédito. Depois pode guardar esse ficheiro no iCloud Drive, Ficheiros, AirDrop ou outro local à sua escolha.",
-            .importBackupHelp: "Permite escolher um ficheiro JSON exportado anteriormente pela SpendWise. Após confirmação, os dados registados atuais são substituídos pelos dados do backup.",
+            .exportBackupHelp: "Cria um ficheiro encriptado com palavra-passe apenas com os dados registados pelo utilizador: vencimentos, despesas, pagamentos, exceções, créditos e movimentos de crédito. Guarde a palavra-passe num local seguro, porque será necessária para importar o backup.",
+            .importBackupHelp: "Permite escolher um backup exportado anteriormente pela SpendWise. Se o ficheiro estiver encriptado, será pedida a palavra-passe para desencriptar antes de importar. Após confirmação, os dados registados atuais são substituídos pelos dados do backup.",
             .exportBackupSuccessTitle: "Backup criado",
-            .exportBackupSuccessMessage: "O ficheiro de backup foi criado. Escolha onde pretende guardar ou partilhar o ficheiro.",
+            .exportBackupSuccessMessage: "Ficheiro criado com sucesso.",
             .exportBackupFailureTitle: "Não foi possível exportar o backup",
             .importBackupConfirmationTitle: "Importar backup?",
             .importBackupConfirmationMessage: "Esta ação vai substituir todos os dados atuais pelos dados do backup selecionado. Deseja continuar?",
@@ -576,6 +731,13 @@ enum AppStrings {
             .importBackupSuccessMessage: "Os dados do backup foram importados com sucesso.",
             .importBackupFailureTitle: "Não foi possível importar o backup",
             .importBackupFailureMessage: "O ficheiro selecionado não é um backup válido da SpendWise.",
+            .iCloudSyncTitle: "Sincronizar com iCloud",
+            .iCloudSyncMessage: "Os seus dados são privados. Não criamos perfis nem partilhamos a sua informação. Se ativar a sincronização, os dados são guardados no seu iCloud para estarem disponíveis nos seus dispositivos Apple.",
+            .iCloudSyncRestartNote: "Depois de alterar esta opção, reinicie a app para aplicar a configuração de sincronização.",
+            .iCloudSyncPromptTitle: "Usar dados do iCloud?",
+            .iCloudSyncPromptMessage: "Se já usa a SpendWise noutro dispositivo Apple, pode ativar a sincronização com iCloud para tentar obter os seus dados. Os dados ficam guardados no seu iCloud.",
+            .iCloudSyncEnable: "Ativar iCloud",
+            .iCloudSyncNotNow: "Agora não",
             .confirm: "Confirmar",
             .clear: "Limpar",
             .category503020: "Categoria 50/30/20",
@@ -598,7 +760,7 @@ enum AppStrings {
             .setupProgressTitle: "Configuração inicial",
             .setupWelcomeTitle: "Bem-vindo!",
             .setupWelcomeSubtitle: "Vamos configurar o seu orçamento. Isto demora menos de 2 minutos.",
-            .setupIncomeCardTitle: "Rendimentos mensais",
+            .setupIncomeCardTitle: "Rendimento",
             .incomeNamePrompt: " ... Nome do rendimento",
             .addIncome: "Adicionar rendimento",
             .addedIncomes: "Rendimentos adicionados",
@@ -709,6 +871,8 @@ enum AppStrings {
             .overpaymentMessage: "O valor que está a pagar é superior ao valor em dívida. Se continuar, o total da despesa sobe para refletir o pagamento total registado.",
             .valueBelowPaidTitle: "Valor inferior ao já pago",
             .valueBelowPaidMessage: "Esta despesa já tem pagamentos registados superiores ao novo valor. Se continuar, o valor da despesa será ajustado para o total já pago.",
+            .valueAbovePaidTitle: "Despesa já paga",
+            .valueAbovePaidMessage: "Está a alterar este orçamento que já estava pago para um valor superior. Quer que permaneça como pago totalmente?",
             .receivedDate: "Data de recebimento",
             .useInBudget: "Utilizar no orçamento",
             .budgetMonth: "Mês do orçamento",
@@ -719,7 +883,69 @@ enum AppStrings {
             .reservedBalanceHelpTitle: "Saldo disponível",
             .reservedBalanceHelpMessage: "Tem atualmente %@ na conta.\n\nDeste valor, %@ estão reservados para o orçamento de %@ e não são considerados no valor que pode gastar em %@.",
             .futureIncomeReceivedInsight: "📅 Recebeu %@, mas este valor está reservado para o orçamento de %@.",
-            .futureIncomeReservedInsight: "🔒 %@ do seu saldo estão reservados para o orçamento de %@."
+            .futureIncomeReservedInsight: "🔒 %@ do seu saldo estão reservados para o orçamento de %@.",
+            .accounts: "Contas",
+            .accountsSubtitle: "Organize o dinheiro por contas, carteiras ou outros saldos.",
+            .accountSingular: "conta",
+            .accountPlural: "contas",
+            .totalSummaryLabel: "Total",
+            .totalAllAccountsSummary: "Total em todas as contas: %@",
+            .netWorthAccountsFormula: "Contas + poupanças - créditos",
+            .addAccount: "Adicionar Conta",
+            .moveMoney: "Mover dinheiro",
+            .noAccounts: "Ainda não existem contas.",
+            .accountsMigrationHint: "A sua Conta Corrente atual passará a ser a Conta Principal. Pode adicionar outras contas para representar dinheiro guardado noutros locais.",
+            .totalInAccounts: "Total em contas",
+            .totalInAccountsDescription: "Soma do dinheiro disponível em todas as contas.",
+            .primaryAccountBadge: "Principal",
+            .editAccount: "Editar conta",
+            .adjustBalance: "Ajustar saldo",
+            .setPrimaryAccount: "Definir como Conta Principal",
+            .deleteAccount: "Eliminar conta",
+            .accountHistory: "Histórico",
+            .noAccountMovements: "Ainda não existem movimentos.",
+            .newAccount: "Nova Conta",
+            .editAccountTitle: "Editar Conta",
+            .account: "Conta",
+            .accountNamePlaceholder: "Nome da conta",
+            .initialBalance: "Saldo inicial",
+            .primaryAccount: "Conta Principal",
+            .icon: "Ícone",
+            .color: "Cor",
+            .accountNameValidation: "Indique o nome da conta.",
+            .chooseDifferentAccounts: "Escolha contas diferentes.",
+            .sourceAccountInsufficientBalance: "A conta de origem não tem saldo suficiente.",
+            .fromAccount: "De",
+            .toAccount: "Para",
+            .swapAccounts: "Trocar contas",
+            .note: "Nota",
+            .currentBalance: "Saldo atual",
+            .newBalance: "Novo saldo",
+            .deletePrimaryAccountMessage: "Escolha outra Conta Principal antes de eliminar esta conta.",
+            .deleteAccountWithBalanceMessage: "Esta conta ainda tem %@. Transfira o saldo para outra conta antes de a eliminar.",
+            .deleteAccountBlockedTitle: "Não é possível eliminar",
+            .deleteAccountWithRecurringIncomeMessage: "Esta conta tem rendimentos recorrentes associados. Altere esses rendimentos para outra conta antes de eliminar.",
+            .colorBlue: "Azul",
+            .colorGreen: "Verde",
+            .colorOrange: "Laranja",
+            .colorPurple: "Roxo",
+            .colorTeal: "Turquesa",
+            .colorGray: "Cinzento",
+            .accountMovementInitial: "Saldo inicial",
+            .accountMovementIncome: "Receita",
+            .accountMovementExpensePayment: "Pagamento",
+            .accountMovementTransferIn: "Transferência recebida",
+            .accountMovementTransferOut: "Transferência enviada",
+            .accountMovementAdjustment: "Ajuste de saldo",
+            .accountIconBank: "Banco",
+            .accountIconWallet: "Carteira",
+            .accountIconCash: "Dinheiro",
+            .accountIconCard: "Cartão",
+            .accountIconTravel: "Viagem",
+            .accountIconHome: "Casa",
+            .accountIconOther: "Outro",
+            .transferInAccountTitle: "%@ → esta conta",
+            .transferOutAccountTitle: "Esta conta → %@"
         ],
         .english: [
             .appName: "SpendWise",
@@ -730,8 +956,11 @@ enum AppStrings {
             .expense: "Expense",
             .income: "Income",
             .today: "Today",
+            .overdue: "Overdue",
             .noTransactions: "No transactions",
             .noTransactionsDescription: "Add expenses or income for this month.",
+            .noFilteredTransactions: "No results",
+            .noFilteredTransactionsDescription: "Filters are applied. Adjust or clear the filters to see the transactions again.",
             .cancel: "Cancel",
             .delete: "Delete",
             .deleteConfirmation: "Are you sure you want to delete?",
@@ -739,8 +968,12 @@ enum AppStrings {
             .settings: "Settings",
             .add: "Add",
             .currentAccount: "Current Account",
+            .currentAccountHeroSubtitle: "Track your expenses\nand stay in control of the month.",
+            .currentAccountMonthlyList: "Month List",
+            .currentAccountCalendar: "Calendar",
             .credits: "Analytics",
             .management: "Management",
+            .managementHeroSubtitle: "Organize income,\nexpenses and plan\nyour budget.",
             .monthlyExpense: "Recurring Expenses (Month)",
             .periodicExpense: "Single-Month Expense (Annual)",
             .salary: "Monthly Salaries",
@@ -761,11 +994,19 @@ enum AppStrings {
             .endDate: "End date",
             .noEndDate: "No end date",
             .year: "Year",
-            .freeText: "Free text",
+            .freeText: "Expense name",
             .day: "Day",
+            .monthExpense: "Monthly",
+            .noSpecificDay: "Flexible no day",
+            .autoMarkPaidOnDay: "Automatically mark as paid on the day",
+            .autoPaidOnDaySummary: "Automatically paid on the day",
+            .nextMonthBudgetOnlySummary: "Only for next month's budget",
+            .fillDay: "Select the expense day or choose Flexible no day.",
             .value: "Value",
             .save: "Save",
             .ok: "OK",
+            .yes: "Yes",
+            .no: "No",
             .fillValue: "Fill in the value.",
             .selectExpenseType: "Select the 50/30/20 expense category.",
             .selectExpenseName: "Select the expense type.",
@@ -776,7 +1017,7 @@ enum AppStrings {
             .newExpense: "Schedule new expense",
             .editExpense: "Edit Expense",
             .newSavingExpense: "Schedule new saving",
-            .creditPaymentExpenseButton: "Credit payment",
+            .creditPaymentExpenseButton: "Credit",
             .newCreditPaymentExpense: "Schedule credit payment",
             .newRecurringSavingExpense: "Schedule New Recurring Saving",
             .newRecurringCreditPaymentExpense: "Schedule Recurring Credit Payment",
@@ -790,6 +1031,7 @@ enum AppStrings {
             .editSalary: "Edit Recurring Income",
             .everyMonth: "every month",
             .periodicity: "Frequency",
+            .weeklyRecurrence: "Weekly",
             .monthlyRecurrence: "Monthly",
             .quarterlyRecurrence: "Quarterly",
             .semiannualRecurrence: "Semiannual",
@@ -812,29 +1054,54 @@ enum AppStrings {
             .continueAction: "Continue",
             .overdueExpensesTitle: "Expenses to pay",
             .overdueExpensesMessagePrefix: "There are expenses in the current month that should already be paid:",
+            .dueTodayExpensesMessagePrefix: "There are expenses due today that are still unpaid:",
             .previousMonthUnpaidExpensesMessagePrefix: "There are unpaid expenses from last month:",
             .pastMonthsUnpaidExpensesMessagePrefix: "There are unpaid expenses from previous months:",
             .overdueExpenseDueDay: "should have been paid on day",
             .balanceThisMonthHelp: "Shows the available balance up to today. It sums all salaries and income received up to today and subtracts only expenses up to today that have been marked as paid.",
             .monthUnpaidHelp: "Shows the total expenses in the displayed month that have not been marked as paid.",
-            .monthRemainingHelp: "Shows how much you can spend in the displayed month, considering the accumulated budget up to that month. It adds positive or negative remaining amounts from previous months to the income assigned to the displayed month and subtracts that month's expected expenses.",
-            .monthRemainingHelpNote: "This card is only shown for the current month and the next two months. In those future months, it shows the forecast accumulated up to that month: surplus increases what is available and overspending reduces it.",
+            .monthRemainingHelp: "For the current month, it shows what is left after subtracting the month's unpaid expenses from the total balance across accounts. For following months, it starts from the previous month's available amount, adds the income expected for that month, and subtracts that month's unpaid expenses.",
+            .monthRemainingHelpNote: "This card is only shown for the current month and the following two months. The total balance across accounts already includes remaining amounts from previous months, so those amounts are not added again.",
             .pay: "Pay",
             .paid: "Paid",
             .notPaid: "To pay",
             .canStillSpend: "Can still spend",
+            .unusedExpense: "To use",
             .paidExpense: "Paid",
             .unpaidExpense: "To pay",
             .paidToggleHelpTitle: "Payment status",
             .paidToggleHelpMessage: "You can create the expense as unpaid or mark it as paid straight away. When paid is selected, the full payment is recorded immediately and the Current Account available balance is updated.",
             .paidAmount: "Paid amount",
+            .paymentNote: "Note",
+            .paymentNotePlaceholder: "Add note to payment history",
             .ofAmount: "of",
             .amountToPay: "Amount to pay",
             .total: "Total",
             .payFullAmount: "Pay full amount",
             .futurePaymentTitle: "Future payment",
             .futurePaymentMessage: "You are recording a payment of %@ for an expense scheduled for %@.",
+            .futureFlexiblePaymentMessage: "You are recording a payment of %@ for a flexible expense in %@.",
             .monthAnalysis: "Month Analysis",
+            .analyticsHeroTitle: "Analysis",
+            .analyticsHeroSubtitle: "See your spending patterns\nand improve your finances.",
+            .analyticsMenuTitle: "Analysis",
+            .analyticsOverview: "Overview",
+            .analyticsMonthYear: "Month and Year Analysis",
+            .analyticsSummaries: "Summaries",
+            .analyticsSavingsCredits: "Savings and Credits",
+            .availableBalanceSummary: "Available balance",
+            .totalSavedSummary: "Total saved",
+            .totalDebtSummary: "Total debt",
+            .netWorthTitle: "Net worth",
+            .previousMonthComparison: "vs previous month",
+            .netWorthVariationTitle: "Net worth change",
+            .noVariation: "No change",
+            .quickSummary: "Quick summary",
+            .seeAll: "See all",
+            .noSavings: "No savings",
+            .noCredits: "No credits",
+            .movementHistory: "Movement history",
+            .movementHistoryDescription: "See details of registered movements",
             .whereSpent: "Where you spent",
             .budgetRule: "50 / 30 / 20",
             .annualBalance: "Year balance",
@@ -852,6 +1119,7 @@ enum AppStrings {
             .appDataPrivacyNote: "Your data stays stored only on this device, except when you manually export a backup.",
             .appSecurityTitle: "Data security",
             .appSecurityMessage: "SpendWise does not connect to external servers, does not create accounts and does not send your data to third parties. All registered information stays on the device. Backups are files created manually by you and are only shared if you choose to save or send that file.",
+            .appSecurityICloudBackupMessage: "If you select Sync with iCloud, your data is also stored in your iCloud and can be synced or recovered on your Apple devices using the same account. This backup/sync is associated with your iCloud and is not sent to SpendWise servers.",
             .aboutSpendWisePurposeTitle: "What SpendWise is for",
             .aboutSpendWisePurposeMessage: "SpendWise helps you track available money, expenses, income, savings and credits in one place. Its purpose is to give a simple monthly overview, support the 50/30/20 rule and help you make clearer financial decisions, without acting as a bank or financial simulator. The informational notes shown in the app are general guidance only. SpendWise is not responsible for decisions made by the user; any financial decision should be made consciously and based on your own situation.",
             .linkedTrackingOptionalHelpTitle: "Optional link",
@@ -867,14 +1135,14 @@ enum AppStrings {
             .periodicExpenseHelp: "Adds an expense that happens once a year in a specific month, such as insurance, taxes or annual payments.",
             .deleteAllData: "Delete all data",
             .deleteAllDataTitle: "Delete all data?",
-            .deleteAllDataMessage: "This will delete every expense, income, salary, payment, payment history, recurrence exception, credit and credit movement stored in the app. This cannot be undone.",
+            .deleteAllDataMessage: "This will delete every expense, income, salary, payment, payment history, recurrence exception, account, transfer, credit and credit movement stored in the app. This cannot be undone.",
             .exportBackup: "Export backup",
             .importBackup: "Import backup",
             .backupInfoTitle: "Backup",
-            .exportBackupHelp: "Creates a JSON file only with user-entered data: salaries, expenses, payments, recurrence exceptions, credits and credit movements. You can then save it to iCloud Drive, Files, AirDrop or another location.",
-            .importBackupHelp: "Lets you choose a JSON file previously exported by SpendWise. After confirmation, current registered data is replaced with the backup data.",
+            .exportBackupHelp: "Creates a password-encrypted file only with user-entered data: salaries, expenses, payments, recurrence exceptions, credits and credit movements. Keep the password in a safe place because it will be required to import the backup.",
+            .importBackupHelp: "Lets you choose a backup previously exported by SpendWise. If the file is encrypted, the password is required to decrypt it before importing. After confirmation, current registered data is replaced with the backup data.",
             .exportBackupSuccessTitle: "Backup created",
-            .exportBackupSuccessMessage: "The backup file was created. Choose where you want to save or share it.",
+            .exportBackupSuccessMessage: "File created successfully.",
             .exportBackupFailureTitle: "Could not export backup",
             .importBackupConfirmationTitle: "Import backup?",
             .importBackupConfirmationMessage: "This will replace all current data with the selected backup data. Do you want to continue?",
@@ -882,6 +1150,13 @@ enum AppStrings {
             .importBackupSuccessMessage: "The backup data was imported successfully.",
             .importBackupFailureTitle: "Could not import backup",
             .importBackupFailureMessage: "The selected file is not a valid SpendWise backup.",
+            .iCloudSyncTitle: "Sync with iCloud",
+            .iCloudSyncMessage: "Your data is private. We do not create profiles or share your information. If you enable sync, your data is stored in your iCloud so it is available on your Apple devices.",
+            .iCloudSyncRestartNote: "After changing this option, restart the app to apply the sync configuration.",
+            .iCloudSyncPromptTitle: "Use iCloud data?",
+            .iCloudSyncPromptMessage: "If you already use SpendWise on another Apple device, you can enable iCloud sync to try to retrieve your data. The data stays stored in your iCloud.",
+            .iCloudSyncEnable: "Enable iCloud",
+            .iCloudSyncNotNow: "Not now",
             .confirm: "Confirm",
             .clear: "Clear",
             .category503020: "50/30/20 Category",
@@ -904,7 +1179,7 @@ enum AppStrings {
             .setupProgressTitle: "Initial setup",
             .setupWelcomeTitle: "Welcome!",
             .setupWelcomeSubtitle: "Let's set up your budget. This takes less than 2 minutes.",
-            .setupIncomeCardTitle: "Monthly income",
+            .setupIncomeCardTitle: "Income",
             .incomeNamePrompt: " ... Income name",
             .addIncome: "Add income",
             .addedIncomes: "Added income",
@@ -1015,6 +1290,8 @@ enum AppStrings {
             .overpaymentMessage: "The amount you are paying is higher than the amount due. If you continue, the expense total will increase to reflect the total registered payment.",
             .valueBelowPaidTitle: "Value below amount already paid",
             .valueBelowPaidMessage: "This expense already has registered payments above the new value. If you continue, the expense value will be adjusted to the total already paid.",
+            .valueAbovePaidTitle: "Expense already paid",
+            .valueAbovePaidMessage: "You are changing this budget item, which was already paid, to a higher value. Do you want it to remain fully paid?",
             .receivedDate: "Received date",
             .useInBudget: "Use in budget",
             .budgetMonth: "Budget month",
@@ -1025,7 +1302,69 @@ enum AppStrings {
             .reservedBalanceHelpTitle: "Available balance",
             .reservedBalanceHelpMessage: "You currently have %@ in the account.\n\nOf this amount, %@ is reserved for the %@ budget and is not considered in the amount you can spend in %@.",
             .futureIncomeReceivedInsight: "📅 You received %@, but this amount is reserved for the %@ budget.",
-            .futureIncomeReservedInsight: "🔒 %@ of your balance is reserved for the %@ budget."
+            .futureIncomeReservedInsight: "🔒 %@ of your balance is reserved for the %@ budget.",
+            .accounts: "Accounts",
+            .accountsSubtitle: "Organize money by accounts, wallets, or other balances.",
+            .accountSingular: "account",
+            .accountPlural: "accounts",
+            .totalSummaryLabel: "Total",
+            .totalAllAccountsSummary: "Total across all accounts: %@",
+            .netWorthAccountsFormula: "Accounts + savings - credits",
+            .addAccount: "Add Account",
+            .moveMoney: "Move money",
+            .noAccounts: "There are no accounts yet.",
+            .accountsMigrationHint: "Your current account will become the Primary Account. You can add other accounts to represent money kept elsewhere.",
+            .totalInAccounts: "Total in accounts",
+            .totalInAccountsDescription: "Sum of the money available across all accounts.",
+            .primaryAccountBadge: "Primary",
+            .editAccount: "Edit account",
+            .adjustBalance: "Adjust balance",
+            .setPrimaryAccount: "Set as Primary Account",
+            .deleteAccount: "Delete account",
+            .accountHistory: "History",
+            .noAccountMovements: "There are no movements yet.",
+            .newAccount: "New Account",
+            .editAccountTitle: "Edit Account",
+            .account: "Account",
+            .accountNamePlaceholder: "Account name",
+            .initialBalance: "Initial balance",
+            .primaryAccount: "Primary Account",
+            .icon: "Icon",
+            .color: "Color",
+            .accountNameValidation: "Enter the account name.",
+            .chooseDifferentAccounts: "Choose different accounts.",
+            .sourceAccountInsufficientBalance: "The source account does not have enough balance.",
+            .fromAccount: "From",
+            .toAccount: "To",
+            .swapAccounts: "Swap accounts",
+            .note: "Note",
+            .currentBalance: "Current balance",
+            .newBalance: "New balance",
+            .deletePrimaryAccountMessage: "Choose another Primary Account before deleting this account.",
+            .deleteAccountWithBalanceMessage: "This account still has %@. Transfer the balance to another account before deleting it.",
+            .deleteAccountBlockedTitle: "Cannot delete",
+            .deleteAccountWithRecurringIncomeMessage: "This account has recurring income linked to it. Move those income records to another account before deleting it.",
+            .colorBlue: "Blue",
+            .colorGreen: "Green",
+            .colorOrange: "Orange",
+            .colorPurple: "Purple",
+            .colorTeal: "Teal",
+            .colorGray: "Gray",
+            .accountMovementInitial: "Initial balance",
+            .accountMovementIncome: "Income",
+            .accountMovementExpensePayment: "Payment",
+            .accountMovementTransferIn: "Transfer received",
+            .accountMovementTransferOut: "Transfer sent",
+            .accountMovementAdjustment: "Balance adjustment",
+            .accountIconBank: "Bank",
+            .accountIconWallet: "Wallet",
+            .accountIconCash: "Cash",
+            .accountIconCard: "Card",
+            .accountIconTravel: "Travel",
+            .accountIconHome: "Home",
+            .accountIconOther: "Other",
+            .transferInAccountTitle: "%@ → this account",
+            .transferOutAccountTitle: "This account → %@"
         ]
     ]
 

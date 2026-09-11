@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		787C4E7A30462B8F008F162D /* AccountsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 787C4E7930462B8F008F162D /* AccountsViews.swift */; };
 		78DB10F8301BFDD4009F36E8 /* AppStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10F7301BFDD3009F36E8 /* AppStrings.swift */; };
 		78DB10FA301BFDFC009F36E8 /* MoneyDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10F9301BFDFC009F36E8 /* MoneyDomain.swift */; };
 		78DB10FC301BFE1E009F36E8 /* MoneyComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10FB301BFE1E009F36E8 /* MoneyComponents.swift */; };
@@ -20,6 +21,7 @@
 		78DB110E302D1EAB009F36E8 /* MoneyCalculationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB110D302D1EAB009F36E8 /* MoneyCalculationService.swift */; };
 		78DB111030334521009F36E8 /* SavingsDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB110F30334521009F36E8 /* SavingsDomain.swift */; };
 		78DB11123033459F009F36E8 /* SavingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB11113033459F009F36E8 /* SavingsViews.swift */; };
+		78F8C9F1303CCBDC00F0F7C3 /* AppLockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F8C9F0303CCBDB00F0F7C3 /* AppLockView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +45,7 @@
 		780E64E2301A9002002BC6D1 /* MoneyControl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MoneyControl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		780E64F1301A9003002BC6D1 /* MoneyControlTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoneyControlTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		780E64FB301A9003002BC6D1 /* MoneyControlUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoneyControlUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		787C4E7930462B8F008F162D /* AccountsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsViews.swift; sourceTree = "<group>"; };
 		78DB10F7301BFDD3009F36E8 /* AppStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStrings.swift; sourceTree = "<group>"; };
 		78DB10F9301BFDFC009F36E8 /* MoneyDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyDomain.swift; sourceTree = "<group>"; };
 		78DB10FB301BFE1E009F36E8 /* MoneyComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyComponents.swift; sourceTree = "<group>"; };
@@ -56,11 +59,25 @@
 		78DB110D302D1EAB009F36E8 /* MoneyCalculationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyCalculationService.swift; sourceTree = "<group>"; };
 		78DB110F30334521009F36E8 /* SavingsDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavingsDomain.swift; sourceTree = "<group>"; };
 		78DB11113033459F009F36E8 /* SavingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavingsViews.swift; sourceTree = "<group>"; };
+		78F8C9F0303CCBDB00F0F7C3 /* AppLockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		7804538F30391932004F09E3 /* Exceptions for "MoneyControl" folder in "MoneyControl" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 780E64E1301A9002002BC6D1 /* MoneyControl */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		780E64E4301A9002002BC6D1 /* MoneyControl */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7804538F30391932004F09E3 /* Exceptions for "MoneyControl" folder in "MoneyControl" target */,
+			);
 			path = MoneyControl;
 			sourceTree = "<group>";
 		};
@@ -121,6 +138,8 @@
 				78DB110D302D1EAB009F36E8 /* MoneyCalculationService.swift */,
 				78DB110F30334521009F36E8 /* SavingsDomain.swift */,
 				78DB11113033459F009F36E8 /* SavingsViews.swift */,
+				78F8C9F0303CCBDB00F0F7C3 /* AppLockView.swift */,
+				787C4E7930462B8F008F162D /* AccountsViews.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -282,11 +301,13 @@
 				78DB10FC301BFE1E009F36E8 /* MoneyComponents.swift in Sources */,
 				78DB111030334521009F36E8 /* SavingsDomain.swift in Sources */,
 				78DB10FE301BFE35009F36E8 /* SettingsEditor.swift in Sources */,
+				787C4E7A30462B8F008F162D /* AccountsViews.swift in Sources */,
 				78DB1104301E2EC2009F36E8 /* OnboardingView.swift in Sources */,
 				78DB11123033459F009F36E8 /* SavingsViews.swift in Sources */,
 				78DB10FA301BFDFC009F36E8 /* MoneyDomain.swift in Sources */,
 				78DB110C302D1760009F36E8 /* CreditViews.swift in Sources */,
 				78DB1102301D7647009F36E8 /* AppPalette.swift in Sources */,
+				78F8C9F1303CCBDC00F0F7C3 /* AppLockView.swift in Sources */,
 				78DB110E302D1EAB009F36E8 /* MoneyCalculationService.swift in Sources */,
 				78DB1106301E3E8A009F36E8 /* InitialSetupWizardView.swift in Sources */,
 				78DB10F8301BFDD4009F36E8 /* AppStrings.swift in Sources */,
@@ -461,6 +482,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MoneyControl/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SpendWise;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -472,11 +494,11 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.skyIsTheLimit.MoneyControl;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -516,6 +538,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MoneyControl/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SpendWise;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -527,11 +550,11 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.skyIsTheLimit.MoneyControl;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -660,7 +683,7 @@
 				780E6504301A9003002BC6D1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		780E6505301A9003002BC6D1 /* Build configuration list for PBXNativeTarget "MoneyControl" */ = {
 			isa = XCConfigurationList;
@@ -669,7 +692,7 @@
 				780E6507301A9003002BC6D1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		780E6508301A9003002BC6D1 /* Build configuration list for PBXNativeTarget "MoneyControlTests" */ = {
 			isa = XCConfigurationList;
@@ -678,7 +701,7 @@
 				780E650A301A9003002BC6D1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		780E650B301A9003002BC6D1 /* Build configuration list for PBXNativeTarget "MoneyControlUITests" */ = {
 			isa = XCConfigurationList;
@@ -687,7 +710,7 @@
 				780E650D301A9003002BC6D1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};

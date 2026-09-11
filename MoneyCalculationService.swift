@@ -49,22 +49,6 @@ struct ExpenseTypePoint: Identifiable, Equatable {
     var id: String { "\(category.rawValue)-\(title)" }
 }
 
-struct AnalyticsInsight: Identifiable, Equatable {
-    let title: String
-    let message: String
-    let infoTitle: String?
-    let infoMessage: String?
-
-    init(title: String, message: String, infoTitle: String? = nil, infoMessage: String? = nil) {
-        self.title = title
-        self.message = message
-        self.infoTitle = infoTitle
-        self.infoMessage = infoMessage
-    }
-
-    var id: String { "\(title)-\(message)" }
-}
-
 struct MonthlyBalancePoint: Identifiable, Equatable {
     let month: Date
     let income: Double
@@ -85,14 +69,83 @@ struct MoneyCalculationService {
         transactions.visible(in: month, payments: payments, exclusions: exclusions)
     }
 
+    func scheduledAmount(for transaction: MoneyTransaction, in month: Date) -> Double {
+        if transaction.recurrence == .weekly {
+            return transaction.occurrenceDays(in: month, exclusions: exclusions)
+                .reduce(0) { total, occurrenceDay in
+                    total + transaction.scheduledAmount(in: month, occurrenceDay: occurrenceDay)
+                }
+        }
+
+        return transaction.scheduledAmount(in: month)
+    }
+
     func paidAmount(for transaction: MoneyTransaction, in month: Date) -> Double {
+        if transaction.recurrence == .weekly {
+            return transaction.occurrenceDays(in: month, exclusions: exclusions)
+                .reduce(0) { total, occurrenceDay in
+                    total + paidAmount(for: transaction, in: month, occurrenceDay: occurrenceDay)
+                }
+        }
+
+        return paidAmount(for: transaction, in: month, occurrenceDay: nil)
+    }
+
+    func paidAmount(for transaction: MoneyTransaction, in month: Date, occurrenceDay: Int?) -> Double {
         guard transaction.kind == TransactionKind.expense.rawValue else { return 0 }
-        guard let payment = payments.first(where: { $0.transactionID == transaction.id && calendar.isDate($0.monthStart, equalTo: month, toGranularity: .month) }) else { return 0 }
-        return min(payment.amountPaid ?? transaction.amount, transaction.amount)
+        let normalizedOccurrenceDay = transaction.recurrence == .weekly ? occurrenceDay : nil
+        let scheduledAmount = transaction.scheduledAmount(in: month, occurrenceDay: normalizedOccurrenceDay)
+        if transaction.recurrence == .weekly, let normalizedOccurrenceDay {
+            let paidAmount = weeklyPaidAmount(
+                for: transaction,
+                in: month,
+                occurrenceDay: normalizedOccurrenceDay,
+                scheduledAmount: scheduledAmount
+            )
+            return min(paidAmount, scheduledAmount)
+        }
+
+        let matchingPayments = payments.filter { payment in
+            payment.transactionID == transaction.id
+                && calendar.isDate(payment.monthStart, equalTo: month, toGranularity: .month)
+                && (transaction.recurrence != .weekly || payment.occurrenceDay == normalizedOccurrenceDay)
+        }
+        let paidAmount = matchingPayments.reduce(0) { $0 + ($1.amountPaid ?? scheduledAmount) }
+        return min(paidAmount, scheduledAmount)
+    }
+
+    private func weeklyPaidAmount(
+        for transaction: MoneyTransaction,
+        in month: Date,
+        occurrenceDay: Int,
+        scheduledAmount: Double
+    ) -> Double {
+        let monthPayments = payments.filter {
+            $0.transactionID == transaction.id
+                && calendar.isDate($0.monthStart, equalTo: month, toGranularity: .month)
+        }
+        let exactPaid = monthPayments
+            .filter { $0.occurrenceDay == occurrenceDay }
+            .reduce(0) { $0 + ($1.amountPaid ?? scheduledAmount) }
+        let legacyPaid = monthPayments
+            .filter { $0.occurrenceDay == nil }
+            .reduce(0) { $0 + ($1.amountPaid ?? self.scheduledAmount(for: transaction, in: month)) }
+
+        guard legacyPaid > 0 else { return exactPaid }
+
+        let earlierScheduledAmount = transaction
+            .occurrenceDays(in: month, exclusions: exclusions)
+            .filter { $0 < occurrenceDay }
+            .reduce(0) { total, day in
+                total + transaction.scheduledAmount(in: month, occurrenceDay: day)
+            }
+        let legacyAllocation = min(max(legacyPaid - earlierScheduledAmount, 0), scheduledAmount)
+
+        return exactPaid + legacyAllocation
     }
 
     func isPaid(_ transaction: MoneyTransaction, in month: Date) -> Bool {
-        paidAmount(for: transaction, in: month) >= transaction.amount
+        paidAmount(for: transaction, in: month) >= scheduledAmount(for: transaction, in: month)
     }
 
     func accountSummary(until now: Date) -> AccountSummary {
@@ -138,10 +191,10 @@ struct MoneyCalculationService {
         let income = incomeTotal(in: month)
         let expenses = visible
             .filter { $0.kind == TransactionKind.expense.rawValue }
-            .reduce(0) { $0 + $1.amount }
+            .reduce(0) { $0 + scheduledAmount(for: $1, in: month) }
         let unpaid = visible
             .filter { $0.kind == TransactionKind.expense.rawValue }
-            .reduce(0) { $0 + max($1.amount - paidAmount(for: $1, in: month), 0) }
+            .reduce(0) { $0 + max(scheduledAmount(for: $1, in: month) - paidAmount(for: $1, in: month), 0) }
 
         return MonthBudgetSummary(income: income, expenses: expenses, unpaidExpenses: unpaid)
     }
@@ -153,31 +206,34 @@ struct MoneyCalculationService {
             .reduce(0) { $0 + monthSummary(in: $1).remaining }
     }
 
-    func categoryExpenses(in month: Date) -> [CategoryExpensePoint] {
-        categoryExpenses(in: [month])
+    func categoryExpenses(in month: Date, paidOnly: Bool = false) -> [CategoryExpensePoint] {
+        categoryExpenses(in: [month], paidOnly: paidOnly)
     }
 
-    func categoryExpenses(in months: [Date]) -> [CategoryExpensePoint] {
+    func categoryExpenses(in months: [Date], paidOnly: Bool = false) -> [CategoryExpensePoint] {
         ExpenseCategory.allCases.map { category in
             let amount = months.reduce(0) { total, month in
-                total + categoryAmount(in: month, category: category, paidOnly: false)
+                total + categoryAmount(in: month, category: category, paidOnly: paidOnly)
             }
             return CategoryExpensePoint(category: category, amount: amount)
         }
     }
 
-    func expenseTypePoints(in months: [Date], fallbackTitle: String) -> [ExpenseTypePoint] {
+    func expenseTypePoints(in months: [Date], fallbackTitle: String, paidOnly: Bool = false) -> [ExpenseTypePoint] {
         var totals: [String: (title: String, category: ExpenseCategory, amount: Double)] = [:]
 
         months.forEach { month in
             visibleTransactions(in: month)
                 .filter { $0.kind == TransactionKind.expense.rawValue }
                 .forEach { transaction in
+                    let amount = paidOnly ? paidAmount(for: transaction, in: month) : scheduledAmount(for: transaction, in: month)
+                    guard amount > 0 else { return }
+
                     let category = ExpenseCategory(rawValue: transaction.expenseCategory ?? "") ?? .needs
                     let title = transaction.displayName.isEmpty ? fallbackTitle : transaction.displayName
                     let key = "\(category.rawValue)-\(title)"
                     let currentAmount = totals[key]?.amount ?? 0
-                    totals[key] = (title, category, currentAmount + transaction.amount)
+                    totals[key] = (title, category, currentAmount + amount)
                 }
         }
 
@@ -193,7 +249,7 @@ struct MoneyCalculationService {
 
     func incomeTotal(in month: Date) -> Double {
         incomeOccurrences(budgetedIn: month)
-            .reduce(0) { $0 + $1.amount }
+            .reduce(0) { $0 + $1.scheduledAmount(in: month) }
     }
 
     func incomeOccurrences(budgetedIn budgetMonth: Date) -> [MoneyTransaction] {
@@ -255,7 +311,7 @@ struct MoneyCalculationService {
         visibleTransactions(in: month)
             .filter { $0.kind == TransactionKind.expense.rawValue && $0.expenseCategory == category.rawValue }
             .reduce(0) { total, transaction in
-                total + (paidOnly ? paidAmount(for: transaction, in: month) : transaction.amount)
+                total + (paidOnly ? paidAmount(for: transaction, in: month) : scheduledAmount(for: transaction, in: month))
             }
     }
 
@@ -267,14 +323,15 @@ struct MoneyCalculationService {
                 return keywords.contains { searchableText.contains($0) }
             }
             .reduce(0) { total, transaction in
-                total + (paidOnly ? paidAmount(for: transaction, in: month) : transaction.amount)
+                total + (paidOnly ? paidAmount(for: transaction, in: month) : scheduledAmount(for: transaction, in: month))
             }
     }
 
-    func annualBalancePoints(in months: [Date]) -> [MonthlyBalancePoint] {
+    func annualBalancePoints(in months: [Date], paidOnly: Bool = false) -> [MonthlyBalancePoint] {
         months.map { month in
             let summary = monthSummary(in: month)
-            return MonthlyBalancePoint(month: month, income: summary.income, expenses: summary.expenses)
+            let expenses = paidOnly ? paidExpenseTotal(in: month) : summary.expenses
+            return MonthlyBalancePoint(month: month, income: summary.income, expenses: expenses)
         }
     }
 
@@ -286,52 +343,6 @@ struct MoneyCalculationService {
                 expenses: expenseAmount(in: month, matching: ["poup", "saving"], paidOnly: false)
             )
         }
-    }
-
-    func analyticsInsights(currentMonth: Date) -> [AnalyticsInsight] {
-        let previousMonth = currentMonth.previousMonthStart
-        guard paidExpenseTotal(in: previousMonth) > 0 else { return [] }
-
-        var insights: [AnalyticsInsight] = []
-        let title = AppStrings.text(.paidInsights)
-
-        let currentRestaurants = expenseAmount(in: currentMonth, matching: ["refeic", "restaurante"], paidOnly: true)
-        let previousRestaurants = expenseAmount(in: previousMonth, matching: ["refeic", "restaurante"], paidOnly: true)
-        if previousRestaurants > 0, currentRestaurants > previousRestaurants {
-            insights.append(AnalyticsInsight(
-                title: title,
-                message: String(format: AppStrings.text(.restaurantsIncreasedInsight), Self.percentageText(currentRestaurants - previousRestaurants, total: previousRestaurants))
-            ))
-        }
-
-        let currentGroceries = expenseAmount(in: currentMonth, matching: ["aliment", "supermercado"], paidOnly: true)
-        let previousGroceries = expenseAmount(in: previousMonth, matching: ["aliment", "supermercado"], paidOnly: true)
-        if previousGroceries > 0, currentGroceries < previousGroceries {
-            insights.append(AnalyticsInsight(
-                title: title,
-                message: String(format: AppStrings.text(.groceriesDecreasedInsight), Self.percentageText(previousGroceries - currentGroceries, total: previousGroceries))
-            ))
-        }
-
-        let currentSavings = categoryAmount(in: currentMonth, category: .savingsAndDebt, paidOnly: true)
-        let previousSavings = categoryAmount(in: previousMonth, category: .savingsAndDebt, paidOnly: true)
-        if currentSavings > previousSavings {
-            insights.append(AnalyticsInsight(
-                title: title,
-                message: String(format: AppStrings.text(.savingsIncreasedInsight), (currentSavings - previousSavings).currencyText)
-            ))
-        }
-
-        let subscriptions = expenseAmount(in: currentMonth, matching: ["subscr"], paidOnly: true)
-        let income = incomeTotal(in: currentMonth)
-        if income > 0, subscriptions > 0 {
-            insights.append(AnalyticsInsight(
-                title: title,
-                message: String(format: AppStrings.text(.subscriptionsIncomeInsight), Self.percentageText(subscriptions, total: income))
-            ))
-        }
-
-        return insights
     }
 
     static func monthsInYear(_ year: Int) -> [Date] {

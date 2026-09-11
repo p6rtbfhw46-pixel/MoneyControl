@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>NSFaceIDUsageDescription</key>
+		<string>A SpendWise usa Face ID para desbloquear a app de forma segura.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>A SpendWise usa a câmara para ler faturas e preencher despesas automaticamente.</string>
+		<key>NSAppTransportSecurity</key>
+		<dict/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+</dict>
+</plist>

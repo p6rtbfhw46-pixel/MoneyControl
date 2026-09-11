@@ -8,6 +8,7 @@ import SwiftData
 import SwiftUI
 
 struct SavingsSettingsView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Query private var savingAccounts: [SavingAccount]
     @Query private var savingMovements: [SavingMovement]
@@ -25,6 +26,10 @@ struct SavingsSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if horizontalSizeClass == .compact {
+                    savingsHeroImage
+                }
+
                 if savingAccounts.contains(where: { $0.savingStatus == .closed }) {
                     Toggle(SavingsStrings.text(.showClosed), isOn: $showsClosed)
                         .font(.subheadline.weight(.semibold))
@@ -75,6 +80,15 @@ struct SavingsSettingsView: View {
             SavingDetailView(saving: saving)
         }
     }
+
+    private var savingsHeroImage: some View {
+        Image(AppStrings.currentLanguage == .portuguese ? "SavingsHero" : "SavingsHeroEnglish")
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 22))
+            .shadow(color: AppPalette.background.opacity(0.10), radius: 12, y: 6)
+    }
 }
 
 private struct SavingSummaryCard: View {
@@ -91,14 +105,14 @@ private struct SavingSummaryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "leaf.fill")
+                Image(systemName: saving.purposeIconName)
                     .font(.title2)
                     .foregroundStyle(AppPalette.positive)
                     .frame(width: 46, height: 46)
                     .background(AppPalette.mintSurface, in: Circle())
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(saving.name)
+                    Text(saving.displayName)
                         .font(.headline.bold())
                         .foregroundStyle(AppPalette.background)
                     Text(SavingsStrings.text(.saved))
@@ -159,16 +173,92 @@ struct SavingEditorRequest: Identifiable {
     }
 }
 
+private enum SavingPurpose: CaseIterable, Identifiable {
+    case emergencyFund
+    case savingsAccount
+    case investment
+    case travel
+    case house
+    case car
+    case children
+    case retirement
+    case purchase
+    case other
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .emergencyFund:
+            "Fundo de Emergência"
+        case .savingsAccount:
+            "Conta Poupança"
+        case .investment:
+            "Investimento"
+        case .travel:
+            "Viagem"
+        case .house:
+            "Casa"
+        case .car:
+            "Automóvel"
+        case .children:
+            "Filhos"
+        case .retirement:
+            "Reforma"
+        case .purchase:
+            "Compra"
+        case .other:
+            "Outro"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .emergencyFund:
+            "cross.case.fill"
+        case .savingsAccount:
+            "building.columns.fill"
+        case .investment:
+            "chart.line.uptrend.xyaxis"
+        case .travel:
+            "airplane"
+        case .house:
+            "house.fill"
+        case .car:
+            "car.fill"
+        case .children:
+            "figure.2.and.child.holdinghands"
+        case .retirement:
+            "sun.horizon.fill"
+        case .purchase:
+            "cart.fill"
+        case .other:
+            "ellipsis.circle.fill"
+        }
+    }
+
+    static func matching(_ title: String) -> SavingPurpose? {
+        allCases.first { $0.title.compare(title, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+    }
+}
+
 private struct SavingEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query private var allMovements: [SavingMovement]
     @Query private var transactions: [MoneyTransaction]
+    @Query private var spendAccounts: [SpendAccount]
+    @Query private var accountMovements: [AccountMovement]
+    @Query private var savingAccounts: [SavingAccount]
+    @Query private var creditAccounts: [CreditAccount]
+    @Query private var creditMovements: [CreditMovement]
 
     let request: SavingEditorRequest
     var onDelete: (() -> Void)? = nil
 
     @State private var name = ""
+    @State private var details = ""
+    @State private var selectedPurpose: SavingPurpose = .emergencyFund
     @State private var currentSaved = 0.0
     @State private var targetAmount = 0.0
     @State private var status: SavingStatus = .active
@@ -177,6 +267,27 @@ private struct SavingEditor: View {
     @State private var isTargetExpanded = false
 
     private var isEditing: Bool { request.saving != nil }
+    private var auditBalance: Double {
+        AuditSnapshot.totalBalance(
+            spendAccounts: spendAccounts,
+            accountMovements: accountMovements,
+            savingAccounts: savingAccounts,
+            savingMovements: allMovements,
+            creditAccounts: creditAccounts,
+            creditMovements: creditMovements
+        )
+    }
+
+    private func insertAuditLog(action: AuditLogAction, title: String, amount: Double = 0, balanceAfter: Double? = nil, savingID: UUID? = nil, note: String? = nil) {
+        modelContext.insert(AuditLogEntry(
+            action: action.rawValue,
+            title: title,
+            details: note ?? "",
+            amount: amount,
+            balanceAfter: balanceAfter ?? auditBalance,
+            savingID: savingID
+        ))
+    }
 
     var body: some View {
         NavigationStack {
@@ -187,22 +298,31 @@ private struct SavingEditor: View {
                 }
 
                 Section {
-                    TextField(SavingsStrings.text(.savingName), text: $name)
+                    savingPurposePicker
+
+                    if selectedPurpose == .other {
+                        TextField(SavingsStrings.text(.savingName), text: $name)
+                            .foregroundStyle(AppPalette.background)
+                            .tint(AppPalette.primary)
+                    }
+
+                    TextField(SavingsStrings.text(.savingDescription), text: $details)
                         .foregroundStyle(AppPalette.background)
                         .tint(AppPalette.primary)
 
-                    Picker(SavingsStrings.text(.active), selection: $status) {
-                        ForEach(SavingStatus.allCases) { status in
-                            Text(status.title).tag(status)
-                        }
+                    if isEditing {
+                        Toggle(SavingsStrings.text(.active), isOn: Binding(
+                            get: { status == .active },
+                            set: { status = $0 ? .active : .closed }
+                        ))
+                        .tint(AppPalette.primary)
                     }
-                    .tint(AppPalette.background)
                 }
                 .listRowBackground(AppPalette.surface)
 
                 Section {
                     if !isEditing {
-                        MoneyAmountPicker(title: SavingsStrings.text(.currentSaved), amount: $currentSaved, maximumAmount: 1_000_000)
+                        MoneyAmountPicker(title: SavingsStrings.text(.currentSaved), amount: $currentSaved, maximumAmount: 1_000_000, onConfirm: save)
                     }
                     targetDisclosure
                 }
@@ -278,16 +398,82 @@ private struct SavingEditor: View {
                 MoneyAmountPicker(
                     title: "\(SavingsStrings.text(.targetAmount)) · \(SavingsStrings.text(.optionalTarget))",
                     amount: $targetAmount,
-                    maximumAmount: 1_000_000
+                    maximumAmount: 1_000_000,
+                    onConfirm: save
                 )
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
     }
 
+    private var savingPurposePicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(SavingPurpose.allCases) { purpose in
+                        savingPurposeCard(purpose)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private func savingPurposeCard(_ purpose: SavingPurpose) -> some View {
+        let isSelected = selectedPurpose == purpose
+
+        return Button {
+            selectedPurpose = purpose
+            if purpose != .other {
+                name = purpose.title
+            } else {
+                name = ""
+            }
+        } label: {
+            VStack(spacing: 8) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: purpose.iconName)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(isSelected ? AppPalette.positive : AppPalette.background)
+                        .frame(width: 46, height: 46)
+                        .background(isSelected ? AppPalette.positive.opacity(0.12) : AppPalette.appBackground, in: Circle())
+
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.caption.bold())
+                            .foregroundStyle(AppPalette.surface)
+                            .frame(width: 22, height: 22)
+                            .background(AppPalette.positive, in: Circle())
+                            .offset(x: 8, y: -8)
+                    }
+                }
+
+                Text(purpose.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isSelected ? AppPalette.positive : AppPalette.background)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.75)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 6)
+            .frame(width: 112)
+            .frame(minHeight: 104)
+            .background(isSelected ? AppPalette.positive.opacity(0.08) : AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(isSelected ? AppPalette.positive.opacity(0.55) : AppPalette.separator, lineWidth: isSelected ? 1.5 : 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     private func loadInitialValues() {
         guard let saving = request.saving else { return }
         name = saving.name
+        details = saving.details
+        updatePurposeSelection(for: saving.name)
         currentSaved = saving.initialAmount
         targetAmount = saving.targetAmount ?? 0
         status = saving.savingStatus
@@ -295,7 +481,9 @@ private struct SavingEditor: View {
 
     private func save() {
         validationMessage = nil
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawName = selectedPurpose == .other ? name : selectedPurpose.title
+        let trimmedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedName.isEmpty else {
             validationMessage = SavingsStrings.text(.fillSavingName)
@@ -307,23 +495,56 @@ private struct SavingEditor: View {
             return
         }
 
+        let isNewSaving = request.saving == nil
+        let balanceBefore = auditBalance
         let saving = request.saving ?? SavingAccount(name: trimmedName, initialAmount: currentSaved)
         saving.name = trimmedName
+        saving.details = trimmedDetails
         if !isEditing {
             saving.initialAmount = currentSaved
         }
         saving.targetAmount = targetAmount > 0 ? targetAmount : nil
         saving.status = status.rawValue
 
-        if request.saving == nil {
+        if isNewSaving {
             modelContext.insert(saving)
         }
+
+        insertAuditLog(
+            action: isNewSaving ? .savingCreated : .savingUpdated,
+            title: saving.displayName,
+            amount: isNewSaving ? currentSaved : 0,
+            balanceAfter: isNewSaving ? balanceBefore + currentSaved : auditBalance,
+            savingID: saving.id,
+            note: trimmedDetails.isEmpty ? nil : trimmedDetails
+        )
 
         dismiss()
     }
 
+    private func updatePurposeSelection(for value: String) {
+        if let matchingPurpose = SavingPurpose.matching(value) {
+            selectedPurpose = matchingPurpose
+            name = matchingPurpose.title
+        } else {
+            selectedPurpose = .other
+            name = value
+        }
+    }
+
     private func deleteSaving() {
         guard let saving = request.saving else { return }
+        let balanceBefore = auditBalance
+        let deletedBalance = saving.balance(with: allMovements)
+
+        insertAuditLog(
+            action: .savingDeleted,
+            title: saving.displayName,
+            amount: deletedBalance,
+            balanceAfter: balanceBefore - deletedBalance,
+            savingID: saving.id,
+            note: saving.details.isEmpty ? nil : saving.details
+        )
 
         allMovements
             .filter { $0.savingID == saving.id }
@@ -347,6 +568,11 @@ struct SavingDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var allMovements: [SavingMovement]
     @Query private var transactions: [MoneyTransaction]
+    @Query private var spendAccounts: [SpendAccount]
+    @Query private var accountMovements: [AccountMovement]
+    @Query private var savingAccounts: [SavingAccount]
+    @Query private var creditAccounts: [CreditAccount]
+    @Query private var creditMovements: [CreditMovement]
 
     let saving: SavingAccount
 
@@ -359,6 +585,16 @@ struct SavingDetailView: View {
     private var monthDeposits: Double { saving.monthDeposits(in: monthStart, movements: allMovements) }
     private var monthWithdrawals: Double { saving.monthWithdrawals(in: monthStart, movements: allMovements) }
     private var monthVariation: Double { saving.monthVariation(in: monthStart, movements: allMovements) }
+    private var auditBalance: Double {
+        AuditSnapshot.totalBalance(
+            spendAccounts: spendAccounts,
+            accountMovements: accountMovements,
+            savingAccounts: savingAccounts,
+            savingMovements: allMovements,
+            creditAccounts: creditAccounts,
+            creditMovements: creditMovements
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -369,12 +605,13 @@ struct SavingDetailView: View {
                     monthSummaryCard
                     if !balancePoints.isEmpty { evolutionCard }
                     targetSuggestion
+                    addMovementButton
                     movementsSection
                 }
                 .padding()
             }
             .background(AppPalette.appBackground)
-            .navigationTitle(saving.name)
+            .navigationTitle(saving.displayName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(AppPalette.appBackground, for: .navigationBar)
             .toolbarColorScheme(.light, for: .navigationBar)
@@ -408,7 +645,7 @@ struct SavingDetailView: View {
 
     private var savingsHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(saving.name)
+            Text(saving.displayName)
                 .font(.title2.bold())
                 .foregroundStyle(AppPalette.background)
             Text(balance.currencyText)
@@ -503,22 +740,24 @@ struct SavingDetailView: View {
         }
     }
 
+    private var addMovementButton: some View {
+        Button {
+            movementEditorRequest = SavingMovementEditorRequest(saving: saving)
+        } label: {
+            Label(SavingsStrings.text(.movements), systemImage: "plus.circle.fill")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(AppPalette.surface)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var movementsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(SavingsStrings.text(.movements))
-                    .font(.headline.bold())
-                    .foregroundStyle(AppPalette.background)
-                Spacer()
-                Button {
-                    movementEditorRequest = SavingMovementEditorRequest(saving: saving)
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(AppPalette.primary)
-                }
-                .buttonStyle(.plain)
-            }
+            Text(SavingsStrings.text(.movements))
+                .font(.headline.bold())
+                .foregroundStyle(AppPalette.background)
 
             if movementGroups.isEmpty {
                 ContentUnavailableView(SavingsStrings.text(.noMovements), systemImage: "list.bullet.rectangle")
@@ -593,6 +832,17 @@ struct SavingDetailView: View {
     }
 
     private func deleteMovement(_ movement: SavingMovement) {
+        let hadLinkedIncome = movement.linkedIncomeTransactionID != nil
+        let balanceAfter = hadLinkedIncome ? auditBalance : auditBalance - movement.balanceEffect
+        modelContext.insert(AuditLogEntry(
+            action: AuditLogAction.savingMovementDeleted.rawValue,
+            title: movement.kind.title,
+            details: movement.note.isEmpty ? saving.displayName : movement.note,
+            amount: abs(movement.amount),
+            balanceAfter: balanceAfter,
+            savingID: movement.savingID
+        ))
+
         if let incomeID = movement.linkedIncomeTransactionID,
            let income = transactions.first(where: { $0.id == incomeID }) {
             modelContext.delete(income)
@@ -624,6 +874,9 @@ private struct SavingMovementRow: View {
                 Text(movement.kind.title)
                     .font(.subheadline.bold())
                     .foregroundStyle(AppPalette.background)
+                Text(movement.date.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(AppPalette.mutedText)
                 if !movement.note.isEmpty {
                     Text(movement.note)
                         .font(.caption)
@@ -670,6 +923,11 @@ private struct SavingMovementEditor: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var allMovements: [SavingMovement]
     @Query private var transactions: [MoneyTransaction]
+    @Query private var spendAccounts: [SpendAccount]
+    @Query private var accountMovements: [AccountMovement]
+    @Query private var savingAccounts: [SavingAccount]
+    @Query private var creditAccounts: [CreditAccount]
+    @Query private var creditMovements: [CreditMovement]
 
     let request: SavingMovementEditorRequest
 
@@ -687,6 +945,21 @@ private struct SavingMovementEditor: View {
             movement.savingID == request.saving.id && movement.id != request.movement?.id
         }
         return request.saving.balance(with: movementsWithoutCurrent)
+    }
+
+    private var primarySpendAccountID: UUID? {
+        spendAccounts.first(where: \.isPrimary)?.id ?? spendAccounts.first?.id
+    }
+
+    private var auditBalance: Double {
+        AuditSnapshot.totalBalance(
+            spendAccounts: spendAccounts,
+            accountMovements: accountMovements,
+            savingAccounts: savingAccounts,
+            savingMovements: allMovements,
+            creditAccounts: creditAccounts,
+            creditMovements: creditMovements
+        )
     }
 
     var body: some View {
@@ -727,7 +1000,7 @@ private struct SavingMovementEditor: View {
                 .listRowBackground(AppPalette.surface)
 
                 Section {
-                    MoneyAmountPicker(title: AppStrings.text(.value), amount: $amount, maximumAmount: 1_000_000)
+                    MoneyAmountPicker(title: AppStrings.text(.value), amount: $amount, maximumAmount: 1_000_000, onConfirm: save)
                 }
                 .listRowBackground(AppPalette.surface)
             }
@@ -769,6 +1042,9 @@ private struct SavingMovementEditor: View {
         }
 
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let balanceBefore = auditBalance
+        let previousNetEffect = auditNetEffect(for: request.movement)
+        let newNetEffect = kind == .withdrawal && transferToIncome ? 0 : kind.balanceEffect(for: amount)
         let movement = request.movement ?? SavingMovement(
             savingID: request.saving.id,
             date: date,
@@ -787,7 +1063,41 @@ private struct SavingMovementEditor: View {
         }
 
         syncLinkedIncomeIfNeeded(for: movement)
+        insertAuditLog(
+            action: request.movement == nil ? .savingMovementCreated : .savingMovementUpdated,
+            title: kind.title,
+            amount: abs(amount),
+            balanceAfter: balanceBefore - previousNetEffect + newNetEffect,
+            savingID: request.saving.id,
+            transactionID: movement.linkedIncomeTransactionID,
+            note: trimmedNote.isEmpty ? request.saving.displayName : trimmedNote
+        )
         dismiss()
+    }
+
+    private func auditNetEffect(for movement: SavingMovement?) -> Double {
+        guard let movement else { return 0 }
+        return movement.linkedIncomeTransactionID == nil ? movement.balanceEffect : 0
+    }
+
+    private func insertAuditLog(
+        action: AuditLogAction,
+        title: String,
+        amount: Double,
+        balanceAfter: Double,
+        savingID: UUID? = nil,
+        transactionID: UUID? = nil,
+        note: String? = nil
+    ) {
+        modelContext.insert(AuditLogEntry(
+            action: action.rawValue,
+            title: title,
+            details: note ?? "",
+            amount: amount,
+            balanceAfter: balanceAfter,
+            transactionID: transactionID,
+            savingID: savingID
+        ))
     }
 
     private func syncLinkedIncomeIfNeeded(for movement: SavingMovement) {
@@ -797,7 +1107,7 @@ private struct SavingMovementEditor: View {
             return
         }
 
-        let title = movement.note.isEmpty ? request.saving.name : movement.note
+        let title = movement.note.isEmpty ? request.saving.displayName : movement.note
         let existingTransaction = linkedIncomeTransaction(for: movement)
         let transaction = existingTransaction ?? MoneyTransaction(
             title: title,
@@ -806,7 +1116,8 @@ private struct SavingMovementEditor: View {
             amount: abs(movement.amount),
             kind: TransactionKind.income.rawValue,
             repeatsEveryMonth: false,
-            isPaid: true
+            isPaid: true,
+            accountID: primarySpendAccountID
         )
         transaction.title = title
         transaction.day = Calendar.current.component(.day, from: movement.date)
@@ -819,10 +1130,12 @@ private struct SavingMovementEditor: View {
         transaction.expenseName = nil
         transaction.linkedSavingID = request.saving.id
         transaction.linkedSavingMovementID = movement.id
+        transaction.accountID = transaction.accountID ?? primarySpendAccountID
 
         if existingTransaction == nil {
             modelContext.insert(transaction)
         }
+        syncLinkedIncomeAccountMovementIfNeeded(transaction, movement: movement)
         movement.linkedIncomeTransactionID = transaction.id
     }
 
@@ -833,7 +1146,30 @@ private struct SavingMovementEditor: View {
 
     private func deleteLinkedIncomeIfNeeded(for movement: SavingMovement) {
         if let transaction = linkedIncomeTransaction(for: movement) {
+            accountMovements
+                .filter { $0.transactionID == transaction.id && $0.kind == .income }
+                .forEach(modelContext.delete)
             modelContext.delete(transaction)
+        }
+    }
+
+    private func syncLinkedIncomeAccountMovementIfNeeded(_ transaction: MoneyTransaction, movement: SavingMovement) {
+        guard let accountID = transaction.accountID else { return }
+        let note = transaction.displayName
+        if let accountMovement = accountMovements.first(where: { $0.transactionID == transaction.id && $0.kind == .income }) {
+            accountMovement.accountID = accountID
+            accountMovement.date = movement.date
+            accountMovement.amount = abs(movement.amount)
+            accountMovement.note = note
+        } else {
+            modelContext.insert(AccountMovement(
+                accountID: accountID,
+                transactionID: transaction.id,
+                date: movement.date,
+                type: AccountMovementKind.income.rawValue,
+                amount: abs(movement.amount),
+                note: note
+            ))
         }
     }
 }

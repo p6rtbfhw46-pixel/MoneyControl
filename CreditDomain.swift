@@ -124,6 +124,7 @@ enum CreditTextKey {
     case newCredit
     case editCredit
     case creditName
+    case creditDescription
     case creditType
     case currentDebt
     case creditLimit
@@ -183,6 +184,7 @@ enum CreditStrings {
             .newCredit: "Novo Crédito",
             .editCredit: "Editar Crédito",
             .creditName: "Nome",
+            .creditDescription: "Descrição",
             .creditType: "Tipo",
             .currentDebt: "Valor atual em dívida",
             .creditLimit: "Limite de crédito",
@@ -235,6 +237,7 @@ enum CreditStrings {
             .newCredit: "New Credit",
             .editCredit: "Edit Credit",
             .creditName: "Name",
+            .creditDescription: "Description",
             .creditType: "Type",
             .currentDebt: "Current debt amount",
             .creditLimit: "Credit limit",
@@ -281,6 +284,11 @@ enum CreditStrings {
 }
 
 extension CreditAccount {
+    var displayName: String {
+        let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedDetails.isEmpty ? name : "\(name) - \(trimmedDetails)"
+    }
+
     var creditType: CreditType {
         CreditType(rawValue: type) ?? .other
     }

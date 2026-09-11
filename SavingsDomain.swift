@@ -86,6 +86,7 @@ enum SavingsTextKey {
     case newSaving
     case editSaving
     case savingName
+    case savingDescription
     case targetAmount
     case currentSaved
     case optionalTarget
@@ -140,6 +141,7 @@ enum SavingsStrings {
             .newSaving: "Nova Poupança",
             .editSaving: "Editar Poupança",
             .savingName: "Nome",
+            .savingDescription: "Descrição",
             .targetAmount: "Objetivo de poupança",
             .currentSaved: "Valor atual poupado",
             .optionalTarget: "Objetivo opcional",
@@ -187,6 +189,7 @@ enum SavingsStrings {
             .newSaving: "New Saving",
             .editSaving: "Edit Saving",
             .savingName: "Name",
+            .savingDescription: "Description",
             .targetAmount: "Saving goal",
             .currentSaved: "Current saved amount",
             .optionalTarget: "Optional goal",
@@ -228,8 +231,27 @@ enum SavingsStrings {
 }
 
 extension SavingAccount {
+    var displayName: String {
+        let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedDetails.isEmpty ? name : "\(name) - \(trimmedDetails)"
+    }
+
     var savingStatus: SavingStatus {
         SavingStatus(rawValue: status) ?? .active
+    }
+
+    var purposeIconName: String {
+        let normalizedName = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+        if normalizedName.contains("emergencia") { return "cross.case.fill" }
+        if normalizedName.contains("conta poupanca") { return "building.columns.fill" }
+        if normalizedName.contains("investimento") { return "chart.line.uptrend.xyaxis" }
+        if normalizedName.contains("viagem") { return "airplane" }
+        if normalizedName.contains("casa") { return "house.fill" }
+        if normalizedName.contains("automovel") { return "car.fill" }
+        if normalizedName.contains("filhos") { return "figure.2.and.child.holdinghands" }
+        if normalizedName.contains("reforma") { return "sun.horizon.fill" }
+        if normalizedName.contains("compra") { return "cart.fill" }
+        return "leaf.fill"
     }
 
     func movements(from allMovements: [SavingMovement]) -> [SavingMovement] {

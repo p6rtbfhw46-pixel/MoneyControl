@@ -3,6 +3,7 @@
 //  MoneyControl
 //
 
+import CryptoKit
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -12,6 +13,12 @@ struct SettingsEditor: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage("hasCompletedInitialSetup") private var hasCompletedInitialSetup = false
     @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
+    // ICLOUD_DISABLED_FOR_LOCAL_RESET_TEST: iCloud sync UI disabled while validating clean local installs.
+    // @AppStorage(AppPreferences.iCloudSyncEnabledKey) private var iCloudSyncEnabled = false
+    @AppStorage(AppPreferences.appLockEnabledKey) private var appLockEnabled = false
+    @AppStorage(AppPreferences.appLockBiometricsEnabledKey) private var appLockBiometricsEnabled = false
+    @AppStorage(AppPreferences.notificationsEnabledKey) private var notificationsEnabled = true
+    @AppStorage(AppPreferences.launchPaymentReminderEnabledKey) private var launchPaymentReminderEnabled = true
     @Query private var transactions: [MoneyTransaction]
     @Query private var payments: [ExpensePayment]
     @Query private var paymentHistory: [PaymentHistoryEntry]
@@ -20,6 +27,9 @@ struct SettingsEditor: View {
     @Query private var creditMovements: [CreditMovement]
     @Query private var savingAccounts: [SavingAccount]
     @Query private var savingMovements: [SavingMovement]
+    @Query private var spendAccounts: [SpendAccount]
+    @Query private var accountMovements: [AccountMovement]
+    @Query private var auditLogEntries: [AuditLogEntry]
     @State private var editorRequest: TransactionEditorRequest?
     @State private var selectedList = 0
     @State private var selectedListDirection = 1
@@ -30,8 +40,16 @@ struct SettingsEditor: View {
     @State private var isImportingBackup = false
     @State private var backupDocument = SpendWiseBackupDocument(data: Data())
     @State private var pendingImportedBackup: SpendWiseBackup?
+    @State private var pendingEncryptedBackup: EncryptedSpendWiseBackup?
     @State private var backupNotice: BackupNotice?
     @State private var backupHelp: BackupNotice?
+    @State private var showsExportPasswordPrompt = false
+    @State private var showsImportPasswordPrompt = false
+    @State private var exportPassword = ""
+    @State private var exportPasswordConfirmation = ""
+    @State private var importPassword = ""
+    @State private var showsAppLockSetup = false
+    @State private var showsDisableAppLockConfirmation = false
 
     init(openingTab: SettingsTab = .budget) {
         _selectedTab = State(initialValue: openingTab)
@@ -126,39 +144,6 @@ struct SettingsEditor: View {
                 }
             } message: { action in
                 Text(action.message)
-            }
-            .alert(AppStrings.text(.deleteAllDataTitle), isPresented: $showsDeleteAllDataConfirmation) {
-                Button(AppStrings.text(.cancel), role: .cancel) {}
-                Button(AppStrings.text(.delete), role: .destructive, action: deleteAllData)
-            } message: {
-                Text(AppStrings.text(.deleteAllDataMessage))
-            }
-            .alert(backupHelp?.title ?? "", isPresented: showsBackupHelp) {
-                Button(AppStrings.text(.ok)) { backupHelp = nil }
-            } message: {
-                Text(backupHelp?.message ?? "")
-            }
-            .alert(AppStrings.text(.importBackupConfirmationTitle), isPresented: hasPendingImportedBackup) {
-                Button(AppStrings.text(.cancel), role: .cancel) { pendingImportedBackup = nil }
-                Button(AppStrings.text(.continueAction), role: .destructive, action: importPendingBackup)
-            } message: {
-                Text(AppStrings.text(.importBackupConfirmationMessage))
-            }
-            .alert(backupNotice?.title ?? "", isPresented: showsBackupNotice) {
-                Button(AppStrings.text(.ok)) { backupNotice = nil }
-            } message: {
-                Text(backupNotice?.message ?? "")
-            }
-            .fileExporter(
-                isPresented: $isExportingBackup,
-                document: backupDocument,
-                contentType: .json,
-                defaultFilename: backupFilename
-            ) { result in
-                handleExportResult(result)
-            }
-            .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json]) { result in
-                handleImportResult(result)
             }
         }
     }
@@ -264,6 +249,34 @@ struct SettingsEditor: View {
                     .foregroundStyle(AppPalette.mutedText)
             }
             .listRowBackground(AppPalette.surface)
+
+            Section {
+                Toggle(isOn: $notificationsEnabled) {
+                    Label("Notificações", systemImage: notificationsEnabled ? "bell.fill" : "bell.slash")
+                        .font(.headline.bold())
+                        .foregroundStyle(AppPalette.background)
+                }
+                .tint(AppPalette.primary)
+
+                Text("A app pode usar notificações para avisos importantes, como despesas por pagar e lembretes relacionados com o orçamento.")
+                    .font(.caption)
+                    .foregroundStyle(AppPalette.mutedText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Toggle(isOn: $launchPaymentReminderEnabled) {
+                    Label("Aviso ao abrir a app", systemImage: "exclamationmark.circle")
+                        .font(.headline.bold())
+                        .foregroundStyle(AppPalette.background)
+                }
+                .tint(AppPalette.primary)
+
+                Text("Mostra um aviso no início ao abrir a app quando existir algo a pagar.")
+                    .font(.caption)
+                    .foregroundStyle(AppPalette.mutedText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .listRowBackground(AppPalette.surface)
+
         }
         .navigationTitle(AppStrings.text(.preferences))
         .navigationBarTitleDisplayMode(.inline)
@@ -275,35 +288,6 @@ struct SettingsEditor: View {
 
     private var appDataPrivacyView: some View {
         Form {
-            Section {
-                Text(AppStrings.text(.appDataPrivacyNote))
-                    .font(.subheadline)
-                    .foregroundStyle(AppPalette.mutedText)
-
-                BackupActionRow(
-                    title: AppStrings.text(.exportBackup),
-                    systemImage: "square.and.arrow.up",
-                    helpMessage: AppStrings.text(.exportBackupHelp),
-                    action: exportBackup
-                )
-
-                BackupActionRow(
-                    title: AppStrings.text(.importBackup),
-                    systemImage: "square.and.arrow.down",
-                    helpMessage: AppStrings.text(.importBackupHelp),
-                    action: { isImportingBackup = true }
-                )
-
-                BackupActionRow(
-                    title: AppStrings.text(.deleteAllData),
-                    systemImage: "trash",
-                    helpMessage: AppStrings.text(.deleteAllDataMessage),
-                    isDestructive: true,
-                    action: { showsDeleteAllDataConfirmation = true }
-                )
-            }
-            .listRowBackground(AppPalette.surface)
-
             Section {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "shield.checkered")
@@ -321,9 +305,151 @@ struct SettingsEditor: View {
                             .font(.subheadline)
                             .foregroundStyle(AppPalette.mutedText)
                             .fixedSize(horizontal: false, vertical: true)
+
+                        Text(AppStrings.text(.appSecurityICloudBackupMessage))
+                            .font(.subheadline)
+                            .foregroundStyle(AppPalette.mutedText)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(.vertical, 4)
+            }
+            .listRowBackground(AppPalette.surface)
+
+            Section {
+                Button {
+                    if appLockEnabled {
+                        showsDisableAppLockConfirmation = true
+                    } else {
+                        showsAppLockSetup = true
+                    }
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: appLockEnabled ? "lock.fill" : "lock.open")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(appLockEnabled ? AppPalette.background : AppPalette.mutedText)
+                            .frame(width: 30, height: 30)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Bloquear app com código")
+                                .font(.headline.bold())
+                                .foregroundStyle(AppPalette.background)
+
+                            Text(appLockEnabled ? "A SpendWise pede autenticação ao voltar à app." : "Crie um código de 4 dígitos para proteger o acesso à app.")
+                                .font(.subheadline)
+                                .foregroundStyle(AppPalette.mutedText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: appLockEnabled ? "checkmark.circle.fill" : "circle")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(appLockEnabled ? AppPalette.positive : AppPalette.secondaryText)
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    appLockBiometricsEnabled.toggle()
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: appLockBiometricsEnabled ? "checkmark.square.fill" : "square")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(appLockBiometricsEnabled ? AppPalette.primary : AppPalette.mutedText)
+                            .frame(width: 30, height: 30)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Usar \(AppLockService.biometricTypeName)")
+                                .font(.headline.bold())
+                                .foregroundStyle(AppPalette.background)
+
+                            Text("Permite desbloquear com biometria e manter o código como alternativa.")
+                                .font(.subheadline)
+                                .foregroundStyle(AppPalette.mutedText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!appLockEnabled || !AppLockService.biometricsAvailable)
+                .opacity(appLockEnabled && AppLockService.biometricsAvailable ? 1 : 0.45)
+            }
+            .listRowBackground(AppPalette.surface)
+
+            // ICLOUD_DISABLED_FOR_LOCAL_RESET_TEST: iCloud/CloudKit option hidden during local reset validation.
+            /*
+            Section {
+                Button {
+                    iCloudSyncEnabled.toggle()
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: iCloudSyncEnabled ? "checkmark.square.fill" : "square")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(iCloudSyncEnabled ? AppPalette.primary : AppPalette.mutedText)
+                            .frame(width: 30, height: 30)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(AppStrings.text(.iCloudSyncTitle))
+                                .font(.headline.bold())
+                                .foregroundStyle(AppPalette.background)
+
+                            Text(AppStrings.text(.iCloudSyncMessage))
+                                .font(.subheadline)
+                                .foregroundStyle(AppPalette.mutedText)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text(AppStrings.text(.iCloudSyncRestartNote))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AppPalette.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .listRowBackground(AppPalette.surface)
+            */
+
+            Section {
+                Text(AppStrings.text(.appDataPrivacyNote))
+                    .font(.subheadline)
+                    .foregroundStyle(AppPalette.mutedText)
+
+                BackupActionRow(
+                    title: AppStrings.text(.exportBackup),
+                    systemImage: "square.and.arrow.up",
+                    helpMessage: AppStrings.text(.exportBackupHelp),
+                    onHelp: { backupHelp = BackupNotice(title: AppStrings.text(.exportBackup), message: $0) },
+                    action: {
+                        exportPassword = ""
+                        exportPasswordConfirmation = ""
+                        showsExportPasswordPrompt = true
+                    }
+                )
+
+                BackupActionRow(
+                    title: AppStrings.text(.importBackup),
+                    systemImage: "square.and.arrow.down",
+                    helpMessage: AppStrings.text(.importBackupHelp),
+                    onHelp: { backupHelp = BackupNotice(title: AppStrings.text(.importBackup), message: $0) },
+                    action: { isImportingBackup = true }
+                )
+
+                BackupActionRow(
+                    title: AppStrings.text(.deleteAllData),
+                    systemImage: "trash",
+                    helpMessage: AppStrings.text(.deleteAllDataMessage),
+                    isDestructive: true,
+                    onHelp: { backupHelp = BackupNotice(title: AppStrings.text(.deleteAllData), message: $0) },
+                    action: { showsDeleteAllDataConfirmation = true }
+                )
             }
             .listRowBackground(AppPalette.surface)
         }
@@ -333,6 +459,81 @@ struct SettingsEditor: View {
         .foregroundStyle(AppPalette.background)
         .tint(AppPalette.background)
         .background(AppPalette.appBackground)
+        .sheet(isPresented: $showsAppLockSetup) {
+            AppLockView(mode: .setup, allowsBiometrics: false) {
+                appLockEnabled = true
+                appLockBiometricsEnabled = AppLockService.biometricsAvailable
+                showsAppLockSetup = false
+            }
+        }
+        .alert("Remover bloqueio da app?", isPresented: $showsDisableAppLockConfirmation) {
+            Button(AppStrings.text(.cancel), role: .cancel) {}
+            Button("Remover", role: .destructive) {
+                AppLockService.deletePIN()
+                appLockEnabled = false
+                appLockBiometricsEnabled = false
+            }
+        } message: {
+            Text("A app deixará de pedir código ou biometria ao abrir.")
+        }
+        .alert(AppStrings.text(.deleteAllDataTitle), isPresented: $showsDeleteAllDataConfirmation) {
+            Button(AppStrings.text(.cancel), role: .cancel) {}
+            Button(AppStrings.text(.delete), role: .destructive, action: deleteAllData)
+        } message: {
+            Text(AppStrings.text(.deleteAllDataMessage))
+        }
+        .alert(backupHelp?.title ?? "", isPresented: showsBackupHelp) {
+            Button(AppStrings.text(.ok)) { backupHelp = nil }
+        } message: {
+            Text(backupHelp?.message ?? "")
+        }
+        .alert("Encriptar backup", isPresented: $showsExportPasswordPrompt) {
+            SecureField("Palavra-passe", text: $exportPassword)
+            SecureField("Confirmar palavra-passe", text: $exportPasswordConfirmation)
+            Button(AppStrings.text(.cancel), role: .cancel) {
+                exportPassword = ""
+                exportPasswordConfirmation = ""
+            }
+            Button(AppStrings.text(.exportBackup)) {
+                exportEncryptedBackup()
+            }
+        } message: {
+            Text("Defina uma palavra-passe para proteger o ficheiro. Vai precisar dela para importar este backup.")
+        }
+        .alert(AppStrings.text(.importBackupConfirmationTitle), isPresented: hasPendingImportedBackup) {
+            Button(AppStrings.text(.cancel), role: .cancel) { pendingImportedBackup = nil }
+            Button(AppStrings.text(.continueAction), role: .destructive, action: importPendingBackup)
+        } message: {
+            Text(AppStrings.text(.importBackupConfirmationMessage))
+        }
+        .alert("Backup encriptado", isPresented: $showsImportPasswordPrompt) {
+            SecureField("Palavra-passe", text: $importPassword)
+            Button(AppStrings.text(.cancel), role: .cancel) {
+                pendingEncryptedBackup = nil
+                importPassword = ""
+            }
+            Button(AppStrings.text(.importBackup)) {
+                decryptPendingBackup()
+            }
+        } message: {
+            Text("Introduza a palavra-passe usada ao exportar este backup.")
+        }
+        .alert(backupNotice?.title ?? "", isPresented: showsBackupNotice) {
+            Button(AppStrings.text(.ok)) { backupNotice = nil }
+        } message: {
+            Text(backupNotice?.message ?? "")
+        }
+        .fileExporter(
+            isPresented: $isExportingBackup,
+            document: backupDocument,
+            contentType: .json,
+            defaultFilename: backupFilename
+        ) { result in
+            handleExportResult(result)
+        }
+        .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json]) { result in
+            handleImportResult(result)
+        }
     }
 
     private var appAboutView: some View {
@@ -573,27 +774,25 @@ struct SettingsEditor: View {
         .buttonStyle(.plain)
     }
 
-    private func exportBackup() {
+    private func exportEncryptedBackup() {
         do {
-            let backup = SpendWiseBackup(
-                transactions: transactions.map { BackupTransaction(transaction: $0) },
-                payments: payments.map { BackupPayment(payment: $0) },
-                paymentHistory: paymentHistory.map { BackupPaymentHistoryEntry(entry: $0) },
-                exclusions: exclusions.map { BackupExclusion(exclusion: $0) },
-                creditAccounts: creditAccounts.map { BackupCreditAccount(credit: $0) },
-                creditMovements: creditMovements.map { BackupCreditMovement(movement: $0) },
-                savingAccounts: savingAccounts.map { BackupSavingAccount(saving: $0) },
-                savingMovements: savingMovements.map { BackupSavingMovement(movement: $0) }
-            )
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            backupDocument = SpendWiseBackupDocument(data: try encoder.encode(backup))
+            guard !exportPassword.isEmpty else {
+                throw BackupError.emptyPassword
+            }
+            guard exportPassword == exportPasswordConfirmation else {
+                throw BackupError.passwordMismatch
+            }
+
+            let backupData = try encodedBackupData()
+            let encryptedBackup = try EncryptedSpendWiseBackup(backupData: backupData, password: exportPassword)
+            backupDocument = SpendWiseBackupDocument(data: try encodedData(for: encryptedBackup))
+            exportPassword = ""
+            exportPasswordConfirmation = ""
             isExportingBackup = true
         } catch {
             backupNotice = BackupNotice(
                 title: AppStrings.text(.exportBackupFailureTitle),
-                message: error.localizedDescription
+                message: backupErrorMessage(error)
             )
         }
     }
@@ -625,13 +824,15 @@ struct SettingsEditor: View {
                 }
 
                 let data = try Data(contentsOf: url)
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                let backup = try decoder.decode(SpendWiseBackup.self, from: data)
-                guard backup.version == SpendWiseBackup.currentVersion else {
-                    throw BackupError.unsupportedVersion
+                if let backup = try? decodedBackup(from: data) {
+                    pendingImportedBackup = backup
+                } else if let encryptedBackup = try? JSONDecoder().decode(EncryptedSpendWiseBackup.self, from: data) {
+                    pendingEncryptedBackup = encryptedBackup
+                    importPassword = ""
+                    showsImportPasswordPrompt = true
+                } else {
+                    throw BackupError.invalidBackup
                 }
-                pendingImportedBackup = backup
             } catch {
                 backupNotice = BackupNotice(
                     title: AppStrings.text(.importBackupFailureTitle),
@@ -646,6 +847,76 @@ struct SettingsEditor: View {
         }
     }
 
+    private func decryptPendingBackup() {
+        do {
+            guard let pendingEncryptedBackup else {
+                throw BackupError.invalidBackup
+            }
+            guard !importPassword.isEmpty else {
+                throw BackupError.emptyPassword
+            }
+
+            let backupData = try pendingEncryptedBackup.decrypt(password: importPassword)
+            pendingImportedBackup = try decodedBackup(from: backupData)
+            self.pendingEncryptedBackup = nil
+            importPassword = ""
+        } catch {
+            backupNotice = BackupNotice(
+                title: AppStrings.text(.importBackupFailureTitle),
+                message: backupErrorMessage(error)
+            )
+        }
+    }
+
+    private func encodedBackupData() throws -> Data {
+        let backup = SpendWiseBackup(
+            transactions: transactions.map { BackupTransaction(transaction: $0) },
+            payments: payments.map { BackupPayment(payment: $0) },
+            paymentHistory: paymentHistory.map { BackupPaymentHistoryEntry(entry: $0) },
+            exclusions: exclusions.map { BackupExclusion(exclusion: $0) },
+            creditAccounts: creditAccounts.map { BackupCreditAccount(credit: $0) },
+            creditMovements: creditMovements.map { BackupCreditMovement(movement: $0) },
+            savingAccounts: savingAccounts.map { BackupSavingAccount(saving: $0) },
+            savingMovements: savingMovements.map { BackupSavingMovement(movement: $0) },
+            spendAccounts: spendAccounts.map { BackupSpendAccount(account: $0) },
+            accountMovements: accountMovements.map { BackupAccountMovement(movement: $0) },
+            auditLogEntries: auditLogEntries.map { BackupAuditLogEntry(entry: $0) }
+        )
+        return try encodedData(for: backup)
+    }
+
+    private func encodedData<T: Encodable>(for value: T) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(value)
+    }
+
+    private func decodedBackup(from data: Data) throws -> SpendWiseBackup {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let backup = try decoder.decode(SpendWiseBackup.self, from: data)
+        guard backup.version == SpendWiseBackup.currentVersion else {
+            throw BackupError.unsupportedVersion
+        }
+        return backup
+    }
+
+    private func backupErrorMessage(_ error: Error) -> String {
+        switch error {
+        case BackupError.emptyPassword:
+            return "Introduza uma palavra-passe para proteger o backup."
+        case BackupError.passwordMismatch:
+            return "As palavras-passe não coincidem."
+        case BackupError.invalidBackup:
+            return AppStrings.text(.importBackupFailureMessage)
+        case BackupError.invalidPassword:
+            return "Não foi possível desencriptar o backup. Confirme a palavra-passe."
+        default:
+            return error.localizedDescription
+        }
+    }
+
     private func importPendingBackup() {
         guard let backup = pendingImportedBackup else { return }
 
@@ -657,15 +928,38 @@ struct SettingsEditor: View {
         creditAccounts.forEach(modelContext.delete)
         savingMovements.forEach(modelContext.delete)
         savingAccounts.forEach(modelContext.delete)
+        accountMovements.forEach(modelContext.delete)
+        spendAccounts.forEach(modelContext.delete)
+        auditLogEntries.forEach(modelContext.delete)
 
-        backup.transactions.map(\.model).forEach(modelContext.insert)
-        backup.payments.map(\.model).forEach(modelContext.insert)
-        backup.paymentHistory.map(\.model).forEach(modelContext.insert)
-        backup.exclusions.map(\.model).forEach(modelContext.insert)
+        let importedTransactions = backup.transactions.map(\.model)
+        let importedPayments = backup.payments.map(\.model)
+        let importedPaymentHistory = backup.paymentHistory.map(\.model)
+        let importedExclusions = backup.exclusions.map(\.model)
+        let importedSpendAccounts = backup.spendAccounts.map(\.model)
+        let importedAccountMovements = backup.accountMovements.map(\.model)
+        let importedAuditLogEntries = backup.auditLogEntries.map(\.model)
+
+        importedTransactions.forEach(modelContext.insert)
+        importedPayments.forEach(modelContext.insert)
+        importedPaymentHistory.forEach(modelContext.insert)
+        importedExclusions.forEach(modelContext.insert)
         backup.creditAccounts.map(\.model).forEach(modelContext.insert)
         backup.creditMovements.map(\.model).forEach(modelContext.insert)
         backup.savingAccounts.map(\.model).forEach(modelContext.insert)
         backup.savingMovements.map(\.model).forEach(modelContext.insert)
+        importedSpendAccounts.forEach(modelContext.insert)
+        importedAccountMovements.forEach(modelContext.insert)
+        importedAuditLogEntries.forEach(modelContext.insert)
+        BackupAccountMigration.normalizeImportedAccounts(
+            modelContext: modelContext,
+            transactions: importedTransactions,
+            payments: importedPayments,
+            paymentHistory: importedPaymentHistory,
+            exclusions: importedExclusions,
+            spendAccounts: importedSpendAccounts,
+            accountMovements: importedAccountMovements
+        )
 
         pendingImportedBackup = nil
 
@@ -709,6 +1003,9 @@ struct SettingsEditor: View {
         creditAccounts.forEach(modelContext.delete)
         savingMovements.forEach(modelContext.delete)
         savingAccounts.forEach(modelContext.delete)
+        accountMovements.forEach(modelContext.delete)
+        spendAccounts.forEach(modelContext.delete)
+        auditLogEntries.forEach(modelContext.delete)
         hasCompletedInitialSetup = false
     }
 }
@@ -726,6 +1023,13 @@ struct BudgetSettingsView: View {
     @State private var pendingAction: SettingsListAction?
     @State private var helpNotice: BackupNotice?
     @State private var showsRecurringActions = false
+    @State private var showsRecurringBudgetBreakdown = false
+    private let showsListControls: Bool
+
+    init(openingList: Int = 0, showsListControls: Bool = true) {
+        _selectedList = State(initialValue: min(max(openingList, 0), 1))
+        self.showsListControls = showsListControls
+    }
 
     private var nextMonth: Date {
         Date().monthStart.nextMonthStart
@@ -756,14 +1060,16 @@ struct BudgetSettingsView: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
-                settingsListHeader
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 10)
-                    .background(AppPalette.appBackground)
-
                 ScrollView {
                     VStack(spacing: 12) {
+                        recurringHeroImage
+
+                        recurringBudgetSummaryCard
+
+                        if showsListControls {
+                            settingsListHeader
+                        }
+
                         VStack(alignment: .leading, spacing: 12) {
                             selectedSettingsList
                                 .id(selectedList)
@@ -776,23 +1082,39 @@ struct BudgetSettingsView: View {
                         .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 28))
                     }
                     .padding(.horizontal)
-                    .padding(.top, 2)
+                    .padding(.top, 8)
                     .padding(.bottom, 128)
                 }
             }
 
-            VStack(alignment: .trailing, spacing: 10) {
-                if showsRecurringActions {
-                    recurringActionsBar
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                recurringAddButton
+            if showsListControls && showsRecurringActions {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.82)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.snappy) {
+                            showsRecurringActions = false
+                        }
+                    }
+                    .transition(.opacity)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .animation(.snappy, value: showsRecurringActions)
+
+            if showsListControls {
+                VStack(alignment: .trailing, spacing: 10) {
+                    if showsRecurringActions {
+                        recurringActionsBar
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+
+                    recurringAddButton
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .animation(.snappy, value: showsRecurringActions)
+            }
         }
         .foregroundStyle(AppPalette.background)
         .tint(AppPalette.background)
@@ -801,6 +1123,9 @@ struct BudgetSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editorRequest) { request in
             TransactionEditor(request: request)
+        }
+        .sheet(isPresented: $showsRecurringBudgetBreakdown) {
+            RecurringBudgetBreakdownView(months: recurringBudgetBreakdownMonths)
         }
         .alert(
             pendingAction?.title ?? "",
@@ -825,6 +1150,144 @@ struct BudgetSettingsView: View {
         } message: {
             Text(helpNotice?.message ?? "")
         }
+    }
+
+    private var recurringHeroName: String {
+        let suffix = AppStrings.currentLanguage == .portuguese ? "" : "English"
+
+        if showsListControls {
+            return "RecurringCombinedHero\(suffix)"
+        }
+
+        return selectedList == 0 ? "RecurringExpensesHero\(suffix)" : "RecurringIncomeHero\(suffix)"
+    }
+
+    private var recurringHeroImage: some View {
+        Image(recurringHeroName)
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .shadow(color: AppPalette.background.opacity(0.10), radius: 14, y: 6)
+    }
+
+    private var recurringBudgetSummaryCard: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Total mensal de despesas recorrentes")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(AppPalette.mutedText)
+
+                    Text("Soma das despesas recorrentes mensais")
+                        .font(.caption)
+                        .foregroundStyle(AppPalette.secondaryText)
+                }
+
+                Button {
+                    showsRecurringBudgetBreakdown = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(AppPalette.background)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Detalhe do orçamento por mês")
+
+                Spacer(minLength: 6)
+
+                Text(recurringBudgetedTotal.currencyText)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(AppPalette.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+
+            recurringSummaryRow(
+                title: "Rendimentos recorrentes mensais",
+                value: recurringIncomeTotal.currencyText,
+                color: AppPalette.income
+            )
+
+            recurringSummaryRow(
+                title: "Margem mensal disponível",
+                value: recurringRemainingAvailable.currencyText,
+                color: recurringRemainingAvailable >= 0 ? AppPalette.background : AppPalette.primary
+            )
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 18))
+        .shadow(color: AppPalette.background.opacity(0.06), radius: 14, y: 6)
+    }
+
+    private func recurringSummaryRow(title: String, value: String, color: Color) -> some View {
+        HStack {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppPalette.mutedText)
+                .lineLimit(2)
+                .minimumScaleFactor(0.82)
+
+            Spacer(minLength: 10)
+
+            Text(value)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+    }
+
+    private var recurringBudgetedTotal: Double {
+        recurringExpenses.filter { $0.recurrence == .monthly }.reduce(0) { total, transaction in
+            total + transaction.scheduledAmount(in: Date().monthStart)
+        }
+    }
+
+    private var recurringIncomeTotal: Double {
+        recurringIncome.filter { $0.recurrence == .monthly }.reduce(0) { total, transaction in
+            total + transaction.scheduledAmount(in: Date().monthStart)
+        }
+    }
+
+    private var recurringRemainingAvailable: Double {
+        recurringIncomeTotal - recurringBudgetedTotal
+    }
+
+    private var recurringBudgetBreakdownMonths: [RecurringBudgetMonthBreakdown] {
+        let calculator = MoneyCalculationService(transactions: transactions, payments: payments, exclusions: exclusions)
+        var month = Date().monthStart
+
+        return (0..<12).map { _ in
+            defer { month = month.nextMonthStart }
+            let expenses = calculator.visibleTransactions(in: month)
+                .filter { $0.kind == TransactionKind.expense.rawValue && $0.isRecurring }
+            let income = calculator.incomeOccurrences(budgetedIn: month)
+                .filter { $0.isRecurring }
+                .reduce(0) { $0 + $1.scheduledAmount(in: month) }
+
+            return RecurringBudgetMonthBreakdown(
+                month: month,
+                income: income,
+                weeklyExpenses: recurringExpenseTotal(expenses, in: month, recurrence: .weekly),
+                monthlyExpenses: recurringExpenseTotal(expenses, in: month, recurrence: .monthly),
+                quarterlyExpenses: recurringExpenseTotal(expenses, in: month, recurrence: .quarterly),
+                semiannualExpenses: recurringExpenseTotal(expenses, in: month, recurrence: .semiannual),
+                annualExpenses: expenses
+                    .filter { $0.recurrence == .annual || $0.recurrence == .yearlyMonth }
+                    .reduce(0) { $0 + $1.scheduledAmount(in: month) }
+            )
+        }
+    }
+
+    private func recurringExpenseTotal(_ expenses: [MoneyTransaction], in month: Date, recurrence: RecurrenceType) -> Double {
+        expenses
+            .filter { $0.recurrence == recurrence }
+            .reduce(0) { $0 + $1.scheduledAmount(in: month) }
     }
 
     @ViewBuilder
@@ -932,45 +1395,10 @@ struct BudgetSettingsView: View {
     }
 
     private var recurringActionsBar: some View {
-        Group {
-            if hasActiveSavings && hasActiveCredits {
-                HStack(spacing: 10) {
-                    VStack(spacing: 10) {
-                        recurringSavingActionButton
-                        recurringCreditPaymentActionButton
-                    }
-
-                    VStack(spacing: 10) {
-                        recurringIncomeActionButton
-                        recurringExpenseActionButton
-                    }
-                }
-            } else if hasQuickSavingsOrCredits {
-                VStack(spacing: 10) {
-                    HStack(spacing: 10) {
-                        recurringIncomeActionButton
-                        recurringExpenseActionButton
-                    }
-
-                    if hasActiveSavings {
-                        recurringSavingActionButton
-                    }
-
-                    if hasActiveCredits {
-                        recurringCreditPaymentActionButton
-                    }
-                }
-            } else {
-                HStack(spacing: 10) {
-                    recurringIncomeActionButton
-                    recurringExpenseActionButton
-                }
-            }
+        VStack(alignment: .trailing, spacing: 10) {
+            recurringExpenseActionButton
+            recurringIncomeActionButton
         }
-        .padding(8)
-        .frame(maxWidth: .infinity)
-        .background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
-        .shadow(color: AppPalette.background.opacity(0.10), radius: 18, y: 8)
     }
 
     private var hasActiveSavings: Bool {
@@ -988,10 +1416,7 @@ struct BudgetSettingsView: View {
     private var recurringSavingActionButton: some View {
         recurringActionButton(
             title: SavingsStrings.text(.saving),
-            systemImage: "banknote.fill",
-            iconColor: AppPalette.savings,
-            textColor: AppPalette.background,
-            background: AppPalette.mintSurface
+            imageName: "QuickActionPoupanca"
         ) {
             openPresetRecurringExpense(title: AppStrings.text(.newRecurringSavingExpense), expenseName: recurringSavingExpenseName)
         }
@@ -999,11 +1424,8 @@ struct BudgetSettingsView: View {
 
     private var recurringCreditPaymentActionButton: some View {
         recurringActionButton(
-            title: AppStrings.text(.creditPaymentExpenseButton),
-            systemImage: "creditcard.fill",
-            iconColor: AppPalette.primary,
-            textColor: AppPalette.surface,
-            background: AppPalette.background
+            title: CreditStrings.text(.credit),
+            imageName: "QuickActionCredito"
         ) {
             openPresetRecurringExpense(title: AppStrings.text(.newRecurringCreditPaymentExpense), expenseName: recurringCreditPaymentExpenseName)
         }
@@ -1012,10 +1434,7 @@ struct BudgetSettingsView: View {
     private var recurringIncomeActionButton: some View {
         recurringActionButton(
             title: AppStrings.text(.recurringIncome),
-            systemImage: "tray.and.arrow.down.fill",
-            iconColor: AppPalette.savings,
-            textColor: AppPalette.background,
-            background: AppPalette.secondary
+            imageName: "QuickActionReceita"
         ) {
             selectSettingsList(1)
             editorRequest = TransactionEditorRequest(mode: .salary, month: Date().monthStart)
@@ -1026,10 +1445,7 @@ struct BudgetSettingsView: View {
     private var recurringExpenseActionButton: some View {
         recurringActionButton(
             title: AppStrings.text(.recurringExpenses),
-            systemImage: "tray.and.arrow.up.fill",
-            iconColor: AppPalette.surface,
-            textColor: AppPalette.surface,
-            background: AppPalette.primary
+            imageName: "QuickActionDespesa"
         ) {
             selectSettingsList(0)
             editorRequest = TransactionEditorRequest(mode: .monthlyExpense, month: Date().monthStart)
@@ -1037,24 +1453,28 @@ struct BudgetSettingsView: View {
         }
     }
 
-    private func recurringActionButton(title: String, systemImage: String, iconColor: Color, textColor: Color, background: Color, action: @escaping () -> Void) -> some View {
+    private func recurringActionButton(title: String, imageName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.headline.bold())
-                    .foregroundStyle(iconColor)
-
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.72)
-                    .multilineTextAlignment(.leading)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(AppPalette.background)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(width: 124, height: 34)
+                    .background(AppPalette.surface.opacity(0.98), in: Capsule())
+                    .shadow(color: AppPalette.background.opacity(0.12), radius: 8, y: 4)
+
+                Image(imageName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 58, height: 58)
+                    .shadow(color: AppPalette.background.opacity(0.18), radius: 12, y: 7)
             }
-            .foregroundStyle(textColor)
-            .frame(maxWidth: .infinity, minHeight: 54)
-            .background(background, in: RoundedRectangle(cornerRadius: 14))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     private var recurringSavingExpenseName: String {
@@ -1105,6 +1525,128 @@ struct BudgetSettingsView: View {
     }
 }
 
+private struct RecurringBudgetMonthBreakdown: Identifiable {
+    let month: Date
+    let income: Double
+    let weeklyExpenses: Double
+    let monthlyExpenses: Double
+    let quarterlyExpenses: Double
+    let semiannualExpenses: Double
+    let annualExpenses: Double
+
+    var id: Date { month }
+
+    var totalExpenses: Double {
+        weeklyExpenses + monthlyExpenses + quarterlyExpenses + semiannualExpenses + annualExpenses
+    }
+
+    var balance: Double {
+        income - totalExpenses
+    }
+}
+
+private struct RecurringBudgetBreakdownView: View {
+    @Environment(\.dismiss) private var dismiss
+    let months: [RecurringBudgetMonthBreakdown]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 12) {
+                    budgetBreakdownIntroCard
+
+                    ForEach(months) { month in
+                        monthCard(month)
+                    }
+                }
+                .padding()
+            }
+            .background(AppPalette.appBackground)
+            .navigationTitle("Orçamento por mês")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(AppStrings.text(.ok)) { dismiss() }
+                        .liquidGlassButtonStyle()
+                }
+            }
+        }
+        .foregroundStyle(AppPalette.background)
+        .tint(AppPalette.background)
+    }
+
+    private var budgetBreakdownIntroCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Valores calculados com base nos recorrentes registados.")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppPalette.background)
+
+            Text("A lista abaixo mostra a previsão por mês considerando apenas despesas e rendimentos recorrentes configurados na Gestão. Movimentos adicionados diretamente na Conta Corrente não estão refletidos nestes valores.")
+                .font(.footnote)
+                .foregroundStyle(AppPalette.mutedText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 18))
+        .shadow(color: AppPalette.background.opacity(0.06), radius: 12, y: 6)
+    }
+
+    private func monthCard(_ month: RecurringBudgetMonthBreakdown) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(month.month.monthTitle)
+                    .font(.headline.bold())
+                    .foregroundStyle(AppPalette.background)
+
+                Spacer()
+
+                Text(month.totalExpenses.currencyText)
+                    .font(.headline.bold())
+                    .foregroundStyle(AppPalette.primary)
+            }
+
+            Divider()
+
+            recurringBudgetRow("Rendimentos", value: month.income, color: AppPalette.income)
+            recurringBudgetRow("Despesas semanais", value: month.weeklyExpenses, color: AppPalette.primary)
+            recurringBudgetRow("Despesas mensais", value: month.monthlyExpenses, color: AppPalette.primary)
+            recurringBudgetRow("Despesas trimestrais", value: month.quarterlyExpenses, color: AppPalette.primary)
+            recurringBudgetRow("Despesas semestrais", value: month.semiannualExpenses, color: AppPalette.primary)
+            recurringBudgetRow("Despesas anuais", value: month.annualExpenses, color: AppPalette.primary)
+
+            Divider()
+
+            recurringBudgetRow(
+                "Disponível",
+                value: month.balance,
+                color: month.balance >= 0 ? AppPalette.background : AppPalette.primary,
+                isStrong: true
+            )
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 18))
+        .shadow(color: AppPalette.background.opacity(0.06), radius: 12, y: 6)
+    }
+
+    private func recurringBudgetRow(_ title: String, value: Double, color: Color, isStrong: Bool = false) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(isStrong ? .subheadline.bold() : .subheadline)
+                .foregroundStyle(isStrong ? AppPalette.background : AppPalette.mutedText)
+
+            Spacer()
+
+            Text(value.currencyText)
+                .font(isStrong ? .subheadline.bold() : .subheadline.weight(.semibold))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+}
+
 enum SettingsTab {
     case app
     case budget
@@ -1152,9 +1694,8 @@ private struct BackupActionRow: View {
     let systemImage: String
     let helpMessage: String
     var isDestructive = false
+    let onHelp: (String) -> Void
     let action: () -> Void
-
-    @State private var showsHelp = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1168,7 +1709,7 @@ private struct BackupActionRow: View {
             .liquidGlassButtonStyle(prominent: isDestructive)
 
             Button {
-                showsHelp = true
+                onHelp(helpMessage)
             } label: {
                 Image(systemName: "info.circle")
                     .font(.title3.weight(.semibold))
@@ -1178,11 +1719,6 @@ private struct BackupActionRow: View {
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(AppStrings.text(.backupInfoTitle))
-        }
-        .alert(title, isPresented: $showsHelp) {
-            Button(AppStrings.text(.ok)) {}
-        } message: {
-            Text(helpMessage)
         }
     }
 }
@@ -1194,6 +1730,8 @@ private struct BudgetAddActionRow: View {
     let action: () -> Void
     let onHelp: (String) -> Void
 
+    @State private var showsHelp = false
+
     var body: some View {
         HStack(spacing: 10) {
             Button(action: action) {
@@ -1204,7 +1742,7 @@ private struct BudgetAddActionRow: View {
             .liquidGlassButtonStyle()
 
             Button {
-                onHelp(helpMessage)
+                showsHelp = true
             } label: {
                 Image(systemName: "info.circle")
                     .font(.title3.weight(.semibold))
@@ -1213,18 +1751,82 @@ private struct BudgetAddActionRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(title)
+            .popover(isPresented: $showsHelp, attachmentAnchor: .point(.center), arrowEdge: .trailing) {
+                InformationBubble(title: title, message: helpMessage)
+            }
         }
     }
 }
 
-private struct BackupNotice: Identifiable {
+struct BackupNotice: Identifiable {
     let id = UUID()
     let title: String
     let message: String
 }
 
-private enum BackupError: Error {
+enum BackupError: Error {
     case unsupportedVersion
+    case invalidBackup
+    case emptyPassword
+    case passwordMismatch
+    case invalidPassword
+}
+
+enum BackupAccountMigration {
+    static func normalizeImportedAccounts(
+        modelContext: ModelContext,
+        transactions: [MoneyTransaction],
+        payments: [ExpensePayment],
+        paymentHistory: [PaymentHistoryEntry],
+        exclusions: [RecurrenceExclusion],
+        spendAccounts: [SpendAccount],
+        accountMovements: [AccountMovement]
+    ) {
+        if spendAccounts.isEmpty {
+            let accountSummary = MoneyCalculationService(
+                transactions: transactions,
+                payments: payments,
+                exclusions: exclusions
+            ).accountSummary(until: Date())
+            let primaryAccount = SpendAccount(
+                name: AppStrings.text(.currentAccount),
+                iconName: "wallet.pass.fill",
+                colorName: SpendAccountColor.blue.rawValue,
+                initialBalance: accountSummary.availableBalance,
+                isPrimary: true
+            )
+            modelContext.insert(primaryAccount)
+            transactions.forEach { $0.accountID = primaryAccount.id }
+            paymentHistory.forEach { $0.accountID = primaryAccount.id }
+            return
+        }
+
+        let primaryAccount = normalizedPrimaryAccount(in: spendAccounts)
+        let validAccountIDs = Set(spendAccounts.map(\.id))
+
+        transactions
+            .filter { $0.accountID.map { !validAccountIDs.contains($0) } ?? true }
+            .forEach { $0.accountID = primaryAccount.id }
+
+        paymentHistory
+            .filter { $0.accountID.map { !validAccountIDs.contains($0) } ?? true }
+            .forEach { $0.accountID = primaryAccount.id }
+
+        accountMovements
+            .filter { !validAccountIDs.contains($0.accountID) }
+            .forEach(modelContext.delete)
+    }
+
+    private static func normalizedPrimaryAccount(in accounts: [SpendAccount]) -> SpendAccount {
+        let primaryAccounts = accounts.filter(\.isPrimary)
+        let selectedPrimary = primaryAccounts.first ?? accounts[0]
+
+        accounts.forEach { account in
+            account.isPrimary = account.id == selectedPrimary.id
+        }
+
+        return selectedPrimary
+    }
 }
 
 private struct SpendWiseBackupDocument: FileDocument {
@@ -1248,7 +1850,66 @@ private struct SpendWiseBackupDocument: FileDocument {
     }
 }
 
-private struct SpendWiseBackup: Codable, Sendable {
+struct EncryptedSpendWiseBackup: Codable, Sendable {
+    static let currentVersion = 1
+    private static let envelopeFormat = "spendwise.encrypted-backup"
+    private static let keyInfo = Data("SpendWiseBackupEncryptionV1".utf8)
+
+    let format: String
+    let version: Int
+    let algorithm: String
+    let salt: String
+    let sealedData: String
+
+    init(backupData: Data, password: String) throws {
+        let saltData = Self.randomData(byteCount: 32)
+        let key = Self.encryptionKey(password: password, salt: saltData)
+        let sealedBox = try AES.GCM.seal(backupData, using: key)
+
+        guard let combinedData = sealedBox.combined else {
+            throw BackupError.invalidBackup
+        }
+
+        format = Self.envelopeFormat
+        version = Self.currentVersion
+        algorithm = "AES.GCM.HKDF.SHA256"
+        salt = saltData.base64EncodedString()
+        sealedData = combinedData.base64EncodedString()
+    }
+
+    func decrypt(password: String) throws -> Data {
+        guard format == Self.envelopeFormat, version == Self.currentVersion,
+              let saltData = Data(base64Encoded: salt),
+              let combinedData = Data(base64Encoded: sealedData) else {
+            throw BackupError.invalidBackup
+        }
+
+        do {
+            let key = Self.encryptionKey(password: password, salt: saltData)
+            let sealedBox = try AES.GCM.SealedBox(combined: combinedData)
+            return try AES.GCM.open(sealedBox, using: key)
+        } catch {
+            throw BackupError.invalidPassword
+        }
+    }
+
+    private static func encryptionKey(password: String, salt: Data) -> SymmetricKey {
+        let passwordKey = SymmetricKey(data: Data(password.utf8))
+        return HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: passwordKey,
+            salt: salt,
+            info: keyInfo,
+            outputByteCount: 32
+        )
+    }
+
+    private static func randomData(byteCount: Int) -> Data {
+        var generator = SystemRandomNumberGenerator()
+        return Data((0..<byteCount).map { _ in UInt8.random(in: .min ... .max, using: &generator) })
+    }
+}
+
+struct SpendWiseBackup: Codable, Sendable {
     static let currentVersion = 1
     static let empty = SpendWiseBackup(
         transactions: [],
@@ -1258,7 +1919,10 @@ private struct SpendWiseBackup: Codable, Sendable {
         creditAccounts: [],
         creditMovements: [],
         savingAccounts: [],
-        savingMovements: []
+        savingMovements: [],
+        spendAccounts: [],
+        accountMovements: [],
+        auditLogEntries: []
     )
 
     let version: Int
@@ -1271,6 +1935,9 @@ private struct SpendWiseBackup: Codable, Sendable {
     let creditMovements: [BackupCreditMovement]
     let savingAccounts: [BackupSavingAccount]
     let savingMovements: [BackupSavingMovement]
+    let spendAccounts: [BackupSpendAccount]
+    let accountMovements: [BackupAccountMovement]
+    let auditLogEntries: [BackupAuditLogEntry]
 
     private enum CodingKeys: String, CodingKey {
         case version
@@ -1283,6 +1950,9 @@ private struct SpendWiseBackup: Codable, Sendable {
         case creditMovements
         case savingAccounts
         case savingMovements
+        case spendAccounts
+        case accountMovements
+        case auditLogEntries
     }
 
     init(
@@ -1293,7 +1963,10 @@ private struct SpendWiseBackup: Codable, Sendable {
         creditAccounts: [BackupCreditAccount] = [],
         creditMovements: [BackupCreditMovement] = [],
         savingAccounts: [BackupSavingAccount] = [],
-        savingMovements: [BackupSavingMovement] = []
+        savingMovements: [BackupSavingMovement] = [],
+        spendAccounts: [BackupSpendAccount] = [],
+        accountMovements: [BackupAccountMovement] = [],
+        auditLogEntries: [BackupAuditLogEntry] = []
     ) {
         version = Self.currentVersion
         createdAt = Date()
@@ -1305,6 +1978,9 @@ private struct SpendWiseBackup: Codable, Sendable {
         self.creditMovements = creditMovements
         self.savingAccounts = savingAccounts
         self.savingMovements = savingMovements
+        self.spendAccounts = spendAccounts
+        self.accountMovements = accountMovements
+        self.auditLogEntries = auditLogEntries
     }
 
     init(from decoder: Decoder) throws {
@@ -1319,10 +1995,13 @@ private struct SpendWiseBackup: Codable, Sendable {
         creditMovements = try container.decodeIfPresent([BackupCreditMovement].self, forKey: .creditMovements) ?? []
         savingAccounts = try container.decodeIfPresent([BackupSavingAccount].self, forKey: .savingAccounts) ?? []
         savingMovements = try container.decodeIfPresent([BackupSavingMovement].self, forKey: .savingMovements) ?? []
+        spendAccounts = try container.decodeIfPresent([BackupSpendAccount].self, forKey: .spendAccounts) ?? []
+        accountMovements = try container.decodeIfPresent([BackupAccountMovement].self, forKey: .accountMovements) ?? []
+        auditLogEntries = try container.decodeIfPresent([BackupAuditLogEntry].self, forKey: .auditLogEntries) ?? []
     }
 }
 
-private struct BackupTransaction: Codable, Sendable {
+struct BackupTransaction: Codable, Sendable {
     let id: UUID
     let title: String
     let day: Int
@@ -1333,6 +2012,7 @@ private struct BackupTransaction: Codable, Sendable {
     let isPaid: Bool
     let expenseCategory: String?
     let expenseName: String?
+    let incomeDescription: String?
     let recurrenceType: String?
     let recurrenceMonth: Int
     let recurrenceEndMonthStart: Date?
@@ -1342,6 +2022,8 @@ private struct BackupTransaction: Codable, Sendable {
     let linkedCreditMovementID: UUID?
     let linkedSavingID: UUID?
     let linkedSavingMovementID: UUID?
+    let autoMarkPaidOnDay: Bool?
+    let accountID: UUID?
 
     init(transaction: MoneyTransaction) {
         id = transaction.id
@@ -1354,6 +2036,7 @@ private struct BackupTransaction: Codable, Sendable {
         isPaid = transaction.isPaid
         expenseCategory = transaction.expenseCategory
         expenseName = transaction.expenseName
+        incomeDescription = transaction.incomeDescription
         recurrenceType = transaction.recurrenceType
         recurrenceMonth = transaction.recurrenceMonth
         recurrenceEndMonthStart = transaction.recurrenceEndMonthStart
@@ -1363,6 +2046,8 @@ private struct BackupTransaction: Codable, Sendable {
         linkedCreditMovementID = transaction.linkedCreditMovementID
         linkedSavingID = transaction.linkedSavingID
         linkedSavingMovementID = transaction.linkedSavingMovementID
+        autoMarkPaidOnDay = transaction.autoMarkPaidOnDay
+        accountID = transaction.accountID
     }
 
     var model: MoneyTransaction {
@@ -1376,6 +2061,7 @@ private struct BackupTransaction: Codable, Sendable {
             isPaid: isPaid,
             expenseCategory: expenseCategory,
             expenseName: expenseName,
+            incomeDescription: incomeDescription,
             recurrenceType: recurrenceType,
             recurrenceMonth: recurrenceMonth,
             recurrenceEndMonthStart: recurrenceEndMonthStart,
@@ -1384,73 +2070,89 @@ private struct BackupTransaction: Codable, Sendable {
             linkedCreditID: linkedCreditID,
             linkedCreditMovementID: linkedCreditMovementID,
             linkedSavingID: linkedSavingID,
-            linkedSavingMovementID: linkedSavingMovementID
+            linkedSavingMovementID: linkedSavingMovementID,
+            autoMarkPaidOnDay: autoMarkPaidOnDay ?? false,
+            accountID: accountID
         )
         transaction.id = id
         return transaction
     }
 }
 
-private struct BackupPayment: Codable, Sendable {
+struct BackupPayment: Codable, Sendable {
     let transactionID: UUID
     let monthStart: Date
     let amountPaid: Double?
+    let occurrenceDay: Int?
 
     init(payment: ExpensePayment) {
         transactionID = payment.transactionID
         monthStart = payment.monthStart
         amountPaid = payment.amountPaid
+        occurrenceDay = payment.occurrenceDay
     }
 
     var model: ExpensePayment {
-        ExpensePayment(transactionID: transactionID, monthStart: monthStart, amountPaid: amountPaid)
+        ExpensePayment(transactionID: transactionID, monthStart: monthStart, amountPaid: amountPaid, occurrenceDay: occurrenceDay)
     }
 }
 
-private struct BackupPaymentHistoryEntry: Codable, Sendable {
+struct BackupPaymentHistoryEntry: Codable, Sendable {
     let id: UUID
     let transactionID: UUID
     let monthStart: Date
+    let occurrenceDay: Int?
     let amount: Double
     let paidAt: Date
+    let note: String?
+    let accountID: UUID?
 
     init(entry: PaymentHistoryEntry) {
         id = entry.id
         transactionID = entry.transactionID
         monthStart = entry.monthStart
+        occurrenceDay = entry.occurrenceDay
         amount = entry.amount
         paidAt = entry.paidAt
+        note = entry.note
+        accountID = entry.accountID
     }
 
     var model: PaymentHistoryEntry {
         let entry = PaymentHistoryEntry(
             transactionID: transactionID,
             monthStart: monthStart,
+            occurrenceDay: occurrenceDay,
             amount: amount,
-            paidAt: paidAt
+            paidAt: paidAt,
+            note: note,
+            accountID: accountID
         )
         entry.id = id
         return entry
     }
 }
 
-private struct BackupExclusion: Codable, Sendable {
+struct BackupExclusion: Codable, Sendable {
     let transactionID: UUID
     let monthStart: Date
+    let occurrenceDay: Int?
 
     init(exclusion: RecurrenceExclusion) {
         transactionID = exclusion.transactionID
         monthStart = exclusion.monthStart
+        occurrenceDay = exclusion.occurrenceDay
     }
 
     var model: RecurrenceExclusion {
-        RecurrenceExclusion(transactionID: transactionID, monthStart: monthStart)
+        RecurrenceExclusion(transactionID: transactionID, monthStart: monthStart, occurrenceDay: occurrenceDay)
     }
 }
 
-private struct BackupCreditAccount: Codable, Sendable {
+struct BackupCreditAccount: Codable, Sendable {
     let id: UUID
     let name: String
+    let details: String?
     let type: String
     let initialDebt: Double
     let creditLimit: Double?
@@ -1460,6 +2162,7 @@ private struct BackupCreditAccount: Codable, Sendable {
     init(credit: CreditAccount) {
         id = credit.id
         name = credit.name
+        details = credit.details
         type = credit.type
         initialDebt = credit.initialDebt
         creditLimit = credit.creditLimit
@@ -1470,6 +2173,7 @@ private struct BackupCreditAccount: Codable, Sendable {
     var model: CreditAccount {
         let credit = CreditAccount(
             name: name,
+            details: details ?? "",
             type: type,
             initialDebt: initialDebt,
             creditLimit: creditLimit,
@@ -1481,13 +2185,15 @@ private struct BackupCreditAccount: Codable, Sendable {
     }
 }
 
-private struct BackupCreditMovement: Codable, Sendable {
+struct BackupCreditMovement: Codable, Sendable {
     let id: UUID
     let creditID: UUID
     let date: Date
     let type: String
     let amount: Double
     let note: String
+    let expenseCategory: String?
+    let expenseName: String?
 
     init(movement: CreditMovement) {
         id = movement.id
@@ -1496,6 +2202,8 @@ private struct BackupCreditMovement: Codable, Sendable {
         type = movement.type
         amount = movement.amount
         note = movement.note
+        expenseCategory = movement.expenseCategory
+        expenseName = movement.expenseName
     }
 
     var model: CreditMovement {
@@ -1504,16 +2212,19 @@ private struct BackupCreditMovement: Codable, Sendable {
             date: date,
             type: type,
             amount: amount,
-            note: note
+            note: note,
+            expenseCategory: expenseCategory,
+            expenseName: expenseName
         )
         movement.id = id
         return movement
     }
 }
 
-private struct BackupSavingAccount: Codable, Sendable {
+struct BackupSavingAccount: Codable, Sendable {
     let id: UUID
     let name: String
+    let details: String?
     let initialAmount: Double
     let targetAmount: Double?
     let createdAt: Date
@@ -1522,6 +2233,7 @@ private struct BackupSavingAccount: Codable, Sendable {
     init(saving: SavingAccount) {
         id = saving.id
         name = saving.name
+        details = saving.details
         initialAmount = saving.initialAmount
         targetAmount = saving.targetAmount
         createdAt = saving.createdAt
@@ -1531,6 +2243,7 @@ private struct BackupSavingAccount: Codable, Sendable {
     var model: SavingAccount {
         let saving = SavingAccount(
             name: name,
+            details: details ?? "",
             initialAmount: initialAmount,
             targetAmount: targetAmount,
             createdAt: createdAt,
@@ -1541,7 +2254,7 @@ private struct BackupSavingAccount: Codable, Sendable {
     }
 }
 
-private struct BackupSavingMovement: Codable, Sendable {
+struct BackupSavingMovement: Codable, Sendable {
     let id: UUID
     let savingID: UUID
     let date: Date
@@ -1571,6 +2284,132 @@ private struct BackupSavingMovement: Codable, Sendable {
         )
         movement.id = id
         return movement
+    }
+}
+
+struct BackupSpendAccount: Codable, Sendable {
+    let id: UUID
+    let name: String
+    let iconName: String
+    let colorName: String
+    let initialBalance: Double
+    let isPrimary: Bool
+    let createdAt: Date
+
+    init(account: SpendAccount) {
+        id = account.id
+        name = account.name
+        iconName = account.iconName
+        colorName = account.colorName
+        initialBalance = account.initialBalance
+        isPrimary = account.isPrimary
+        createdAt = account.createdAt
+    }
+
+    var model: SpendAccount {
+        let account = SpendAccount(
+            name: name,
+            iconName: iconName,
+            colorName: colorName,
+            initialBalance: initialBalance,
+            isPrimary: isPrimary,
+            createdAt: createdAt
+        )
+        account.id = id
+        return account
+    }
+}
+
+struct BackupAccountMovement: Codable, Sendable {
+    let id: UUID
+    let accountID: UUID
+    let relatedAccountID: UUID?
+    let transactionID: UUID?
+    let paymentHistoryID: UUID?
+    let date: Date
+    let type: String
+    let amount: Double
+    let note: String
+
+    init(movement: AccountMovement) {
+        id = movement.id
+        accountID = movement.accountID
+        relatedAccountID = movement.relatedAccountID
+        transactionID = movement.transactionID
+        paymentHistoryID = movement.paymentHistoryID
+        date = movement.date
+        type = movement.type
+        amount = movement.amount
+        note = movement.note
+    }
+
+    var model: AccountMovement {
+        let movement = AccountMovement(
+            accountID: accountID,
+            relatedAccountID: relatedAccountID,
+            transactionID: transactionID,
+            paymentHistoryID: paymentHistoryID,
+            date: date,
+            type: type,
+            amount: amount,
+            note: note
+        )
+        movement.id = id
+        return movement
+    }
+}
+
+struct BackupAuditLogEntry: Codable, Sendable {
+    let id: UUID
+    let date: Date
+    let action: String
+    let title: String
+    let details: String
+    let note: String
+    let amount: Double
+    let balanceAfter: Double
+    let accountID: UUID?
+    let relatedAccountID: UUID?
+    let transactionID: UUID?
+    let paymentHistoryID: UUID?
+    let creditID: UUID?
+    let savingID: UUID?
+
+    init(entry: AuditLogEntry) {
+        id = entry.id
+        date = entry.date
+        action = entry.action
+        title = entry.title
+        details = entry.details
+        note = entry.note
+        amount = entry.amount
+        balanceAfter = entry.balanceAfter
+        accountID = entry.accountID
+        relatedAccountID = entry.relatedAccountID
+        transactionID = entry.transactionID
+        paymentHistoryID = entry.paymentHistoryID
+        creditID = entry.creditID
+        savingID = entry.savingID
+    }
+
+    var model: AuditLogEntry {
+        let entry = AuditLogEntry(
+            date: date,
+            action: action,
+            title: title,
+            details: details,
+            note: note,
+            amount: amount,
+            balanceAfter: balanceAfter,
+            accountID: accountID,
+            relatedAccountID: relatedAccountID,
+            transactionID: transactionID,
+            paymentHistoryID: paymentHistoryID,
+            creditID: creditID,
+            savingID: savingID
+        )
+        entry.id = id
+        return entry
     }
 }
 

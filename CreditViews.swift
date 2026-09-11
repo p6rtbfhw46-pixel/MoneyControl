@@ -8,6 +8,7 @@ import SwiftData
 import SwiftUI
 
 struct CreditsSettingsView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Query private var creditAccounts: [CreditAccount]
     @Query private var creditMovements: [CreditMovement]
@@ -25,6 +26,10 @@ struct CreditsSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if horizontalSizeClass == .compact {
+                    creditsHeroImage
+                }
+
                 if creditAccounts.contains(where: { $0.creditStatus == .settled }) {
                     Toggle(CreditStrings.text(.showSettled), isOn: $showsSettled)
                         .font(.subheadline.weight(.semibold))
@@ -75,6 +80,15 @@ struct CreditsSettingsView: View {
             CreditDetailView(credit: credit)
         }
     }
+
+    private var creditsHeroImage: some View {
+        Image(AppStrings.currentLanguage == .portuguese ? "CreditHero" : "CreditHeroEnglish")
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 22))
+            .shadow(color: AppPalette.background.opacity(0.10), radius: 12, y: 6)
+    }
 }
 
 private struct CreditSummaryCard: View {
@@ -98,7 +112,7 @@ private struct CreditSummaryCard: View {
                     .background(AppPalette.mintSurface, in: Circle())
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(credit.name)
+                    Text(credit.displayName)
                         .font(.headline.bold())
                         .foregroundStyle(AppPalette.background)
                     Text(credit.creditType.title)
@@ -166,12 +180,18 @@ private struct CreditEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query private var allMovements: [CreditMovement]
+    @Query private var spendAccounts: [SpendAccount]
+    @Query private var accountMovements: [AccountMovement]
+    @Query private var savingAccounts: [SavingAccount]
+    @Query private var savingMovements: [SavingMovement]
+    @Query private var creditAccounts: [CreditAccount]
     @Query private var transactions: [MoneyTransaction]
 
     let request: CreditEditorRequest
     var onDelete: (() -> Void)? = nil
 
     @State private var name = ""
+    @State private var details = ""
     @State private var type: CreditType = .creditCard
     @State private var currentDebt = 0.0
     @State private var creditLimit = 0.0
@@ -181,6 +201,27 @@ private struct CreditEditor: View {
     @State private var isCreditLimitExpanded = false
 
     private var isEditing: Bool { request.credit != nil }
+    private var auditBalance: Double {
+        AuditSnapshot.totalBalance(
+            spendAccounts: spendAccounts,
+            accountMovements: accountMovements,
+            savingAccounts: savingAccounts,
+            savingMovements: savingMovements,
+            creditAccounts: creditAccounts,
+            creditMovements: allMovements
+        )
+    }
+
+    private func insertAuditLog(action: AuditLogAction, title: String, amount: Double = 0, balanceAfter: Double? = nil, creditID: UUID? = nil, note: String? = nil) {
+        modelContext.insert(AuditLogEntry(
+            action: action.rawValue,
+            title: title,
+            details: note ?? "",
+            amount: amount,
+            balanceAfter: balanceAfter ?? auditBalance,
+            creditID: creditID
+        ))
+    }
 
     var body: some View {
         NavigationStack {
@@ -191,30 +232,32 @@ private struct CreditEditor: View {
                 }
 
                 Section {
-                    TextField(CreditStrings.text(.creditName), text: $name)
+                    creditTypePicker
+
+                    if type == .other {
+                        TextField(CreditStrings.text(.creditName), text: $name)
+                            .foregroundStyle(AppPalette.background)
+                            .tint(AppPalette.primary)
+                    }
+
+                    TextField(CreditStrings.text(.creditDescription), text: $details)
                         .foregroundStyle(AppPalette.background)
                         .tint(AppPalette.primary)
 
-                    Picker(CreditStrings.text(.creditType), selection: $type) {
-                        ForEach(CreditType.allCases) { type in
-                            Label(type.title, systemImage: type.iconName).tag(type)
-                        }
+                    if isEditing {
+                        Toggle(CreditStrings.text(.active), isOn: Binding(
+                            get: { status == .active },
+                            set: { status = $0 ? .active : .settled }
+                        ))
+                        .tint(AppPalette.primary)
                     }
-                    .tint(AppPalette.background)
-
-                    Picker(CreditStrings.text(.active), selection: $status) {
-                        ForEach(CreditStatus.allCases) { status in
-                            Text(status.title).tag(status)
-                        }
-                    }
-                    .tint(AppPalette.background)
                 }
                 .listRowBackground(AppPalette.surface)
 
                 Section {
                     if !isEditing {
-                        MoneyAmountPicker(title: CreditStrings.text(.currentDebt), amount: $currentDebt, maximumAmount: 1_000_000)
-                        MoneyAmountPicker(title: "\(CreditStrings.text(.creditLimit)) · \(CreditStrings.text(.optionalLimit))", amount: $creditLimit, maximumAmount: 1_000_000)
+                        MoneyAmountPicker(title: CreditStrings.text(.currentDebt), amount: $currentDebt, maximumAmount: 1_000_000, onConfirm: save)
+                        MoneyAmountPicker(title: "\(CreditStrings.text(.creditLimit)) · \(CreditStrings.text(.optionalLimit))", amount: $creditLimit, maximumAmount: 1_000_000, onConfirm: save)
                     } else {
                         creditLimitDisclosure
                     }
@@ -259,9 +302,71 @@ private struct CreditEditor: View {
         }
     }
 
+    private var creditTypePicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(CreditType.allCases) { creditType in
+                    creditTypeCard(creditType)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    private func creditTypeCard(_ creditType: CreditType) -> some View {
+        let isSelected = type == creditType
+
+        return Button {
+            type = creditType
+            if creditType != .other {
+                name = creditType.title
+            } else {
+                name = ""
+            }
+        } label: {
+            VStack(spacing: 8) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: creditType.iconName)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(isSelected ? AppPalette.positive : AppPalette.background)
+                        .frame(width: 46, height: 46)
+                        .background(isSelected ? AppPalette.positive.opacity(0.12) : AppPalette.appBackground, in: Circle())
+
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.caption.bold())
+                            .foregroundStyle(AppPalette.surface)
+                            .frame(width: 22, height: 22)
+                            .background(AppPalette.positive, in: Circle())
+                            .offset(x: 8, y: -8)
+                    }
+                }
+
+                Text(creditType.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isSelected ? AppPalette.positive : AppPalette.background)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.75)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 6)
+            .frame(width: 112)
+            .frame(minHeight: 104)
+            .background(isSelected ? AppPalette.positive.opacity(0.08) : AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(isSelected ? AppPalette.positive.opacity(0.55) : AppPalette.separator, lineWidth: isSelected ? 1.5 : 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     private func loadInitialValues() {
         guard let credit = request.credit else { return }
         name = credit.name
+        details = credit.details
         type = credit.creditType
         currentDebt = credit.initialDebt
         creditLimit = credit.creditLimit ?? 0
@@ -300,7 +405,8 @@ private struct CreditEditor: View {
                 MoneyAmountPicker(
                     title: "\(CreditStrings.text(.creditLimit)) · \(CreditStrings.text(.optionalLimit))",
                     amount: $creditLimit,
-                    maximumAmount: 1_000_000
+                    maximumAmount: 1_000_000,
+                    onConfirm: save
                 )
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -309,7 +415,9 @@ private struct CreditEditor: View {
 
     private func save() {
         validationMessage = nil
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawName = type == .other ? name : type.title
+        let trimmedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedName.isEmpty else {
             validationMessage = CreditStrings.text(.fillCreditName)
@@ -321,8 +429,11 @@ private struct CreditEditor: View {
             return
         }
 
+        let isNewCredit = request.credit == nil
+        let balanceBefore = auditBalance
         let credit = request.credit ?? CreditAccount(name: trimmedName, type: type.rawValue, initialDebt: currentDebt)
         credit.name = trimmedName
+        credit.details = trimmedDetails
         credit.type = type.rawValue
         if !isEditing {
             credit.initialDebt = currentDebt
@@ -330,15 +441,35 @@ private struct CreditEditor: View {
         credit.creditLimit = creditLimit > 0 ? creditLimit : nil
         credit.status = status.rawValue
 
-        if request.credit == nil {
+        if isNewCredit {
             modelContext.insert(credit)
         }
+
+        insertAuditLog(
+            action: isNewCredit ? .creditCreated : .creditUpdated,
+            title: credit.displayName,
+            amount: isNewCredit ? currentDebt : 0,
+            balanceAfter: isNewCredit ? balanceBefore - currentDebt : auditBalance,
+            creditID: credit.id,
+            note: trimmedDetails.isEmpty ? nil : trimmedDetails
+        )
 
         dismiss()
     }
 
     private func deleteCredit() {
         guard let credit = request.credit else { return }
+        let balanceBefore = auditBalance
+        let deletedDebt = credit.balance(with: allMovements)
+
+        insertAuditLog(
+            action: .creditDeleted,
+            title: credit.displayName,
+            amount: deletedDebt,
+            balanceAfter: balanceBefore + deletedDebt,
+            creditID: credit.id,
+            note: credit.details.isEmpty ? nil : credit.details
+        )
 
         allMovements
             .filter { $0.creditID == credit.id }
@@ -361,6 +492,11 @@ struct CreditDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query private var allMovements: [CreditMovement]
+    @Query private var spendAccounts: [SpendAccount]
+    @Query private var accountMovements: [AccountMovement]
+    @Query private var savingAccounts: [SavingAccount]
+    @Query private var savingMovements: [SavingMovement]
+    @Query private var creditAccounts: [CreditAccount]
 
     let credit: CreditAccount
 
@@ -375,6 +511,16 @@ struct CreditDetailView: View {
     private var monthIncrease: Double { credit.monthDebtIncrease(in: monthStart, movements: allMovements) }
     private var monthPaid: Double { credit.monthPaid(in: monthStart, movements: allMovements) }
     private var monthVariation: Double { credit.monthVariation(in: monthStart, movements: allMovements) }
+    private var auditBalance: Double {
+        AuditSnapshot.totalBalance(
+            spendAccounts: spendAccounts,
+            accountMovements: accountMovements,
+            savingAccounts: savingAccounts,
+            savingMovements: savingMovements,
+            creditAccounts: creditAccounts,
+            creditMovements: allMovements
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -386,12 +532,13 @@ struct CreditDetailView: View {
                     if !balancePoints.isEmpty { evolutionCard }
                     if !paymentEstimatePoints.isEmpty { paymentEstimateCard }
                     settledSuggestion
+                    addMovementButton
                     movementsSection
                 }
                 .padding()
             }
             .background(AppPalette.appBackground)
-            .navigationTitle(credit.name)
+            .navigationTitle(credit.displayName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(AppPalette.appBackground, for: .navigationBar)
             .toolbarColorScheme(.light, for: .navigationBar)
@@ -425,7 +572,7 @@ struct CreditDetailView: View {
 
     private var debtHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(credit.name)
+            Text(credit.displayName)
                 .font(.title2.bold())
                 .foregroundStyle(AppPalette.background)
             Text(balance.currencyText)
@@ -533,6 +680,7 @@ struct CreditDetailView: View {
                     .foregroundStyle(AppPalette.background)
                 Button(CreditStrings.text(.markAsSettled)) {
                     credit.status = CreditStatus.settled.rawValue
+                    insertAuditLog(action: .creditUpdated, title: credit.displayName, creditID: credit.id)
                 }
                 .liquidGlassButtonStyle(prominent: true)
                 .tint(AppPalette.positive)
@@ -542,22 +690,24 @@ struct CreditDetailView: View {
         }
     }
 
+    private var addMovementButton: some View {
+        Button {
+            movementEditorRequest = CreditMovementEditorRequest(credit: credit)
+        } label: {
+            Label(CreditStrings.text(.movements), systemImage: "plus.circle.fill")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(AppPalette.surface)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var movementsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(CreditStrings.text(.movements))
-                    .font(.headline.bold())
-                    .foregroundStyle(AppPalette.background)
-                Spacer()
-                Button {
-                    movementEditorRequest = CreditMovementEditorRequest(credit: credit)
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(AppPalette.primary)
-                }
-                .buttonStyle(.plain)
-            }
+            Text(CreditStrings.text(.movements))
+                .font(.headline.bold())
+                .foregroundStyle(AppPalette.background)
 
             if movementGroups.isEmpty {
                 ContentUnavailableView(CreditStrings.text(.noMovements), systemImage: "list.bullet.rectangle")
@@ -573,7 +723,7 @@ struct CreditDetailView: View {
                             CreditMovementRow(
                                 movement: movement,
                                 onEdit: { movementEditorRequest = CreditMovementEditorRequest(credit: credit, movement: movement) },
-                                onDelete: { modelContext.delete(movement) }
+                                onDelete: { deleteMovement(movement) }
                             )
                         }
                     }
@@ -588,6 +738,30 @@ struct CreditDetailView: View {
         Dictionary(grouping: movements, by: { $0.date.monthStart })
             .map { CreditMovementGroup(month: $0.key, movements: $0.value.sorted { $0.date > $1.date }) }
             .sorted { $0.month > $1.month }
+    }
+
+    private func insertAuditLog(action: AuditLogAction, title: String, amount: Double = 0, balanceAfter: Double? = nil, creditID: UUID? = nil, note: String? = nil) {
+        modelContext.insert(AuditLogEntry(
+            action: action.rawValue,
+            title: title,
+            details: note ?? "",
+            amount: amount,
+            balanceAfter: balanceAfter ?? auditBalance,
+            creditID: creditID
+        ))
+    }
+
+    private func deleteMovement(_ movement: CreditMovement) {
+        let balanceAfter = auditBalance + movement.balanceEffect
+        insertAuditLog(
+            action: .creditMovementDeleted,
+            title: movement.kind.title,
+            amount: abs(movement.amount),
+            balanceAfter: balanceAfter,
+            creditID: movement.creditID,
+            note: movement.note.isEmpty ? credit.displayName : movement.note
+        )
+        modelContext.delete(movement)
     }
 
     private var balancePoints: [CreditBalancePoint] {
@@ -732,6 +906,15 @@ private struct CreditMovementRow: View {
                 Text(movement.kind.title)
                     .font(.subheadline.bold())
                     .foregroundStyle(AppPalette.background)
+                Text(movement.date.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(AppPalette.mutedText)
+                if movement.kind == .debtIncrease, let expenseName = movement.expenseName, !expenseName.isEmpty {
+                    Text(expenseName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppPalette.primary)
+                }
+
                 if !movement.note.isEmpty {
                     Text(movement.note)
                         .font(.caption)
@@ -776,6 +959,12 @@ struct CreditMovementEditorRequest: Identifiable {
 private struct CreditMovementEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query private var spendAccounts: [SpendAccount]
+    @Query private var accountMovements: [AccountMovement]
+    @Query private var savingAccounts: [SavingAccount]
+    @Query private var savingMovements: [SavingMovement]
+    @Query private var creditAccounts: [CreditAccount]
+    @Query private var creditMovements: [CreditMovement]
 
     let request: CreditMovementEditorRequest
 
@@ -784,9 +973,33 @@ private struct CreditMovementEditor: View {
     @State private var amount = 0.0
     @State private var date = Date()
     @State private var adjustmentIsPositive = true
+    @State private var markAsPaid = false
+    @State private var selectedCurrentAccountExpenseCategory: ExpenseCategory = .needs
+    @State private var selectedCurrentAccountExpenseName = ""
     @State private var validationMessage: String?
 
     private var isEditing: Bool { request.movement != nil }
+    private var auditBalance: Double {
+        AuditSnapshot.totalBalance(
+            spendAccounts: spendAccounts,
+            accountMovements: accountMovements,
+            savingAccounts: savingAccounts,
+            savingMovements: savingMovements,
+            creditAccounts: creditAccounts,
+            creditMovements: creditMovements
+        )
+    }
+    private var primarySpendAccountID: UUID? {
+        spendAccounts.first(where: \.isPrimary)?.id ?? spendAccounts.first?.id
+    }
+
+    private var debtAmortizationExpenseName: String {
+        ExpenseCategory.savingsAndDebt.names.first { isDebtAmortizationExpense($0) } ?? "Amortização de dívida"
+    }
+
+    private var currentAccountDebtIncreaseOptions: [CreditAccountExpenseTypeOption] {
+        CreditAccountExpenseTypeOption.creditUsageOptions
+    }
 
     var body: some View {
         NavigationStack {
@@ -797,12 +1010,12 @@ private struct CreditMovementEditor: View {
                 }
 
                 Section {
-                    Picker(CreditStrings.text(.movementType), selection: $kind) {
-                        ForEach(CreditMovementKind.allCases) { kind in
-                            Label(kind.title, systemImage: kind.iconName).tag(kind)
-                        }
-                    }
-                    .tint(AppPalette.background)
+                    affectedCreditCard
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section {
+                    movementKindHorizontalPicker
 
                     if kind == .adjustment {
                         Picker(CreditStrings.text(.adjustment), selection: $adjustmentIsPositive) {
@@ -811,7 +1024,17 @@ private struct CreditMovementEditor: View {
                         }
                         .pickerStyle(.segmented)
                     }
+                }
+                .listRowBackground(AppPalette.surface)
 
+                if kind == .debtIncrease || kind == .payment {
+                    Section {
+                        currentAccountImpactCard
+                    }
+                    .listRowBackground(AppPalette.surface)
+                }
+
+                Section {
                     DatePicker(CreditStrings.text(.movementDate), selection: $date, displayedComponents: .date)
                         .tint(AppPalette.primary)
 
@@ -822,7 +1045,7 @@ private struct CreditMovementEditor: View {
                 .listRowBackground(AppPalette.surface)
 
                 Section {
-                    MoneyAmountPicker(title: AppStrings.text(.value), amount: $amount, maximumAmount: 1_000_000)
+                    MoneyAmountPicker(title: AppStrings.text(.value), amount: $amount, maximumAmount: 1_000_000, onConfirm: save)
                 }
                 .listRowBackground(AppPalette.surface)
             }
@@ -839,8 +1062,167 @@ private struct CreditMovementEditor: View {
                     Button(AppStrings.text(.save), action: save)
                 }
             }
-            .onAppear(perform: loadInitialValues)
+            .onAppear {
+                loadInitialValues()
+                prepareCurrentAccountSelection(for: kind)
+            }
+            .onChange(of: kind) { _, newKind in
+                prepareCurrentAccountSelection(for: newKind)
+            }
         }
+    }
+
+    private var affectedCreditCard: some View {
+        HStack(spacing: 14) {
+            Image(systemName: request.credit.creditType.iconName)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(AppPalette.primary)
+                .frame(width: 44, height: 44)
+                .background(AppPalette.primary.opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Crédito afetado")
+                    .font(.headline)
+                    .foregroundStyle(AppPalette.background)
+                Text(request.credit.displayName)
+                    .font(.subheadline)
+                    .foregroundStyle(AppPalette.mutedText)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var movementKindHorizontalPicker: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(CreditStrings.text(.movementType))
+                .font(.headline)
+                .foregroundStyle(AppPalette.background)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(CreditMovementKind.allCases) { movementKind in
+                        movementKindCard(movementKind)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func movementKindCard(_ movementKind: CreditMovementKind) -> some View {
+        let title = movementKind == .debtIncrease ? "Aumentar\ndívida" : movementKind.title
+
+        return Button {
+            kind = movementKind
+        } label: {
+            VStack(spacing: 10) {
+                Image(systemName: movementKind.iconName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(kind == movementKind ? movementKind.tint : AppPalette.background)
+                    .frame(width: 44, height: 44)
+                    .background(movementKind.tint.opacity(kind == movementKind ? 0.18 : 0.08), in: Circle())
+
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(kind == movementKind ? movementKind.tint : AppPalette.background)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(width: 118, height: 118)
+            .background(kind == movementKind ? movementKind.tint.opacity(0.10) : AppPalette.appBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(kind == movementKind ? movementKind.tint.opacity(0.55) : AppPalette.mutedText.opacity(0.16), lineWidth: 1.2)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var currentAccountImpactCard: some View {
+        if kind == .debtIncrease {
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Como utilizou este crédito?", systemImage: "tag.fill")
+                    .font(.headline)
+                    .foregroundStyle(AppPalette.background)
+
+                Text("Este aumento de dívida fica apenas registado no crédito e não cria movimento na Conta Corrente.")
+                    .font(.footnote)
+                    .foregroundStyle(AppPalette.mutedText)
+
+                accountExpenseTypePicker(options: currentAccountDebtIncreaseOptions)
+            }
+            .padding(.vertical, 6)
+        } else if kind == .payment {
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Afetar a Conta Corrente", systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(AppPalette.background)
+
+                Text(isEditing
+                    ? "Este pagamento já é um movimento de crédito e não cria uma nova despesa na Conta Corrente ao editar."
+                    : "Será criada uma despesa de Amortização de dívida ligada ao crédito. A dívida só baixa quando essa despesa for marcada como paga.")
+                    .font(.footnote)
+                    .foregroundStyle(AppPalette.mutedText)
+
+                if !isEditing {
+                    Toggle(isOn: $markAsPaid) {
+                        Text(markAsPaid ? AppStrings.text(.paidExpense) : AppStrings.text(.unpaidExpense))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppPalette.background)
+                    }
+                    .toggleStyle(.switch)
+                    .tint(AppPalette.primary)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func accountExpenseTypePicker(options: [CreditAccountExpenseTypeOption]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(options) { option in
+                    accountExpenseTypeCard(option)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func accountExpenseTypeCard(_ option: CreditAccountExpenseTypeOption) -> some View {
+        let isSelected = selectedCurrentAccountExpenseCategory == option.category && selectedCurrentAccountExpenseName == option.name
+
+        return Button {
+            selectedCurrentAccountExpenseCategory = option.category
+            selectedCurrentAccountExpenseName = option.name
+        } label: {
+            VStack(spacing: 10) {
+                Image(systemName: ExpenseTypeIcon.name(for: option.name))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isSelected ? option.category.color : AppPalette.background)
+                    .frame(width: 44, height: 44)
+                    .background(option.category.color.opacity(isSelected ? 0.18 : 0.08), in: Circle())
+
+                Text(option.name)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isSelected ? option.category.color : AppPalette.background)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(width: 132, height: 122)
+            .background(isSelected ? option.category.color.opacity(0.10) : AppPalette.appBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(isSelected ? option.category.color.opacity(0.55) : AppPalette.mutedText.opacity(0.16), lineWidth: 1.2)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
     }
 
     private func loadInitialValues() {
@@ -850,6 +1232,29 @@ private struct CreditMovementEditor: View {
         amount = abs(movement.amount)
         date = movement.date
         adjustmentIsPositive = movement.amount >= 0
+        if movement.kind == .debtIncrease,
+           let expenseCategory = ExpenseCategory(rawValue: movement.expenseCategory ?? ""),
+           let expenseName = movement.expenseName,
+           !expenseName.isEmpty {
+            selectedCurrentAccountExpenseCategory = expenseCategory
+            selectedCurrentAccountExpenseName = expenseName
+        }
+    }
+
+    private func prepareCurrentAccountSelection(for movementKind: CreditMovementKind) {
+        if movementKind == .payment {
+            selectedCurrentAccountExpenseCategory = .savingsAndDebt
+            selectedCurrentAccountExpenseName = debtAmortizationExpenseName
+        } else if selectedCurrentAccountExpenseName.isEmpty || isDebtAmortizationExpense(selectedCurrentAccountExpenseName) {
+            guard let firstOption = currentAccountDebtIncreaseOptions.first else { return }
+            selectedCurrentAccountExpenseCategory = firstOption.category
+            selectedCurrentAccountExpenseName = firstOption.name
+        }
+    }
+
+    private func isDebtAmortizationExpense(_ name: String) -> Bool {
+        let normalizedName = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+        return normalizedName.contains("amort") || normalizedName.contains("divida") || normalizedName.contains("debt")
     }
 
     private func save() {
@@ -859,24 +1264,641 @@ private struct CreditMovementEditor: View {
             return
         }
 
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if kind == .payment && request.movement == nil {
+            savePaymentThroughCurrentAccount(note: trimmedNote)
+            dismiss()
+            return
+        }
+
         let storedAmount = kind == .adjustment && !adjustmentIsPositive ? -amount : amount
+        let previousEffect = request.movement?.balanceEffect ?? 0
+        let newEffect = kind.balanceEffect(for: storedAmount)
         let movement = request.movement ?? CreditMovement(
             creditID: request.credit.id,
             date: date,
             type: kind.rawValue,
             amount: storedAmount,
-            note: note.trimmingCharacters(in: .whitespacesAndNewlines)
+            note: trimmedNote
         )
         movement.creditID = request.credit.id
         movement.date = date
         movement.type = kind.rawValue
         movement.amount = storedAmount
-        movement.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        movement.note = trimmedNote
+        movement.expenseCategory = kind == .debtIncrease ? selectedCurrentAccountExpenseCategory.rawValue : nil
+        movement.expenseName = kind == .debtIncrease ? selectedCurrentAccountExpenseName : nil
 
         if request.movement == nil {
             modelContext.insert(movement)
         }
 
+        insertAuditLog(
+            action: request.movement == nil ? .creditMovementCreated : .creditMovementUpdated,
+            title: kind.title,
+            amount: abs(storedAmount),
+            balanceAfter: auditBalance - newEffect + previousEffect,
+            creditID: request.credit.id,
+            note: trimmedNote.isEmpty ? request.credit.displayName : trimmedNote
+        )
+
         dismiss()
+    }
+
+    private func savePaymentThroughCurrentAccount(note: String) {
+        let transaction = MoneyTransaction(
+            title: note.isEmpty ? AppStrings.text(.newCreditPaymentExpense) : note,
+            day: Calendar.current.component(.day, from: date),
+            monthStart: date.monthStart,
+            amount: amount,
+            kind: TransactionKind.expense.rawValue,
+            expenseCategory: ExpenseCategory.savingsAndDebt.rawValue,
+            expenseName: debtAmortizationExpenseName,
+            linkedCreditID: request.credit.id,
+            accountID: primarySpendAccountID
+        )
+        modelContext.insert(transaction)
+        insertAuditLog(
+            action: .expenseCreated,
+            title: transaction.displayName,
+            amount: amount,
+            balanceAfter: auditBalance,
+            accountID: transaction.accountID,
+            transactionID: transaction.id,
+            creditID: request.credit.id,
+            note: transaction.title
+        )
+
+        guard markAsPaid else { return }
+
+        modelContext.insert(ExpensePayment(transactionID: transaction.id, monthStart: date.monthStart, amountPaid: amount))
+        let historyEntry = PaymentHistoryEntry(transactionID: transaction.id, monthStart: date.monthStart, amount: amount, accountID: transaction.accountID)
+        modelContext.insert(historyEntry)
+        if let accountID = transaction.accountID {
+            modelContext.insert(AccountMovement(
+                accountID: accountID,
+                transactionID: transaction.id,
+                paymentHistoryID: historyEntry.id,
+                date: historyEntry.paidAt,
+                type: AccountMovementKind.expensePayment.rawValue,
+                amount: -amount,
+                note: transaction.title
+            ))
+        }
+
+        let movement = CreditMovement(
+            creditID: request.credit.id,
+            date: date,
+            type: CreditMovementKind.payment.rawValue,
+            amount: amount,
+            note: transaction.title
+        )
+        modelContext.insert(movement)
+        transaction.linkedCreditMovementID = movement.id
+        insertAuditLog(
+            action: .expensePaymentCreated,
+            title: transaction.displayName,
+            amount: amount,
+            balanceAfter: auditBalance - amount,
+            accountID: transaction.accountID,
+            transactionID: transaction.id,
+            paymentHistoryID: historyEntry.id,
+            note: transaction.title
+        )
+        insertAuditLog(
+            action: .creditMovementCreated,
+            title: CreditMovementKind.payment.title,
+            amount: amount,
+            balanceAfter: auditBalance,
+            transactionID: transaction.id,
+            creditID: request.credit.id,
+            note: transaction.title
+        )
+    }
+
+    private func insertAuditLog(
+        action: AuditLogAction,
+        title: String,
+        amount: Double,
+        balanceAfter: Double,
+        accountID: UUID? = nil,
+        transactionID: UUID? = nil,
+        paymentHistoryID: UUID? = nil,
+        creditID: UUID? = nil,
+        note: String? = nil
+    ) {
+        modelContext.insert(AuditLogEntry(
+            action: action.rawValue,
+            title: title,
+            details: note ?? "",
+            amount: amount,
+            balanceAfter: balanceAfter,
+            accountID: accountID,
+            transactionID: transactionID,
+            paymentHistoryID: paymentHistoryID,
+            creditID: creditID
+        ))
+    }
+}
+
+private struct CreditAccountExpenseTypeOption: Identifiable, Hashable {
+    let category: ExpenseCategory
+    let name: String
+
+    var id: String { "\(category.rawValue)-\(name)" }
+
+    static let creditUsageOptions: [CreditAccountExpenseTypeOption] = [
+        CreditAccountExpenseTypeOption(category: .wants, name: "Refeições / Restaurantes"),
+        CreditAccountExpenseTypeOption(category: .savingsAndDebt, name: "Cash Advance / Levantamento"),
+        CreditAccountExpenseTypeOption(category: .needs, name: "Supermercado"),
+        CreditAccountExpenseTypeOption(category: .wants, name: "Roupa e Acessórios"),
+        CreditAccountExpenseTypeOption(category: .needs, name: "Transportes"),
+        CreditAccountExpenseTypeOption(category: .wants, name: "Viagens"),
+        CreditAccountExpenseTypeOption(category: .needs, name: "Casa / Habitação"),
+        CreditAccountExpenseTypeOption(category: .needs, name: "Saúde"),
+        CreditAccountExpenseTypeOption(category: .wants, name: "Lazer"),
+        CreditAccountExpenseTypeOption(category: .wants, name: "Compras gerais"),
+        CreditAccountExpenseTypeOption(category: .savingsAndDebt, name: "Transferência de saldo"),
+        CreditAccountExpenseTypeOption(category: .wants, name: "Outro")
+    ]
+}
+
+struct CurrentAccountCreditMovementRequest: Identifiable {
+    let id = UUID()
+    let month: Date
+}
+
+struct CurrentAccountCreditMovementEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query private var creditAccounts: [CreditAccount]
+    @Query private var spendAccounts: [SpendAccount]
+    @Query private var accountMovements: [AccountMovement]
+    @Query private var savingAccounts: [SavingAccount]
+    @Query private var savingMovements: [SavingMovement]
+    @Query private var creditMovements: [CreditMovement]
+
+    let request: CurrentAccountCreditMovementRequest
+
+    @State private var selectedCreditID: UUID?
+    @State private var kind: CreditMovementKind = .payment
+    @State private var note = ""
+    @State private var amount = 0.0
+    @State private var date = Date()
+    @State private var markAsPaid = false
+    @State private var selectedExpenseCategory: ExpenseCategory = .needs
+    @State private var selectedExpenseName = ""
+    @State private var validationMessage: String?
+
+    private var activeCreditAccounts: [CreditAccount] {
+        creditAccounts
+            .filter { $0.creditStatus == .active }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var selectedCredit: CreditAccount? {
+        guard let selectedCreditID else { return activeCreditAccounts.first }
+        return activeCreditAccounts.first { $0.id == selectedCreditID }
+    }
+    private var primarySpendAccountID: UUID? {
+        spendAccounts.first(where: \.isPrimary)?.id ?? spendAccounts.first?.id
+    }
+
+    private var movementKinds: [CreditMovementKind] { [.debtIncrease, .payment] }
+    private var auditBalance: Double {
+        AuditSnapshot.totalBalance(
+            spendAccounts: spendAccounts,
+            accountMovements: accountMovements,
+            savingAccounts: savingAccounts,
+            savingMovements: savingMovements,
+            creditAccounts: creditAccounts,
+            creditMovements: creditMovements
+        )
+    }
+
+    private var debtAmortizationExpenseName: String {
+        ExpenseCategory.savingsAndDebt.names.first { name in
+            let normalizedName = normalized(name)
+            return normalizedName.contains("amort") || normalizedName.contains("divida") || normalizedName.contains("debt")
+        } ?? "Amortização de dívida"
+    }
+
+    private var currentAccountDebtIncreaseOptions: [CreditAccountExpenseTypeOption] {
+        CreditAccountExpenseTypeOption.creditUsageOptions
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let validationMessage {
+                    ValidationBanner(message: validationMessage)
+                        .listRowBackground(AppPalette.appBackground)
+                }
+
+                Section {
+                    creditSelectionArea
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section {
+                    movementTypeArea
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section {
+                    if kind == .payment {
+                        currentAccountImpactInfo
+                    } else {
+                        debtIncreaseExpenseTypeArea
+                    }
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section {
+                    DatePicker(CreditStrings.text(.movementDate), selection: $date, displayedComponents: .date)
+                        .tint(AppPalette.primary)
+
+                    TextField(CreditStrings.text(.movementNote), text: $note)
+                        .foregroundStyle(AppPalette.background)
+                        .tint(AppPalette.primary)
+
+                    MoneyAmountPicker(title: AppStrings.text(.value), amount: $amount, maximumAmount: 1_000_000, onConfirm: save)
+                }
+                .listRowBackground(AppPalette.surface)
+            }
+            .scrollContentBackground(.hidden)
+            .background(AppPalette.appBackground)
+            .navigationTitle(CreditStrings.text(.credit))
+            .toolbarBackground(AppPalette.appBackground, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(AppStrings.text(.cancel)) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(AppStrings.text(.save), action: save)
+                }
+            }
+            .onAppear {
+                date = defaultMovementDate()
+                selectedCreditID = selectedCredit?.id
+                prepareExpenseTypeSelection()
+            }
+            .onChange(of: kind) { _, newKind in
+                if newKind == .debtIncrease {
+                    prepareExpenseTypeSelection()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var creditSelectionArea: some View {
+        if activeCreditAccounts.isEmpty {
+            Text(CreditStrings.text(.emptyTitle))
+                .font(.subheadline)
+                .foregroundStyle(AppPalette.mutedText)
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(CreditStrings.text(.selectCredit))
+                    .font(.headline)
+                    .foregroundStyle(AppPalette.background)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(activeCreditAccounts) { credit in
+                            creditCard(credit)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private var movementTypeArea: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(CreditStrings.text(.movementType))
+                .font(.headline)
+                .foregroundStyle(AppPalette.background)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(movementKinds) { movementKind in
+                        movementKindCard(movementKind)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private var currentAccountImpactInfo: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Afeta a Conta Corrente", systemImage: "checkmark.circle.fill")
+                .font(.headline)
+                .foregroundStyle(AppPalette.background)
+
+            Text("Será criada uma despesa de Amortização de dívida ligada ao crédito selecionado. A dívida só baixa quando essa despesa for marcada como paga.")
+                .font(.footnote)
+                .foregroundStyle(AppPalette.mutedText)
+
+            Toggle(isOn: $markAsPaid) {
+                Text(markAsPaid ? AppStrings.text(.paidExpense) : AppStrings.text(.unpaidExpense))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppPalette.background)
+            }
+            .toggleStyle(.switch)
+            .tint(AppPalette.primary)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var debtIncreaseExpenseTypeArea: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Como utilizou este crédito?", systemImage: "tag.fill")
+                .font(.headline)
+                .foregroundStyle(AppPalette.background)
+
+            Text("Este aumento de dívida fica apenas registado no crédito selecionado.")
+                .font(.footnote)
+                .foregroundStyle(AppPalette.mutedText)
+
+            accountExpenseTypePicker(options: currentAccountDebtIncreaseOptions)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func creditCard(_ credit: CreditAccount) -> some View {
+        let isSelected = selectedCredit?.id == credit.id
+
+        return Button {
+            selectedCreditID = credit.id
+        } label: {
+            VStack(spacing: 10) {
+                Image(systemName: credit.creditType.iconName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isSelected ? AppPalette.primary : AppPalette.background)
+                    .frame(width: 44, height: 44)
+                    .background(AppPalette.primary.opacity(isSelected ? 0.18 : 0.08), in: Circle())
+
+                Text(credit.displayName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isSelected ? AppPalette.primary : AppPalette.background)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(width: 140, height: 124)
+            .background(isSelected ? AppPalette.primary.opacity(0.10) : AppPalette.appBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(isSelected ? AppPalette.primary.opacity(0.55) : AppPalette.mutedText.opacity(0.16), lineWidth: 1.2)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func movementKindCard(_ movementKind: CreditMovementKind) -> some View {
+        let isSelected = kind == movementKind
+        let title = movementKind == .debtIncrease ? "Aumentar\ndívida" : movementKind.title
+
+        return Button {
+            kind = movementKind
+        } label: {
+            VStack(spacing: 10) {
+                Image(systemName: movementKind.iconName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isSelected ? movementKind.tint : AppPalette.background)
+                    .frame(width: 44, height: 44)
+                    .background(movementKind.tint.opacity(isSelected ? 0.18 : 0.08), in: Circle())
+
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isSelected ? movementKind.tint : AppPalette.background)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(width: 132, height: 118)
+            .background(isSelected ? movementKind.tint.opacity(0.10) : AppPalette.appBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(isSelected ? movementKind.tint.opacity(0.55) : AppPalette.mutedText.opacity(0.16), lineWidth: 1.2)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func accountExpenseTypePicker(options: [CreditAccountExpenseTypeOption]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(options) { option in
+                    accountExpenseTypeCard(option)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func accountExpenseTypeCard(_ option: CreditAccountExpenseTypeOption) -> some View {
+        let isSelected = selectedExpenseCategory == option.category && selectedExpenseName == option.name
+
+        return Button {
+            selectedExpenseCategory = option.category
+            selectedExpenseName = option.name
+        } label: {
+            VStack(spacing: 10) {
+                Image(systemName: ExpenseTypeIcon.name(for: option.name))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isSelected ? option.category.color : AppPalette.background)
+                    .frame(width: 44, height: 44)
+                    .background(option.category.color.opacity(isSelected ? 0.18 : 0.08), in: Circle())
+
+                Text(option.name)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isSelected ? option.category.color : AppPalette.background)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(width: 132, height: 122)
+            .background(isSelected ? option.category.color.opacity(0.10) : AppPalette.appBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(isSelected ? option.category.color.opacity(0.55) : AppPalette.mutedText.opacity(0.16), lineWidth: 1.2)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func defaultMovementDate(now: Date = Date()) -> Date {
+        let calendar = Calendar.current
+        let day = min(calendar.component(.day, from: now), request.month.daysInMonth)
+        let baseDate = request.month.date(day: day)
+        let timeComponents = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: now)
+        return calendar.date(bySettingHour: timeComponents.hour ?? 0, minute: timeComponents.minute ?? 0, second: timeComponents.second ?? 0, of: baseDate) ?? baseDate
+    }
+
+    private func save() {
+        validationMessage = nil
+
+        guard let credit = selectedCredit else {
+            validationMessage = CreditStrings.text(.selectCredit)
+            return
+        }
+
+        guard amount > 0 else {
+            validationMessage = CreditStrings.text(.fillMovementValue)
+            return
+        }
+
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch kind {
+        case .payment:
+            savePayment(for: credit, note: trimmedNote)
+        case .debtIncrease:
+            saveDebtIncrease(for: credit, note: trimmedNote)
+        case .fee, .adjustment:
+            break
+        }
+
+        dismiss()
+    }
+
+    private func savePayment(for credit: CreditAccount, note: String) {
+        let transaction = MoneyTransaction(
+            title: note.isEmpty ? AppStrings.text(.newCreditPaymentExpense) : note,
+            day: Calendar.current.component(.day, from: date),
+            monthStart: date.monthStart,
+            amount: amount,
+            kind: TransactionKind.expense.rawValue,
+            expenseCategory: ExpenseCategory.savingsAndDebt.rawValue,
+            expenseName: debtAmortizationExpenseName,
+            linkedCreditID: credit.id,
+            accountID: primarySpendAccountID
+        )
+        modelContext.insert(transaction)
+        insertAuditLog(
+            action: .expenseCreated,
+            title: transaction.displayName,
+            amount: amount,
+            balanceAfter: auditBalance,
+            accountID: transaction.accountID,
+            transactionID: transaction.id,
+            creditID: credit.id,
+            note: transaction.title
+        )
+
+        guard markAsPaid else { return }
+
+        modelContext.insert(ExpensePayment(transactionID: transaction.id, monthStart: date.monthStart, amountPaid: amount))
+        let historyEntry = PaymentHistoryEntry(transactionID: transaction.id, monthStart: date.monthStart, amount: amount, accountID: transaction.accountID)
+        modelContext.insert(historyEntry)
+        if let accountID = transaction.accountID {
+            modelContext.insert(AccountMovement(
+                accountID: accountID,
+                transactionID: transaction.id,
+                paymentHistoryID: historyEntry.id,
+                date: historyEntry.paidAt,
+                type: AccountMovementKind.expensePayment.rawValue,
+                amount: -amount,
+                note: transaction.title
+            ))
+        }
+
+        let movement = CreditMovement(
+            creditID: credit.id,
+            date: date,
+            type: CreditMovementKind.payment.rawValue,
+            amount: amount,
+            note: transaction.title
+        )
+        modelContext.insert(movement)
+        transaction.linkedCreditMovementID = movement.id
+        insertAuditLog(
+            action: .expensePaymentCreated,
+            title: transaction.displayName,
+            amount: amount,
+            balanceAfter: auditBalance - amount,
+            accountID: transaction.accountID,
+            transactionID: transaction.id,
+            paymentHistoryID: historyEntry.id,
+            creditID: credit.id,
+            note: transaction.title
+        )
+        insertAuditLog(
+            action: .creditMovementCreated,
+            title: CreditMovementKind.payment.title,
+            amount: amount,
+            balanceAfter: auditBalance,
+            transactionID: transaction.id,
+            creditID: credit.id,
+            note: transaction.title
+        )
+    }
+
+    private func saveDebtIncrease(for credit: CreditAccount, note: String) {
+        prepareExpenseTypeSelection()
+        let movementNote = note.isEmpty ? CreditMovementKind.debtIncrease.title : note
+        let movement = CreditMovement(
+            creditID: credit.id,
+            date: date,
+            type: CreditMovementKind.debtIncrease.rawValue,
+            amount: amount,
+            note: movementNote,
+            expenseCategory: selectedExpenseCategory.rawValue,
+            expenseName: selectedExpenseName
+        )
+        modelContext.insert(movement)
+        insertAuditLog(
+            action: .creditMovementCreated,
+            title: CreditMovementKind.debtIncrease.title,
+            amount: amount,
+            balanceAfter: auditBalance - movement.balanceEffect,
+            creditID: credit.id,
+            note: movementNote
+        )
+    }
+
+    private func prepareExpenseTypeSelection() {
+        if selectedExpenseName.isEmpty || normalized(selectedExpenseName).contains("amort") || normalized(selectedExpenseName).contains("divida") || normalized(selectedExpenseName).contains("debt") {
+            guard let firstOption = currentAccountDebtIncreaseOptions.first else { return }
+            selectedExpenseCategory = firstOption.category
+            selectedExpenseName = firstOption.name
+        }
+    }
+
+    private func normalized(_ text: String) -> String {
+        text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+    }
+
+    private func insertAuditLog(
+        action: AuditLogAction,
+        title: String,
+        amount: Double,
+        balanceAfter: Double,
+        accountID: UUID? = nil,
+        transactionID: UUID? = nil,
+        paymentHistoryID: UUID? = nil,
+        creditID: UUID? = nil,
+        note: String? = nil
+    ) {
+        modelContext.insert(AuditLogEntry(
+            action: action.rawValue,
+            title: title,
+            details: note ?? "",
+            amount: amount,
+            balanceAfter: balanceAfter,
+            accountID: accountID,
+            transactionID: transactionID,
+            paymentHistoryID: paymentHistoryID,
+            creditID: creditID
+        ))
     }
 }
