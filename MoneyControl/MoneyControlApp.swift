@@ -16,14 +16,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 }
 #endif
 
+private enum ModelContainerLoadState {
+    case loaded(ModelContainer)
+    case failed(String)
+}
+
 @main
 struct MoneyControlApp: App {
 #if os(iOS)
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 #endif
-
-    // ICLOUD_DISABLED_FOR_LOCAL_RESET_TEST: CloudKit disabled while validating clean local installs.
-    // private static let cloudKitContainerIdentifier = "iCloud.com.skyIsTheLimit.MoneyControl"
 
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @AppStorage("hasCompletedInitialSetup") private var hasCompletedInitialSetup = false
@@ -32,24 +34,13 @@ struct MoneyControlApp: App {
     @State private var isShowingLaunchLoading = true
     @State private var isAppUnlocked = false
 
-    @State private var sharedModelContainer = MoneyControlApp.makeModelContainer()
+    @State private var modelContainerState = MoneyControlApp.makeModelContainerState()
 
-    private static func prepareLocalResetTestStateIfNeeded() {
-        // ICLOUD_DISABLED_FOR_LOCAL_RESET_TEST: prevent restored preferences from re-enabling sync.
-        UserDefaults.standard.set(false, forKey: AppPreferences.iCloudSyncEnabledKey)
-
-        let resetMarkerKey = "didPrepareLocalResetTestState"
-        guard !UserDefaults.standard.bool(forKey: resetMarkerKey) else { return }
-
-        AppLockService.deletePIN()
-        UserDefaults.standard.removeObject(forKey: AppPreferences.appLockEnabledKey)
-        UserDefaults.standard.removeObject(forKey: AppPreferences.appLockBiometricsEnabledKey)
-        UserDefaults.standard.set(true, forKey: resetMarkerKey)
+    private var shouldRequireUnlock: Bool {
+        hasSeenOnboarding && hasCompletedInitialSetup && appLockEnabled && AppLockService.hasPIN && !isAppUnlocked
     }
 
-    private static func makeModelContainer() -> ModelContainer {
-        prepareLocalResetTestStateIfNeeded()
-
+    private static func makeModelContainerState() -> ModelContainerLoadState {
         let schema = Schema([
             MoneyTransaction.self,
             ExpensePayment.self,
@@ -62,14 +53,11 @@ struct MoneyControlApp: App {
             SpendAccount.self,
             AccountMovement.self,
             AuditLogEntry.self,
+            Planning.self,
+            PlanningItemType.self,
+            PlanningItem.self,
+            PlanningMovement.self,
         ])
-        // ICLOUD_DISABLED_FOR_LOCAL_RESET_TEST: force local-only SwiftData storage.
-        /*
-        let isICloudSyncEnabled = UserDefaults.standard.bool(forKey: AppPreferences.iCloudSyncEnabledKey)
-        let cloudKitDatabase: ModelConfiguration.CloudKitDatabase = isICloudSyncEnabled
-            ? .private(cloudKitContainerIdentifier)
-            : .none
-        */
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
@@ -77,70 +65,142 @@ struct MoneyControlApp: App {
         )
 
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            return .loaded(container)
         } catch {
-            // ICLOUD_DISABLED_FOR_LOCAL_RESET_TEST: CloudKit fallback path disabled with local-only storage.
-            /*
-            if isICloudSyncEnabled {
-                UserDefaults.standard.set(false, forKey: AppPreferences.iCloudSyncEnabledKey)
-                let fallbackConfiguration = ModelConfiguration(
-                    schema: schema,
-                    isStoredInMemoryOnly: false,
-                    cloudKitDatabase: .none
-                )
-
-                if let fallbackContainer = try? ModelContainer(for: schema, configurations: [fallbackConfiguration]) {
-                    return fallbackContainer
-                }
-            }
-            */
-
-            fatalError("Could not create local ModelContainer: \(error)")
+            return .failed(String(describing: error))
         }
     }
 
     var body: some Scene {
         WindowGroup {
+            switch modelContainerState {
+            case .loaded(let container):
+                appRoot
+                    .modelContainer(container)
+            case .failed(let errorMessage):
+                ModelContainerErrorView(errorMessage: errorMessage) {
+                    modelContainerState = MoneyControlApp.makeModelContainerState()
+                }
+                .tint(AppPalette.primary)
+                .preferredColorScheme(.light)
+            }
+        }
+    }
+
+    private var appRoot: some View {
+        ZStack {
             Group {
-                if isShowingLaunchLoading {
-                    SpendWiseLoadingView()
-                        .transition(.opacity)
-                } else if hasSeenOnboarding && hasCompletedInitialSetup && appLockEnabled && AppLockService.hasPIN && !isAppUnlocked {
-                    AppLockView(mode: .unlock) {
-                        isAppUnlocked = true
-                    }
-                    .transition(.opacity)
-                } else if hasSeenOnboarding && hasCompletedInitialSetup {
-                    ContentView()
-                        .transition(.opacity)
+                if hasSeenOnboarding && hasCompletedInitialSetup {
+                    authenticatedAppContent
                 } else if hasSeenOnboarding {
                     InitialSetupWizardView {
                         hasCompletedInitialSetup = true
                     }
                     .transition(.opacity)
+                    .onAppear(perform: markLaunchContentReady)
                 } else {
                     OnboardingView {
                         hasCompletedInitialSetup = false
                         hasSeenOnboarding = true
                     }
                     .transition(.opacity)
+                    .onAppear(perform: markLaunchContentReady)
                 }
             }
-            .animation(.easeInOut(duration: 0.25), value: isShowingLaunchLoading)
-            .animation(.easeInOut(duration: 0.2), value: isAppUnlocked)
-            .task {
-                try? await Task.sleep(for: .milliseconds(650))
-                isShowingLaunchLoading = false
+
+            if isShowingLaunchLoading && !shouldRequireUnlock {
+                SpendWiseLoadingView()
+                    .transition(.opacity)
+                    .zIndex(2)
             }
-            .onChange(of: scenePhase) { _, newPhase in
-                if newPhase != .active, hasCompletedInitialSetup, appLockEnabled {
-                    isAppUnlocked = false
-                }
-            }
-            .tint(AppPalette.primary)
-            .preferredColorScheme(.light)
         }
-        .modelContainer(sharedModelContainer)
+        .animation(.easeInOut(duration: 0.25), value: isShowingLaunchLoading)
+        .animation(.easeInOut(duration: 0.2), value: isAppUnlocked)
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase != .active, hasCompletedInitialSetup, appLockEnabled {
+                isAppUnlocked = false
+            }
+        }
+        .tint(AppPalette.primary)
+        .preferredColorScheme(.light)
+    }
+
+    private var authenticatedAppContent: some View {
+        ZStack {
+            if shouldRequireUnlock {
+                AppLockView(mode: .unlock) {
+                    isShowingLaunchLoading = true
+                    isAppUnlocked = true
+                }
+                .transition(.opacity)
+                .onAppear(perform: markLaunchContentReady)
+                .zIndex(1)
+            } else {
+                ContentView()
+                    .onAppear(perform: markLaunchContentReady)
+            }
+        }
+    }
+
+    private func markLaunchContentReady() {
+        guard isShowingLaunchLoading else { return }
+        Task { @MainActor in
+            await Task.yield()
+            isShowingLaunchLoading = false
+        }
+    }
+}
+
+private struct ModelContainerErrorView: View {
+    let errorMessage: String
+    let retry: () -> Void
+
+    var body: some View {
+        ZStack {
+            AppPalette.appBackground
+                .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                Image(systemName: "externaldrive.badge.exclamationmark")
+                    .font(.system(size: 46, weight: .semibold))
+                    .foregroundStyle(AppPalette.primary)
+                    .frame(width: 86, height: 86)
+                    .background(AppPalette.paleOrange, in: Circle())
+
+                VStack(spacing: 8) {
+                    Text(AppStrings.text(.dataStoreErrorTitle))
+                        .font(.title2.bold())
+                        .foregroundStyle(AppPalette.background)
+                        .multilineTextAlignment(.center)
+
+                    Text(AppStrings.text(.dataStoreErrorMessage))
+                        .font(.body)
+                        .foregroundStyle(AppPalette.secondaryText)
+                        .multilineTextAlignment(.center)
+                }
+
+                ScrollView {
+                    Text(errorMessage)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(AppPalette.secondaryText)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                }
+                .frame(maxHeight: 160)
+                .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                Button(action: retry) {
+                    Label(AppStrings.text(.tryAgain), systemImage: "arrow.clockwise")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+            .padding(24)
+        }
     }
 }
 

@@ -5,6 +5,19 @@
 
 import SwiftUI
 
+struct SaveResultNotice: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+
+    static func saved(_ message: String) -> SaveResultNotice {
+        SaveResultNotice(
+            title: AppStrings.text(.savedTitle),
+            message: message
+        )
+    }
+}
+
 struct SpendWiseIcon: View {
     let systemName: String
     let color: Color
@@ -116,6 +129,7 @@ struct MonthPage: View {
     let paymentHistory: [PaymentHistoryEntry]
     let exclusions: [RecurrenceExclusion]
     var paymentFilter: CurrentAccountPaymentFilter = .all
+    var incomeFilter: CurrentAccountIncomeFilter = .all
     var hasActiveFilters = false
     let creditAccounts: [CreditAccount]
     let savingAccounts: [SavingAccount]
@@ -124,6 +138,7 @@ struct MonthPage: View {
     let onDelete: (MoneyTransaction, Int?) -> Void
 
     @State private var expandedTransactionID: String?
+    @State private var isFlexibleSectionCollapsed = false
 
     private struct MonthTransactionOccurrence: Identifiable {
         let transaction: MoneyTransaction
@@ -134,8 +149,46 @@ struct MonthPage: View {
         }
     }
 
+    private struct MonthTransactionSections {
+        let ordered: [MonthTransactionOccurrence]
+        let today: [MonthTransactionOccurrence]
+        let overdue: [MonthTransactionOccurrence]
+        let flexible: [MonthTransactionOccurrence]
+        let remaining: [MonthTransactionOccurrence]
+    }
+
+    private struct PaymentLookupKey: Hashable {
+        let transactionID: UUID
+        let occurrenceDay: Int?
+    }
+
+    private struct MonthTransactionRenderData {
+        let sections: MonthTransactionSections
+        let paymentsByKey: [PaymentLookupKey: [ExpensePayment]]
+        let paymentHistoryIDs: Set<UUID>
+    }
+
     private var calculationService: MoneyCalculationService {
         MoneyCalculationService(transactions: transactions, payments: payments, exclusions: exclusions)
+    }
+
+    private var monthPaymentsByKey: [PaymentLookupKey: [ExpensePayment]] {
+        payments.reduce(into: [PaymentLookupKey: [ExpensePayment]]()) { result, payment in
+            guard Calendar.current.isDate(payment.monthStart, equalTo: month, toGranularity: .month) else { return }
+            let transactionKey = PaymentLookupKey(transactionID: payment.transactionID, occurrenceDay: nil)
+            result[transactionKey, default: []].append(payment)
+
+            if let occurrenceDay = payment.occurrenceDay {
+                let occurrenceKey = PaymentLookupKey(transactionID: payment.transactionID, occurrenceDay: occurrenceDay)
+                result[occurrenceKey, default: []].append(payment)
+            }
+        }
+    }
+
+    private var monthPaymentHistoryIDs: Set<UUID> {
+        Set(paymentHistory.compactMap { entry in
+            Calendar.current.isDate(entry.monthStart, equalTo: month, toGranularity: .month) ? entry.transactionID : nil
+        })
     }
 
     private var emptyStateTitle: String {
@@ -147,8 +200,11 @@ struct MonthPage: View {
     }
 
     var body: some View {
+        let renderData = transactionRenderData
+        let sections = renderData.sections
+
         VStack(alignment: .leading, spacing: 0) {
-            if orderedOccurrences.isEmpty {
+            if sections.ordered.isEmpty {
                 ContentUnavailableView(
                     emptyStateTitle,
                     systemImage: "calendar",
@@ -158,23 +214,37 @@ struct MonthPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    if !overdueTransactions.isEmpty {
-                        overdueSection
+                    if sections.today.isEmpty, !sections.flexible.isEmpty {
+                        flexibleSection(occurrences: sections.flexible, renderData: renderData)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                             .listRowBackground(AppPalette.appBackground)
                     }
 
-                    if !todayTransactions.isEmpty {
-                        todaySection
+                    if !sections.overdue.isEmpty {
+                        overdueSection(occurrences: sections.overdue, renderData: renderData)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                             .listRowBackground(AppPalette.appBackground)
                     }
 
-                    if !remainingTransactions.isEmpty {
-                        ForEach(remainingTransactions) { occurrence in
-                            transactionCard(for: occurrence, includesHorizontalPadding: false)
+                    if !sections.today.isEmpty {
+                        todaySection(occurrences: sections.today, renderData: renderData)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowBackground(AppPalette.appBackground)
+
+                        if !sections.flexible.isEmpty {
+                            flexibleSection(occurrences: sections.flexible, renderData: renderData)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowBackground(AppPalette.appBackground)
+                        }
+                    }
+
+                    if !sections.remaining.isEmpty {
+                        ForEach(sections.remaining) { occurrence in
+                            transactionCard(for: occurrence, includesHorizontalPadding: false, renderData: renderData)
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                                 .listRowBackground(AppPalette.appBackground)
@@ -190,50 +260,89 @@ struct MonthPage: View {
         .background(AppPalette.appBackground)
     }
 
-    private var todayTransactions: [MonthTransactionOccurrence] {
+    private var transactionRenderData: MonthTransactionRenderData {
+        let paymentsByKey = monthPaymentsByKey
+        let paymentHistoryIDs = monthPaymentHistoryIDs
+        let sections = transactionSections(paymentsByKey: paymentsByKey)
+
+        return MonthTransactionRenderData(
+            sections: sections,
+            paymentsByKey: paymentsByKey,
+            paymentHistoryIDs: paymentHistoryIDs
+        )
+    }
+
+    private func transactionSections(paymentsByKey: [PaymentLookupKey: [ExpensePayment]]) -> MonthTransactionSections {
+        let ordered = orderedOccurrences(paymentsByKey: paymentsByKey)
+        let today = todayTransactions(from: ordered)
+        let overdue = overdueTransactions(from: ordered, paymentsByKey: paymentsByKey)
+        let flexible = flexibleTransactions(from: ordered, paymentsByKey: paymentsByKey)
+        let todayIDs = Set(today.map(\.id))
+        let overdueIDs = Set(overdue.map(\.id))
+        let flexibleIDs = Set(flexible.map(\.id))
+        let remaining = ordered.filter {
+            !todayIDs.contains($0.id) && !overdueIDs.contains($0.id) && !flexibleIDs.contains($0.id)
+        }
+
+        return MonthTransactionSections(
+            ordered: ordered,
+            today: today,
+            overdue: overdue,
+            flexible: flexible,
+            remaining: remaining
+        )
+    }
+
+    private func todayTransactions(from ordered: [MonthTransactionOccurrence]) -> [MonthTransactionOccurrence] {
         let calendar = Calendar.current
         guard calendar.isDate(month, equalTo: Date(), toGranularity: .month) else { return [] }
 
         let todayDay = calendar.component(.day, from: Date())
-        return orderedOccurrences.filter {
+        return ordered.filter {
             $0.day == todayDay && !$0.transaction.isWholeMonthExpense
         }
     }
 
-    private var overdueTransactions: [MonthTransactionOccurrence] {
+    private func overdueTransactions(
+        from ordered: [MonthTransactionOccurrence],
+        paymentsByKey: [PaymentLookupKey: [ExpensePayment]]
+    ) -> [MonthTransactionOccurrence] {
         let calendar = Calendar.current
         guard calendar.isDate(month, equalTo: Date(), toGranularity: .month) else { return [] }
 
         let todayDay = calendar.component(.day, from: Date())
-        return orderedOccurrences.filter { occurrence in
+        return ordered.filter { occurrence in
             guard occurrence.day < todayDay else { return false }
             guard occurrence.transaction.kind == TransactionKind.expense.rawValue else { return false }
             guard !occurrence.transaction.isWholeMonthExpense else { return false }
 
             let occurrenceDay = paymentOccurrenceDay(for: occurrence)
             let scheduledAmount = occurrence.transaction.scheduledAmount(in: month, occurrenceDay: occurrenceDay)
-            return amountPaid(for: occurrence) < scheduledAmount
+            return amountPaid(for: occurrence, paymentsByKey: paymentsByKey) < scheduledAmount
         }
     }
 
-    private var remainingTransactions: [MonthTransactionOccurrence] {
-        let todayIDs = Set(todayTransactions.map(\.id))
-        let overdueIDs = Set(overdueTransactions.map(\.id))
-        return orderedOccurrences.filter {
-            !todayIDs.contains($0.id) && !overdueIDs.contains($0.id)
+    private func flexibleTransactions(
+        from ordered: [MonthTransactionOccurrence],
+        paymentsByKey: [PaymentLookupKey: [ExpensePayment]]
+    ) -> [MonthTransactionOccurrence] {
+        ordered.filter { occurrence in
+            guard occurrence.transaction.isWholeMonthExpense else { return false }
+            let scheduledAmount = occurrence.transaction.scheduledAmount(in: month, occurrenceDay: paymentOccurrenceDay(for: occurrence))
+            return amountPaid(for: occurrence, paymentsByKey: paymentsByKey) < scheduledAmount
         }
     }
 
-    private var orderedOccurrences: [MonthTransactionOccurrence] {
+    private func orderedOccurrences(paymentsByKey: [PaymentLookupKey: [ExpensePayment]]) -> [MonthTransactionOccurrence] {
         transactions.flatMap { transaction in
             transaction.occurrenceDays(in: month, exclusions: exclusions).map {
                 MonthTransactionOccurrence(transaction: transaction, day: $0)
             }
         }
-        .filter(occurrenceMatchesPaymentFilter)
+        .filter { occurrenceMatchesCurrentFilters($0, paymentsByKey: paymentsByKey) }
         .sorted { first, second in
-            let firstRank = displayRank(for: first)
-            let secondRank = displayRank(for: second)
+            let firstRank = displayRank(for: first, paymentsByKey: paymentsByKey)
+            let secondRank = displayRank(for: second, paymentsByKey: paymentsByKey)
 
             if firstRank != secondRank {
                 return firstRank < secondRank
@@ -251,32 +360,53 @@ struct MonthPage: View {
         }
     }
 
-    private func occurrenceMatchesPaymentFilter(_ occurrence: MonthTransactionOccurrence) -> Bool {
-        guard paymentFilter != .all else { return true }
-        guard occurrence.transaction.kind == TransactionKind.expense.rawValue else { return false }
+    private func occurrenceMatchesCurrentFilters(
+        _ occurrence: MonthTransactionOccurrence,
+        paymentsByKey: [PaymentLookupKey: [ExpensePayment]]
+    ) -> Bool {
+        if occurrence.transaction.kind == TransactionKind.expense.rawValue, paymentFilter != .all {
+            let occurrenceDay = paymentOccurrenceDay(for: occurrence)
+            let scheduledAmount = occurrence.transaction.scheduledAmount(in: month, occurrenceDay: occurrenceDay)
+            let isPaid = amountPaid(for: occurrence, paymentsByKey: paymentsByKey) >= scheduledAmount
 
-        let occurrenceDay = paymentOccurrenceDay(for: occurrence)
-        let scheduledAmount = occurrence.transaction.scheduledAmount(in: month, occurrenceDay: occurrenceDay)
-        let isPaid = amountPaid(for: occurrence) >= scheduledAmount
-
-        switch paymentFilter {
-        case .all:
-            return true
-        case .paid:
-            return isPaid
-        case .unpaid:
-            return !isPaid
+            switch paymentFilter {
+            case .all:
+                break
+            case .paid:
+                if !isPaid { return false }
+            case .unpaid:
+                if isPaid { return false }
+            }
         }
+
+        if occurrence.transaction.kind == TransactionKind.income.rawValue, incomeFilter != .all {
+            let receivedDate = month.monthStart.date(day: occurrence.day)
+            let isReceived = Calendar.current.startOfDay(for: receivedDate) <= Calendar.current.startOfDay(for: Date())
+
+            switch incomeFilter {
+            case .all:
+                break
+            case .received:
+                if !isReceived { return false }
+            case .pending:
+                if isReceived { return false }
+            }
+        }
+
+        return true
     }
 
-    private func displayRank(for occurrence: MonthTransactionOccurrence) -> Int {
+    private func displayRank(
+        for occurrence: MonthTransactionOccurrence,
+        paymentsByKey: [PaymentLookupKey: [ExpensePayment]]
+    ) -> Int {
         let transaction = occurrence.transaction
         if transaction.kind == TransactionKind.income.rawValue {
             return incomeDayHasPassed(occurrence) ? 2 : 0
         }
 
         let occurrenceDay = paymentOccurrenceDay(for: occurrence)
-        return amountPaid(for: occurrence) >= occurrence.transaction.scheduledAmount(in: month, occurrenceDay: occurrenceDay) ? 1 : 0
+        return amountPaid(for: occurrence, paymentsByKey: paymentsByKey) >= occurrence.transaction.scheduledAmount(in: month, occurrenceDay: occurrenceDay) ? 1 : 0
     }
 
     private func incomeDayHasPassed(_ occurrence: MonthTransactionOccurrence) -> Bool {
@@ -294,19 +424,74 @@ struct MonthPage: View {
         return occurrence.day < calendar.component(.day, from: Date())
     }
 
-    private var todaySection: some View {
-        todaySectionCard
+    private func todaySection(occurrences: [MonthTransactionOccurrence], renderData: MonthTransactionRenderData) -> some View {
+        todaySectionCard(occurrences: occurrences, renderData: renderData)
     }
 
-    private var overdueSection: some View {
-        transactionGroupCard(title: AppStrings.text(.overdue), occurrences: overdueTransactions)
+    private func overdueSection(occurrences: [MonthTransactionOccurrence], renderData: MonthTransactionRenderData) -> some View {
+        transactionGroupCard(title: AppStrings.text(.overdue), occurrences: occurrences, renderData: renderData)
     }
 
-    private var todaySectionCard: some View {
-        transactionGroupCard(title: AppStrings.text(.today), occurrences: todayTransactions)
+    private func todaySectionCard(occurrences: [MonthTransactionOccurrence], renderData: MonthTransactionRenderData) -> some View {
+        transactionGroupCard(title: AppStrings.text(.today), occurrences: occurrences, renderData: renderData)
     }
 
-    private func transactionGroupCard(title: String, occurrences: [MonthTransactionOccurrence]) -> some View {
+    private func flexibleSection(occurrences: [MonthTransactionOccurrence], renderData: MonthTransactionRenderData) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) {
+                    isFlexibleSectionCollapsed.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("\(occurrences.count)")
+                        .font(.caption.bold())
+                        .foregroundStyle(AppPalette.surface)
+                        .frame(width: 24, height: 24)
+                        .background(AppPalette.mediumBlue, in: Circle())
+
+                    Text(AppStrings.text(.flexible))
+                        .font(.subheadline.bold())
+                        .foregroundStyle(AppPalette.background)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption.bold())
+                        .foregroundStyle(AppPalette.mutedText)
+                        .rotationEffect(.degrees(isFlexibleSectionCollapsed ? -90 : 0))
+                }
+                .frame(height: 28, alignment: .center)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !isFlexibleSectionCollapsed {
+                VStack(spacing: 8) {
+                    ForEach(occurrences) { occurrence in
+                        transactionCard(for: occurrence, includesHorizontalPadding: false, renderData: renderData)
+                    }
+                }
+                .padding(.vertical, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 7)
+        .padding(.bottom, isFlexibleSectionCollapsed ? 7 : 12)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(AppPalette.separator, lineWidth: 1)
+        }
+        .shadow(color: AppPalette.background.opacity(0.08), radius: 14, y: 8)
+    }
+
+    private func transactionGroupCard(
+        title: String,
+        occurrences: [MonthTransactionOccurrence],
+        renderData: MonthTransactionRenderData
+    ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
                 .font(.subheadline.bold())
@@ -315,7 +500,7 @@ struct MonthPage: View {
 
             VStack(spacing: 8) {
                 ForEach(occurrences) { occurrence in
-                    transactionCard(for: occurrence, includesHorizontalPadding: false)
+                    transactionCard(for: occurrence, includesHorizontalPadding: false, renderData: renderData)
                 }
             }
             .padding(.vertical, 2)
@@ -331,9 +516,13 @@ struct MonthPage: View {
         .shadow(color: AppPalette.background.opacity(0.08), radius: 14, y: 8)
     }
 
-    private func transactionCard(for occurrence: MonthTransactionOccurrence, includesHorizontalPadding: Bool) -> some View {
+    private func transactionCard(
+        for occurrence: MonthTransactionOccurrence,
+        includesHorizontalPadding: Bool,
+        renderData: MonthTransactionRenderData
+    ) -> some View {
         let transaction = occurrence.transaction
-        let paidAmount = amountPaid(for: occurrence)
+        let paidAmount = amountPaid(for: occurrence, paymentsByKey: renderData.paymentsByKey)
         let occurrenceDay = paymentOccurrenceDay(for: occurrence)
 
         return TransactionCard(
@@ -341,7 +530,7 @@ struct MonthPage: View {
             month: month,
             displayDay: occurrence.day,
             amountPaid: paidAmount,
-            hasPaymentHistory: hasPaymentHistory(for: transaction),
+            hasPaymentHistory: hasPaymentHistory(for: transaction, paymentHistoryIDs: renderData.paymentHistoryIDs),
             creditAccounts: creditAccounts,
             savingAccounts: savingAccounts,
             isExpanded: expandedTransactionID == occurrence.id,
@@ -355,24 +544,55 @@ struct MonthPage: View {
         .padding(.horizontal, includesHorizontalPadding ? 16 : 0)
     }
 
-    private func amountPaid(for transaction: MoneyTransaction) -> Double {
-        calculationService.paidAmount(for: transaction, in: month)
+    private func amountPaid(
+        for transaction: MoneyTransaction,
+        paymentsByKey: [PaymentLookupKey: [ExpensePayment]]
+    ) -> Double {
+        if transaction.recurrence == .weekly {
+            return transaction.occurrenceDays(in: month, exclusions: exclusions)
+                .reduce(0) { total, occurrenceDay in
+                    total + recordedAmountPaid(for: transaction, occurrenceDay: occurrenceDay, paymentsByKey: paymentsByKey)
+                }
+        }
+
+        return recordedAmountPaid(for: transaction, occurrenceDay: nil, paymentsByKey: paymentsByKey)
     }
 
-    private func amountPaid(for occurrence: MonthTransactionOccurrence) -> Double {
-        let occurrenceDay = paymentOccurrenceDay(for: occurrence)
-        return calculationService.paidAmount(for: occurrence.transaction, in: month, occurrenceDay: occurrenceDay)
+    private func amountPaid(
+        for occurrence: MonthTransactionOccurrence,
+        paymentsByKey: [PaymentLookupKey: [ExpensePayment]]
+    ) -> Double {
+        recordedAmountPaid(
+            for: occurrence.transaction,
+            occurrenceDay: paymentOccurrenceDay(for: occurrence),
+            paymentsByKey: paymentsByKey
+        )
+    }
+
+    private func recordedAmountPaid(
+        for transaction: MoneyTransaction,
+        occurrenceDay: Int?,
+        paymentsByKey: [PaymentLookupKey: [ExpensePayment]]
+    ) -> Double {
+        let normalizedOccurrenceDay = transaction.recurrence == .weekly ? occurrenceDay : nil
+        let key = PaymentLookupKey(transactionID: transaction.id, occurrenceDay: normalizedOccurrenceDay)
+        let matchingPayments = paymentsByKey[key] ?? []
+
+        guard !matchingPayments.isEmpty else {
+            return calculationService.paidAmount(for: transaction, in: month, occurrenceDay: occurrenceDay)
+        }
+
+        let scheduledAmount = transaction.scheduledAmount(in: month, occurrenceDay: occurrenceDay)
+        return matchingPayments.reduce(0) { $0 + ($1.amountPaid ?? scheduledAmount) }
     }
 
     private func paymentOccurrenceDay(for occurrence: MonthTransactionOccurrence) -> Int? {
         occurrence.transaction.recurrence == .weekly ? occurrence.day : nil
     }
 
-    private func hasPaymentHistory(for transaction: MoneyTransaction) -> Bool {
+    private func hasPaymentHistory(for transaction: MoneyTransaction, paymentHistoryIDs: Set<UUID>) -> Bool {
         guard transaction.kind == TransactionKind.expense.rawValue else { return false }
-        return paymentHistory.contains {
-            $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: month, toGranularity: .month)
-        }
+        return paymentHistoryIDs.contains(transaction.id)
     }
 
 }
@@ -589,7 +809,7 @@ struct TransactionCard: View {
 
     private var displayedDayDescription: String {
         if transaction.isWholeMonthExpense {
-            return "Flexível"
+            return AppStrings.text(.flexible)
         }
 
         if let displayDay {
@@ -623,7 +843,11 @@ struct TransactionCard: View {
 
     private var freeTextTitle: String? {
         let trimmedTitle = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isExpense else { return nil }
+
+        if !isExpense {
+            let trimmedDescription = transaction.incomeDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmedDescription.isEmpty ? nil : trimmedDescription
+        }
 
         let linkedAccountName = linkedCreditName ?? linkedSavingName
         if !trimmedTitle.isEmpty, let linkedAccountName {
@@ -636,10 +860,7 @@ struct TransactionCard: View {
     }
 
     private var compactTitle: String {
-        if isExpense {
-            return freeTextTitle ?? transaction.displayName
-        }
-        return transaction.displayName
+        freeTextTitle ?? transaction.displayName
     }
 
     private var paymentStatusText: String {
@@ -772,6 +993,14 @@ struct TransactionCard: View {
             parts.append(category.title)
         }
 
+        if !isExpense {
+            parts.append(transaction.displayName)
+            let budgetMonth = transaction.budgetMonth(forReceivedMonth: month)
+            if !Calendar.current.isDate(budgetMonth, equalTo: month.monthStart, toGranularity: .month) {
+                parts.append("\(AppStrings.text(.budgetMonth)) \(budgetMonth.monthTitle)")
+            }
+        }
+
         switch transaction.recurrence {
         case .weekly, .monthly, .quarterly, .semiannual, .annual:
             parts.append(transaction.recurrence?.title ?? AppStrings.text(.everyMonth))
@@ -892,7 +1121,7 @@ struct TransactionCard: View {
 
                         paymentProgressSummary
                     } else {
-                        Text(detailTextForDisplayedOccurrence())
+                        Text(detailTextWithoutFreeText)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppPalette.mutedText)
                     }
@@ -989,7 +1218,7 @@ struct TransactionCard: View {
                 HStack(spacing: 0) {
                     Text(displayedDayDescription)
                         .fontWeight(.bold)
-                    if isExpense {
+                    if isExpense || freeTextTitle != nil {
                         Text(" - \(transaction.displayName)")
                     }
                 }
@@ -1167,14 +1396,16 @@ struct SettingsTransactionCard: View {
 
     private var freeTextTitle: String? {
         let trimmedTitle = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return isExpense && !trimmedTitle.isEmpty ? trimmedTitle : nil
+        if isExpense {
+            return trimmedTitle.isEmpty ? nil : trimmedTitle
+        }
+
+        let trimmedDescription = transaction.incomeDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedDescription.isEmpty ? nil : trimmedDescription
     }
 
     private var compactTitle: String {
-        if isExpense {
-            return freeTextTitle ?? transaction.displayName
-        }
-        return transaction.displayName
+        freeTextTitle ?? transaction.displayName
     }
 
     private var detailTextWithoutFreeText: String {
@@ -1186,6 +1417,13 @@ struct SettingsTransactionCard: View {
 
         if let category {
             parts.append(category.title)
+        }
+
+        if !isExpense {
+            parts.append(transaction.displayName)
+            if transaction.recurrence != nil {
+                parts.append("\(AppStrings.text(.useInBudget)) \(transaction.budgetAllocation.title)")
+            }
         }
 
         switch transaction.recurrence {
@@ -1306,7 +1544,7 @@ struct SettingsTransactionCard: View {
                     Text(settingsDayDescription)
                         .fontWeight(transaction.isWholeMonthExpense ? .bold : .regular)
                     Text(" - \(compactRecurrenceTitle)")
-                    if isExpense {
+                    if isExpense || freeTextTitle != nil {
                         Text(" - \(transaction.displayName)")
                     }
                 }
@@ -1335,7 +1573,7 @@ struct SettingsTransactionCard: View {
 
     private var settingsDayDescription: String {
         if transaction.isWholeMonthExpense {
-            return "Flexível"
+            return AppStrings.text(.flexible)
         }
 
         return transaction.dayDescription()
@@ -1442,6 +1680,7 @@ struct PaymentAmountPicker: View {
     let accountMovements: [AccountMovement]
     let transactionAccountID: UUID?
     let onConfirm: (Double, String?, UUID?) -> Void
+    let onCloseBudgetWithConsumedValue: (Double) -> Void
     let onDeleteHistoryEntry: (PaymentHistoryEntry) -> Void
 
     @State private var selectedAmount: Double = 0
@@ -1449,6 +1688,7 @@ struct PaymentAmountPicker: View {
     @State private var paymentNote = ""
     @State private var selectedAccountID: UUID?
     @State private var showsOverpaymentConfirmation = false
+    @State private var showsCloseBudgetConfirmation = false
     @State private var showsFuturePaymentConfirmation = false
     @State private var hasConfirmedFuturePayment = false
     @State private var pendingHistoryDelete: PaymentHistoryEntry?
@@ -1460,6 +1700,19 @@ struct PaymentAmountPicker: View {
 
     private var canAddPayment: Bool {
         remainingAmount > 0
+    }
+
+    private var canCloseBudgetWithConsumedValue: Bool {
+        paidAmountInSheet > 0 && paidAmountInSheet < totalAmount
+    }
+
+    private var closeBudgetConfirmationMessage: String {
+        let isPortuguese = AppStrings.currentLanguage == .portuguese
+        if isPortuguese {
+            return "Este orçamento vai ser editado apenas neste registo. O valor orçamentado era \(totalAmount.currencyText) e vai passar para \(paidAmountInSheet.currencyText), que já está pago. Depois disto, o orçamento fica fechado como pago."
+        }
+
+        return "This budget will be edited only for this entry. The budgeted value was \(totalAmount.currencyText) and will become \(paidAmountInSheet.currencyText), which is already paid. After this, the budget is closed as paid."
     }
 
     private var visibleHistory: [PaymentHistoryEntry] {
@@ -1496,6 +1749,11 @@ struct PaymentAmountPicker: View {
         return String(format: AppStrings.text(.futurePaymentMessage), selectedAmount.currencyText, formattedPaymentDate)
     }
 
+    private var paidProgress: Double {
+        guard totalAmount > 0 else { return 0 }
+        return min(max(paidAmountInSheet / totalAmount, 0), 1)
+    }
+
     private var isShowingDeleteHistoryConfirmation: Binding<Bool> {
         Binding(
             get: { pendingHistoryDelete != nil },
@@ -1510,57 +1768,23 @@ struct PaymentAmountPicker: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 18) {
-                    VStack(spacing: 6) {
-                        Text(title)
-                            .font(.headline)
-                            .foregroundStyle(AppPalette.background)
-                        Text("\(AppStrings.text(.paid)): \(paidAmountInSheet.currencyText) \(AppStrings.text(.ofAmount)) \(totalAmount.currencyText)")
-                            .font(.subheadline)
-                            .foregroundStyle(AppPalette.mutedText)
-                    }
+                VStack(spacing: 14) {
+                    paymentSummaryCard
 
                     if canAddPayment {
-                        accountSelectionStrip
+                        accountSelectionSection
+                        quickPaymentSection
 
-                        Button {
-                            selectedAmount = remainingAmount
-                            confirmPayment()
-                        } label: {
-                            Label(AppStrings.text(.payFullAmount), systemImage: "checkmark.circle.fill")
-                                .font(.headline)
-                                .foregroundStyle(AppPalette.surface)
-                                .frame(maxWidth: .infinity, minHeight: 88)
-                                .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 12))
-                        }
-                        .buttonStyle(.plain)
-
-                        MoneyAmountPicker(
-                            title: AppStrings.text(.amountToPay),
-                            amount: $selectedAmount,
-                            maximumAmount: 1_000_000,
-                            onConfirm: confirmPayment
-                        )
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(AppStrings.text(.paymentNote))
-                                .font(.subheadline.bold())
-                                .foregroundStyle(AppPalette.background)
-
-                            TextField(AppStrings.text(.paymentNotePlaceholder), text: $paymentNote, axis: .vertical)
-                                .textFieldStyle(.plain)
-                                .lineLimit(2...4)
-                                .padding(12)
-                                .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 12))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(AppPalette.separator, lineWidth: 1)
-                                }
+                        paymentCard {
+                            MoneyAmountPicker(
+                                title: AppStrings.text(.amountToPay),
+                                amount: $selectedAmount,
+                                maximumAmount: 1_000_000,
+                                onConfirm: confirmPayment
+                            )
                         }
 
-                        Text("\(AppStrings.text(.total)): \((paidAmountInSheet + selectedAmount).currencyText)")
-                            .font(.headline)
-                            .foregroundStyle(AppPalette.background)
+                        paymentNoteSection
                     } else {
                         VStack(spacing: 6) {
                             Text(AppStrings.text(.totalPaid))
@@ -1574,6 +1798,11 @@ struct PaymentAmountPicker: View {
                         .padding(16)
                         .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
                     }
+
+                    Text("\(AppStrings.text(.total)): \((paidAmountInSheet + selectedAmount).currencyText)")
+                        .font(.headline)
+                        .foregroundStyle(AppPalette.background)
+                        .frame(maxWidth: .infinity)
 
                     paymentHistorySection
                 }
@@ -1603,6 +1832,15 @@ struct PaymentAmountPicker: View {
             } message: {
                 Text(AppStrings.text(.deletePaymentHistoryMessage))
             }
+            .alert("Fechar orçamento?", isPresented: $showsCloseBudgetConfirmation) {
+                Button(AppStrings.text(.cancel), role: .cancel) {}
+                Button(AppStrings.text(.ok)) {
+                    onCloseBudgetWithConsumedValue(paidAmountInSheet)
+                    dismiss()
+                }
+            } message: {
+                Text(closeBudgetConfirmationMessage)
+            }
             .alert(AppStrings.text(.overpaymentTitle), isPresented: $showsOverpaymentConfirmation) {
                 Button(AppStrings.text(.cancel), role: .cancel) {}
                 Button(AppStrings.text(.ok)) {
@@ -1627,6 +1865,120 @@ struct PaymentAmountPicker: View {
             }
             .id(selectedCurrencyCode)
         }
+    }
+
+    private var paymentSummaryCard: some View {
+        HStack(spacing: 14) {
+            Image(systemName: ExpenseTypeIcon.name(for: title))
+                .font(.title.weight(.semibold))
+                .foregroundStyle(AppPalette.primary)
+                .frame(width: 76, height: 76)
+                .background(AppPalette.primary.opacity(0.10), in: Circle())
+
+            VStack(alignment: .leading, spacing: 9) {
+                Text(title)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(AppPalette.background)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+
+                Text("\(AppStrings.text(.paid)): \(paidAmountInSheet.currencyText) \(AppStrings.text(.ofAmount)) \(totalAmount.currencyText)")
+                    .font(.subheadline)
+                    .foregroundStyle(AppPalette.mutedText)
+
+                ProgressView(value: paidProgress)
+                    .tint(AppPalette.background)
+
+                HStack {
+                    Text(paidAmountInSheet.currencyText)
+                    Spacer()
+                    Text(totalAmount.currencyText)
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(AppPalette.mutedText)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: AppPalette.background.opacity(0.05), radius: 10, y: 5)
+    }
+
+    private var accountSelectionSection: some View {
+        paymentCard(title: AppStrings.text(.account)) {
+            accountSelectionStrip
+        }
+    }
+
+    private var quickPaymentSection: some View {
+        paymentCard(title: AppStrings.text(.quickPayment)) {
+            HStack(spacing: 12) {
+                Button {
+                    selectedAmount = remainingAmount
+                    confirmPayment()
+                } label: {
+                    Label(AppStrings.text(.payFullAmount), systemImage: "checkmark.circle.fill")
+                        .font(.headline)
+                        .foregroundStyle(AppPalette.surface)
+                        .frame(maxWidth: .infinity, minHeight: 74)
+                        .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+
+                if canCloseBudgetWithConsumedValue {
+                    Button {
+                        showsCloseBudgetConfirmation = true
+                    } label: {
+                        Label(AppStrings.text(.closeBudgetWithConsumedValue), systemImage: "checkmark.seal.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppPalette.background)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                            .frame(maxWidth: .infinity, minHeight: 74)
+                            .padding(.horizontal, 16)
+                            .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(AppPalette.mediumBlue.opacity(0.35), lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var paymentNoteSection: some View {
+        paymentCard(title: AppStrings.text(.paymentNote)) {
+            TextField(AppStrings.text(.paymentNotePlaceholder), text: $paymentNote, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(2...4)
+                .padding(12)
+                .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(AppPalette.separator, lineWidth: 1)
+                }
+        }
+    }
+
+    private func paymentCard<Content: View>(
+        title: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let title {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(AppPalette.background)
+            }
+
+            content()
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: AppPalette.background.opacity(0.04), radius: 8, y: 4)
     }
 
     private func confirmPayment() {
@@ -1676,24 +2028,25 @@ struct PaymentAmountPicker: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: account.accountIcon.systemName)
-                    .font(.caption.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(isSelected ? AppPalette.surface : account.tint)
+                    .frame(width: 38, height: 38)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.displayName)
-                        .font(.caption.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     Text(balance.currencyText)
-                        .font(.caption2.weight(.medium))
+                        .font(.caption.weight(.medium))
                         .lineLimit(1)
                 }
             }
             .foregroundStyle(isSelected ? AppPalette.surface : AppPalette.background)
+            .frame(width: 174, height: 72, alignment: .leading)
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(isSelected ? AppPalette.background : AppPalette.surface, in: Capsule())
+            .background(isSelected ? AppPalette.background : AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
             .overlay {
-                Capsule()
+                RoundedRectangle(cornerRadius: 14)
                     .stroke(isSelected ? AppPalette.background : AppPalette.separator, lineWidth: 1)
             }
         }
@@ -2036,6 +2389,7 @@ struct SummaryTile: View {
     var helpTitle: String? = nil
     var helpArrowEdge: Edge = .trailing
     var isCompact: Bool = false
+    var isLoading: Bool = false
     var titleLineLimit: Int = 2
     var fixedHeight: CGFloat? = nil
     var onTap: (() -> Void)? = nil
@@ -2067,12 +2421,18 @@ struct SummaryTile: View {
                         .minimumScaleFactor(titleLineLimit == 1 ? 0.62 : 0.82)
                         .allowsTightening(true)
                         .padding(.trailing, titleLineLimit == 1 ? 26 : 34)
-                    Text(value.currencyText)
-                        .font(.system(size: isCompact ? 24 : (hasIconImage ? 28 : 34), weight: .bold))
-                        .foregroundStyle(value < 0 ? AppPalette.primary : AppPalette.background)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .allowsTightening(true)
+                    if isLoading {
+                        ProgressView()
+                            .tint(AppPalette.background)
+                            .frame(height: isCompact ? 30 : 38, alignment: .leading)
+                    } else {
+                        Text(value.currencyText)
+                            .font(.system(size: isCompact ? 24 : (hasIconImage ? 28 : 34), weight: .bold))
+                            .foregroundStyle(value < 0 ? AppPalette.primary : AppPalette.background)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                            .allowsTightening(true)
+                    }
                     if !footnote.isEmpty {
                         Text(footnote)
                             .font(.caption.weight(.semibold))

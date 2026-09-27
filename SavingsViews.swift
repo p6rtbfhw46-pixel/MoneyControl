@@ -265,6 +265,7 @@ private struct SavingEditor: View {
     @State private var validationMessage: String?
     @State private var showsDeleteConfirmation = false
     @State private var isTargetExpanded = false
+    @State private var saveNotice: SaveResultNotice?
 
     private var isEditing: Bool { request.saving != nil }
     private var auditBalance: Double {
@@ -362,6 +363,15 @@ private struct SavingEditor: View {
                 Button(AppStrings.text(.delete), role: .destructive, action: deleteSaving)
             } message: {
                 Text(SavingsStrings.text(.deleteSavingMessage))
+            }
+            .alert(item: $saveNotice) { notice in
+                Alert(
+                    title: Text(notice.title),
+                    message: Text(notice.message),
+                    dismissButton: .default(Text(AppStrings.text(.ok))) {
+                        dismiss()
+                    }
+                )
             }
         }
     }
@@ -519,7 +529,10 @@ private struct SavingEditor: View {
             note: trimmedDetails.isEmpty ? nil : trimmedDetails
         )
 
-        dismiss()
+        saveNotice = .saved(String(
+            format: AppStrings.text(isNewSaving ? .savingCreatedMessage : .savingUpdatedMessage),
+            saving.displayName
+        ))
     }
 
     private func updatePurposeSelection(for value: String) {
@@ -937,6 +950,7 @@ private struct SavingMovementEditor: View {
     @State private var date = Date()
     @State private var transferToIncome = false
     @State private var validationMessage: String?
+    @State private var saveNotice: SaveResultNotice?
 
     private var isEditing: Bool { request.movement != nil }
 
@@ -1018,6 +1032,15 @@ private struct SavingMovementEditor: View {
                 }
             }
             .onAppear(perform: loadInitialValues)
+            .alert(item: $saveNotice) { notice in
+                Alert(
+                    title: Text(notice.title),
+                    message: Text(notice.message),
+                    dismissButton: .default(Text(AppStrings.text(.ok))) {
+                        dismiss()
+                    }
+                )
+            }
         }
     }
 
@@ -1072,7 +1095,7 @@ private struct SavingMovementEditor: View {
             transactionID: movement.linkedIncomeTransactionID,
             note: trimmedNote.isEmpty ? request.saving.displayName : trimmedNote
         )
-        dismiss()
+        saveNotice = .saved(String(format: AppStrings.text(.savingMovementSavedMessage), kind.title))
     }
 
     private func auditNetEffect(for movement: SavingMovement?) -> Double {

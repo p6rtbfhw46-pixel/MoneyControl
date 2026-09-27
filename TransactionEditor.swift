@@ -87,6 +87,7 @@ struct TransactionEditor: View {
     @State private var showsSingleMonthRecurringEditInfo = false
     @State private var hasConfirmedSingleMonthRecurringEditInfo = false
     @State private var showsValueBelowPaidConfirmation = false
+    @State private var showsCloseBudgetConfirmation = false
     @State private var hasConfirmedValueBelowPaid = false
     @State private var showsValueAbovePaidConfirmation = false
     @State private var hasConfirmedValueAbovePaid = false
@@ -101,6 +102,8 @@ struct TransactionEditor: View {
     @State private var customBudgetYear = Calendar.current.component(.year, from: Date())
     @State private var showsRecurrenceSettings = false
     @State private var showsInlineDayPicker = false
+    @State private var isClassificationSectionExpanded = true
+    @State private var saveNotice: SaveResultNotice?
 
     private var mode: TransactionEditorMode { request.mode }
     private var editedTransaction: MoneyTransaction? { request.transaction }
@@ -210,11 +213,39 @@ struct TransactionEditor: View {
         guard mode.needsExpenseClassification, let editedTransaction else { return false }
         return paidAmountForEditedMonth >= editedTransaction.amount
     }
+    private var canCloseBudgetWithConsumedValue: Bool {
+        guard mode.needsExpenseClassification,
+              editedTransaction != nil,
+              paidAmountForEditedMonth > 0,
+              paidAmountForEditedMonth < amountValue
+        else { return false }
+
+        return request.editScope == .normal || request.editScope == .singleMonth
+    }
+    private var closeBudgetConfirmationMessage: String {
+        let isPortuguese = AppStrings.currentLanguage == .portuguese
+        if isPortuguese {
+            return "Este orçamento vai ser editado apenas neste registo. O valor orçamentado era \(amountValue.currencyText) e vai passar para \(paidAmountForEditedMonth.currencyText), que já está pago. Depois disto, o orçamento fica fechado como pago."
+        }
+
+        return "This budget will be edited only for this entry. The budgeted value was \(amountValue.currencyText) and will become \(paidAmountForEditedMonth.currencyText), which is already paid. After this, the budget is closed as paid."
+    }
     private var canMoveEditedExpenseDate: Bool {
         mode.needsExpenseClassification && editedTransaction != nil && (mode == .expense || request.editScope == .singleMonth)
     }
     private var isIncomeMode: Bool {
         mode == .income || mode == .salary
+    }
+    private var isPresetSavingExpenseRequest: Bool {
+        guard mode.needsExpenseClassification,
+              request.initialExpenseCategory == .savingsAndDebt,
+              let initialExpenseName = request.initialExpenseName
+        else { return false }
+
+        let normalizedName = initialExpenseName
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        return normalizedName.contains("poup") || normalizedName.contains("saving")
     }
     private var canUseIncomeReceivedDatePicker: Bool {
         mode == .income
@@ -312,7 +343,6 @@ struct TransactionEditor: View {
             }
         )
     }
-
     private var incomeTypePicker: some View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -792,52 +822,143 @@ struct TransactionEditor: View {
 
     @ViewBuilder
     private var editorFormContent: some View {
-        classificationSection
-        recurrenceSections
-        detailsSection
+        if isPresetSavingExpenseRequest {
+            presetSavingExpenseInfoSection
+            classificationSection
+            recurrenceSections
+            detailsSection
+        } else {
+            closeBudgetSection
+            detailsSection
+            classificationSection
+            recurrenceSections
+        }
+    }
+
+    @ViewBuilder
+    private var presetSavingExpenseInfoSection: some View {
+        Section {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "info.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppPalette.savings)
+                    .padding(.top, 2)
+
+                Text(AppStrings.text(.newSavingExpenseInfo))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AppPalette.background)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppPalette.savings.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(AppPalette.savings.opacity(0.22), lineWidth: 1)
+            }
+        }
+        .listRowBackground(Color.clear)
+    }
+
+    @ViewBuilder
+    private var closeBudgetSection: some View {
+        if canCloseBudgetWithConsumedValue {
+            Section {
+                Button {
+                    showsCloseBudgetConfirmation = true
+                } label: {
+                    Label(AppStrings.text(.closeBudgetWithConsumedValue), systemImage: "checkmark.seal.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppPalette.background)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(AppPalette.mediumBlue.opacity(0.35), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+            } footer: {
+                Text("\(paidAmountForEditedMonth.currencyText) já pagos de \(amountValue.currencyText).")
+            }
+            .listRowBackground(Color.clear)
+        }
     }
 
     @ViewBuilder
     private var classificationSection: some View {
         if mode.needsExpenseClassification {
-            Section(AppStrings.text(.classification)) {
-                HStack(spacing: 10) {
-                    Text(AppStrings.text(.category503020))
-                        .font(.subheadline.bold())
-                        .foregroundStyle(AppPalette.background)
-
-                    HelpIconButton(
-                        title: AppStrings.text(.rule503020Title),
-                        message: AppStrings.text(.rule503020Help),
-                        arrowEdge: .bottom
-                    )
-
-                    Spacer()
-                }
-
-                ExpenseCategorySegmentedPicker(selection: expenseCategoryBinding)
-
-                if let expenseCategory {
-                    ExpenseTypeHorizontalPicker(
-                        title: AppStrings.text(.expenseType),
-                        names: expenseCategory.names,
-                        tint: expenseCategory.color,
-                        selection: $expenseName
-                    )
-                } else {
-                    ExpenseTypeHorizontalPicker(
-                        title: AppStrings.text(.expenseType),
-                        names: ExpenseCategory.needs.names,
-                        tint: ExpenseCategory.needs.color,
-                        selection: $expenseName
-                    )
-                    .onAppear {
-                        expenseCategory = .needs
+            Section {
+                Button {
+                    withAnimation(.snappy) {
+                        isClassificationSectionExpanded.toggle()
                     }
-                }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(AppStrings.text(.classification))
+                            .font(.subheadline.bold())
+                            .foregroundStyle(AppPalette.background)
 
-                linkedCreditPicker
-                linkedSavingPicker
+                        Spacer()
+
+                        if !expenseName.isEmpty, !isClassificationSectionExpanded {
+                            Text(expenseName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(expenseCategory?.color ?? AppPalette.background)
+                                .lineLimit(1)
+                        }
+
+                        Image(systemName: "chevron.down")
+                            .font(.caption.bold())
+                            .foregroundStyle(AppPalette.mutedText)
+                            .rotationEffect(.degrees(isClassificationSectionExpanded ? 180 : 0))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if isClassificationSectionExpanded {
+                    HStack(spacing: 10) {
+                        Text(AppStrings.text(.category503020))
+                            .font(.subheadline.bold())
+                            .foregroundStyle(AppPalette.background)
+
+                        HelpIconButton(
+                            title: AppStrings.text(.rule503020Title),
+                            message: AppStrings.text(.rule503020Help),
+                            arrowEdge: .bottom
+                        )
+
+                        Spacer()
+                    }
+
+                    ExpenseCategorySegmentedPicker(selection: expenseCategoryBinding)
+
+                    if let expenseCategory {
+                        ExpenseTypeHorizontalPicker(
+                            title: AppStrings.text(.expenseType),
+                            names: expenseCategory.names,
+                            tint: expenseCategory.color,
+                            selection: $expenseName
+                        )
+                    } else {
+                        ExpenseTypeHorizontalPicker(
+                            title: AppStrings.text(.expenseType),
+                            names: ExpenseCategory.needs.names,
+                            tint: ExpenseCategory.needs.color,
+                            selection: $expenseName
+                        )
+                        .onAppear {
+                            expenseCategory = .needs
+                        }
+                    }
+
+                    linkedCreditPicker
+                    linkedSavingPicker
+                }
             }
             .listRowBackground(AppPalette.surface)
         }
@@ -886,14 +1007,55 @@ struct TransactionEditor: View {
     @ViewBuilder
     private var linkedSpendAccountPicker: some View {
         if shouldShowAccountPicker {
-            Picker(AppStrings.text(.account), selection: normalizedSelectedAccountID) {
-                ForEach(orderedSpendAccounts) { account in
-                    Label(account.displayName, systemImage: account.iconName)
-                        .tag(account.id as UUID?)
+            VStack(alignment: .leading, spacing: 10) {
+                sectionLabel(AppStrings.text(.account), systemImage: "wallet.pass.fill")
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(orderedSpendAccounts) { account in
+                            spendAccountCard(account)
+                        }
+                    }
+                    .padding(.horizontal, 2)
                 }
             }
-            .tint(AppPalette.background)
         }
+    }
+
+    private func spendAccountCard(_ account: SpendAccount) -> some View {
+        let isSelected = resolvedSpendAccountID == account.id
+        let balance = account.balance(with: accountMovements)
+
+        return Button {
+            selectedAccountID = account.id
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: account.accountIcon.systemName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isSelected ? AppPalette.surface : account.tint)
+                    .frame(width: 36, height: 36)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(isSelected ? AppPalette.surface : AppPalette.background)
+                        .lineLimit(1)
+                    Text(balance.currencyText)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(isSelected ? AppPalette.surface.opacity(0.88) : AppPalette.mutedText)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 180, height: 72, alignment: .leading)
+            .padding(.horizontal, 12)
+            .background(isSelected ? AppPalette.background : AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(isSelected ? AppPalette.background : AppPalette.separator, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var normalizedSelectedAccountID: Binding<UUID?> {
@@ -952,8 +1114,6 @@ struct TransactionEditor: View {
     private var detailsSection: some View {
         Section {
             detailsFields
-        } header: {
-            detailsHeader
         }
         .listRowBackground(AppPalette.surface)
     }
@@ -963,15 +1123,15 @@ struct TransactionEditor: View {
         if isIncomeMode && !isSingleMonthRecurringEdit {
             incomeTypePicker
         } else {
-            TextField(
-                "",
-                text: $title,
-                prompt: Text(mode.needsExpenseClassification ? AppStrings.text(.freeText) : AppStrings.text(.name))
-                    .foregroundStyle(AppPalette.background.opacity(0.65))
-            )
-            .foregroundStyle(AppPalette.background)
-            .tint(AppPalette.primary)
+            titleField
         }
+
+        MoneyAmountPicker(
+            title: AppStrings.text(.value),
+            amount: $amountValue,
+            maximumAmount: 1_000_000,
+            onConfirm: save
+        )
 
         if mode == .salary {
             recurrenceNavigationRow
@@ -998,6 +1158,8 @@ struct TransactionEditor: View {
                 .tint(AppPalette.primary)
         }
 
+        linkedSpendAccountPicker
+
         if shouldShowBudgetAllocation {
             budgetAllocationCardPicker
         }
@@ -1006,37 +1168,50 @@ struct TransactionEditor: View {
             incomeDescriptionField
         }
 
-        linkedSpendAccountPicker
-
-        MoneyAmountPicker(
-            title: AppStrings.text(.value),
-            amount: $amountValue,
-            maximumAmount: 1_000_000,
-            onConfirm: save
-        )
+        paymentStatusRow
     }
 
-    private var detailsHeader: some View {
-        HStack(spacing: 12) {
-            Text(mode.sectionTitle)
+    private var titleField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(mode.needsExpenseClassification ? AppStrings.text(.freeText) : AppStrings.text(.name))
+                .font(.subheadline.bold())
+                .foregroundStyle(AppPalette.background)
 
-            Spacer()
+            TextField(
+                "",
+                text: $title,
+                prompt: Text(mode.needsExpenseClassification ? AppStrings.text(.freeText) : AppStrings.text(.name))
+                    .foregroundStyle(AppPalette.background.opacity(0.65))
+            )
+            .foregroundStyle(AppPalette.background)
+            .tint(AppPalette.primary)
+            .padding(12)
+            .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(AppPalette.separator, lineWidth: 1)
+            }
+        }
+    }
 
-            if canMarkExpenseAsPaid {
-                HStack(spacing: 8) {
-                    Toggle(isOn: $markExpenseAsPaid) {
-                        Text(markExpenseAsPaid ? AppStrings.text(.paidExpense) : AppStrings.text(.unpaidExpense))
-                            .font(.caption.weight(.semibold))
-                    }
+    @ViewBuilder
+    private var paymentStatusRow: some View {
+        if canMarkExpenseAsPaid {
+            HStack(spacing: 12) {
+                sectionLabel(markExpenseAsPaid ? AppStrings.text(.paidExpense) : AppStrings.text(.unpaidExpense), systemImage: "doc.text.fill")
+
+                Spacer()
+
+                Toggle("", isOn: $markExpenseAsPaid)
+                    .labelsHidden()
                     .toggleStyle(.switch)
                     .tint(AppPalette.primary)
                     .fixedSize()
 
-                    HelpIconButton(
-                        title: AppStrings.text(.paidToggleHelpTitle),
-                        message: AppStrings.text(.paidToggleHelpMessage)
-                    )
-                }
+                HelpIconButton(
+                    title: AppStrings.text(.paidToggleHelpTitle),
+                    message: AppStrings.text(.paidToggleHelpMessage)
+                )
             }
         }
     }
@@ -1049,8 +1224,8 @@ struct TransactionEditor: View {
                     .foregroundStyle(AppPalette.background)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, validationMessage == nil ? 10 : 6)
+                    .padding(.top, 0)
+                    .padding(.bottom, validationMessage == nil ? 4 : 2)
 
                 if let validationMessage {
                     ValidationBanner(message: validationMessage)
@@ -1119,6 +1294,14 @@ struct TransactionEditor: View {
             } message: {
                 Text(singleMonthRecurringEditMessage)
             }
+            .alert("Fechar orçamento?", isPresented: $showsCloseBudgetConfirmation) {
+                Button(AppStrings.text(.cancel), role: .cancel) {}
+                Button(AppStrings.text(.ok)) {
+                    closeBudgetWithConsumedValue()
+                }
+            } message: {
+                Text(closeBudgetConfirmationMessage)
+            }
             .alert(AppStrings.text(.valueBelowPaidTitle), isPresented: $showsValueBelowPaidConfirmation) {
                 Button(AppStrings.text(.cancel), role: .cancel) {}
                 Button(AppStrings.text(.ok)) {
@@ -1140,6 +1323,15 @@ struct TransactionEditor: View {
                 }
             } message: {
                 Text(AppStrings.text(.valueAbovePaidMessage))
+            }
+            .alert(item: $saveNotice) { notice in
+                Alert(
+                    title: Text(notice.title),
+                    message: Text(notice.message),
+                    dismissButton: .default(Text(AppStrings.text(.ok))) {
+                        dismiss()
+                    }
+                )
             }
             .onAppear(perform: loadInitialValues)
             .id(selectedCurrencyCode)
@@ -1203,11 +1395,20 @@ struct TransactionEditor: View {
         validationMessage = message
     }
 
+    private func closeBudgetWithConsumedValue() {
+        guard canCloseBudgetWithConsumedValue else { return }
+        hasConfirmedValueBelowPaid = true
+        hasConfirmedSingleMonthRecurringEditInfo = true
+        amountValue = paidAmountForEditedMonth
+        save()
+    }
+
     private func loadInitialValues() {
         guard !didLoad else { return }
         didLoad = true
 
         guard let transaction = editedTransaction else {
+            isClassificationSectionExpanded = true
             selectedAccountID = defaultSpendAccountID
             recurrenceMonth = Calendar.current.component(.month, from: request.month)
             if requiresExplicitDaySelection {
@@ -1240,6 +1441,7 @@ struct TransactionEditor: View {
             return
         }
 
+        isClassificationSectionExpanded = false
         title = transaction.title
         updateIncomeTypeSelection(for: transaction.title)
         incomeDescription = transaction.incomeDescription ?? ""
@@ -1289,19 +1491,14 @@ struct TransactionEditor: View {
         validationMessage = nil
 
         if mode.needsExpenseClassification {
-            guard let expenseCategory else {
-                showValidation(AppStrings.text(.selectExpenseType))
-                return
-            }
-
-            guard !expenseName.isEmpty else {
-                showValidation(AppStrings.text(.selectExpenseName))
-                return
-            }
-
             let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedTitle.isEmpty else {
                 showValidation(AppStrings.text(.fillFreeText))
+                return
+            }
+
+            guard let parsedValue else {
+                showValidation(AppStrings.text(.fillValue))
                 return
             }
 
@@ -1310,8 +1507,13 @@ struct TransactionEditor: View {
                 return
             }
 
-            guard let parsedValue else {
-                showValidation(AppStrings.text(.fillValue))
+            guard let expenseCategory else {
+                showValidation(AppStrings.text(.selectExpenseType))
+                return
+            }
+
+            guard !expenseName.isEmpty else {
+                showValidation(AppStrings.text(.selectExpenseName))
                 return
             }
 
@@ -1360,7 +1562,16 @@ struct TransactionEditor: View {
             )
         }
 
-        dismiss()
+        saveNotice = .saved(saveSuccessMessage)
+    }
+
+    private var saveSuccessMessage: String {
+        let isNewRecord = editedTransaction == nil || request.editScope != .normal
+        if isIncomeMode {
+            return AppStrings.text(isNewRecord ? .incomeCreatedMessage : .incomeUpdatedMessage)
+        } else {
+            return AppStrings.text(isNewRecord ? .budgetExpenseCreatedMessage : .budgetExpenseUpdatedMessage)
+        }
     }
 
     private func saveExpense(value: Double, category: ExpenseCategory, title: String) {
@@ -1687,13 +1898,19 @@ struct TransactionEditor: View {
             movement.type = CreditMovementKind.payment.rawValue
             movement.amount = paidAmount
             movement.note = note
+            movement.linkedTransactionID = transaction.id
+            movement.linkedTransactionMonthStart = transaction.monthStart.monthStart
+            movement.linkedTransactionOccurrenceDay = transaction.recurrence == .weekly ? transaction.day : nil
         } else {
             let movement = CreditMovement(
                 creditID: selectedCreditID,
                 date: paymentDate,
                 type: CreditMovementKind.payment.rawValue,
                 amount: paidAmount,
-                note: note
+                note: note,
+                linkedTransactionID: transaction.id,
+                linkedTransactionMonthStart: transaction.monthStart.monthStart,
+                linkedTransactionOccurrenceDay: transaction.recurrence == .weekly ? transaction.day : nil
             )
             modelContext.insert(movement)
             transaction.linkedCreditMovementID = movement.id
@@ -1760,13 +1977,19 @@ struct TransactionEditor: View {
             movement.type = SavingMovementKind.deposit.rawValue
             movement.amount = paidAmount
             movement.note = note
+            movement.linkedTransactionID = transaction.id
+            movement.linkedTransactionMonthStart = transaction.monthStart.monthStart
+            movement.linkedTransactionOccurrenceDay = transaction.recurrence == .weekly ? transaction.day : nil
         } else {
             let movement = SavingMovement(
                 savingID: selectedSavingID,
                 date: depositDate,
                 type: SavingMovementKind.deposit.rawValue,
                 amount: paidAmount,
-                note: note
+                note: note,
+                linkedTransactionID: transaction.id,
+                linkedTransactionMonthStart: transaction.monthStart.monthStart,
+                linkedTransactionOccurrenceDay: transaction.recurrence == .weekly ? transaction.day : nil
             )
             modelContext.insert(movement)
             transaction.linkedSavingMovementID = movement.id
@@ -1837,9 +2060,20 @@ struct TransactionEditor: View {
             .filter { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: oldMonth, toGranularity: .month) }
             .forEach { $0.monthStart = newMonth.monthStart }
 
-        paymentHistory
+        let movedHistoryEntries = paymentHistory
             .filter { $0.transactionID == transaction.id && Calendar.current.isDate($0.monthStart, equalTo: oldMonth, toGranularity: .month) }
-            .forEach { $0.monthStart = newMonth.monthStart }
+        let movedHistoryIDs = Set(movedHistoryEntries.map(\.id))
+        let movedPaymentDate = newMonth.monthStart.date(day: transaction.effectiveDay(in: newMonth))
+
+        movedHistoryEntries.forEach { $0.monthStart = newMonth.monthStart }
+        accountMovements
+            .filter { movement in
+                guard let paymentHistoryID = movement.paymentHistoryID else { return false }
+                return movedHistoryIDs.contains(paymentHistoryID)
+            }
+            .forEach { movement in
+                movement.date = accountMovementDate(on: movedPaymentDate, preservingTimeFrom: movement.date)
+            }
     }
 
     private func addExclusion(for transaction: MoneyTransaction, in month: Date) {

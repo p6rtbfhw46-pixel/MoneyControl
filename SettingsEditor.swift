@@ -13,8 +13,6 @@ struct SettingsEditor: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage("hasCompletedInitialSetup") private var hasCompletedInitialSetup = false
     @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
-    // ICLOUD_DISABLED_FOR_LOCAL_RESET_TEST: iCloud sync UI disabled while validating clean local installs.
-    // @AppStorage(AppPreferences.iCloudSyncEnabledKey) private var iCloudSyncEnabled = false
     @AppStorage(AppPreferences.appLockEnabledKey) private var appLockEnabled = false
     @AppStorage(AppPreferences.appLockBiometricsEnabledKey) private var appLockBiometricsEnabled = false
     @AppStorage(AppPreferences.notificationsEnabledKey) private var notificationsEnabled = true
@@ -306,10 +304,6 @@ struct SettingsEditor: View {
                             .foregroundStyle(AppPalette.mutedText)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        Text(AppStrings.text(.appSecurityICloudBackupMessage))
-                            .font(.subheadline)
-                            .foregroundStyle(AppPalette.mutedText)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(.vertical, 4)
@@ -380,42 +374,6 @@ struct SettingsEditor: View {
                 .opacity(appLockEnabled && AppLockService.biometricsAvailable ? 1 : 0.45)
             }
             .listRowBackground(AppPalette.surface)
-
-            // ICLOUD_DISABLED_FOR_LOCAL_RESET_TEST: iCloud/CloudKit option hidden during local reset validation.
-            /*
-            Section {
-                Button {
-                    iCloudSyncEnabled.toggle()
-                } label: {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: iCloudSyncEnabled ? "checkmark.square.fill" : "square")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(iCloudSyncEnabled ? AppPalette.primary : AppPalette.mutedText)
-                            .frame(width: 30, height: 30)
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(AppStrings.text(.iCloudSyncTitle))
-                                .font(.headline.bold())
-                                .foregroundStyle(AppPalette.background)
-
-                            Text(AppStrings.text(.iCloudSyncMessage))
-                                .font(.subheadline)
-                                .foregroundStyle(AppPalette.mutedText)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Text(AppStrings.text(.iCloudSyncRestartNote))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(AppPalette.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .listRowBackground(AppPalette.surface)
-            */
 
             Section {
                 Text(AppStrings.text(.appDataPrivacyNote))
@@ -2194,6 +2152,9 @@ struct BackupCreditMovement: Codable, Sendable {
     let note: String
     let expenseCategory: String?
     let expenseName: String?
+    let linkedTransactionID: UUID?
+    let linkedTransactionMonthStart: Date?
+    let linkedTransactionOccurrenceDay: Int?
 
     init(movement: CreditMovement) {
         id = movement.id
@@ -2204,6 +2165,9 @@ struct BackupCreditMovement: Codable, Sendable {
         note = movement.note
         expenseCategory = movement.expenseCategory
         expenseName = movement.expenseName
+        linkedTransactionID = movement.linkedTransactionID
+        linkedTransactionMonthStart = movement.linkedTransactionMonthStart
+        linkedTransactionOccurrenceDay = movement.linkedTransactionOccurrenceDay
     }
 
     var model: CreditMovement {
@@ -2214,7 +2178,10 @@ struct BackupCreditMovement: Codable, Sendable {
             amount: amount,
             note: note,
             expenseCategory: expenseCategory,
-            expenseName: expenseName
+            expenseName: expenseName,
+            linkedTransactionID: linkedTransactionID,
+            linkedTransactionMonthStart: linkedTransactionMonthStart,
+            linkedTransactionOccurrenceDay: linkedTransactionOccurrenceDay
         )
         movement.id = id
         return movement
@@ -2262,6 +2229,9 @@ struct BackupSavingMovement: Codable, Sendable {
     let amount: Double
     let note: String
     let linkedIncomeTransactionID: UUID?
+    let linkedTransactionID: UUID?
+    let linkedTransactionMonthStart: Date?
+    let linkedTransactionOccurrenceDay: Int?
 
     init(movement: SavingMovement) {
         id = movement.id
@@ -2271,6 +2241,9 @@ struct BackupSavingMovement: Codable, Sendable {
         amount = movement.amount
         note = movement.note
         linkedIncomeTransactionID = movement.linkedIncomeTransactionID
+        linkedTransactionID = movement.linkedTransactionID
+        linkedTransactionMonthStart = movement.linkedTransactionMonthStart
+        linkedTransactionOccurrenceDay = movement.linkedTransactionOccurrenceDay
     }
 
     var model: SavingMovement {
@@ -2280,7 +2253,10 @@ struct BackupSavingMovement: Codable, Sendable {
             type: type,
             amount: amount,
             note: note,
-            linkedIncomeTransactionID: linkedIncomeTransactionID
+            linkedIncomeTransactionID: linkedIncomeTransactionID,
+            linkedTransactionID: linkedTransactionID,
+            linkedTransactionMonthStart: linkedTransactionMonthStart,
+            linkedTransactionOccurrenceDay: linkedTransactionOccurrenceDay
         )
         movement.id = id
         return movement

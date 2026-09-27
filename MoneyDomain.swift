@@ -326,6 +326,369 @@ enum TransactionEditScope {
     case futureMonths
 }
 
+enum PlanningStatus: String, Identifiable {
+    case active
+    case completed
+    case archived
+
+    static let allCases: [PlanningStatus] = [.active, .archived]
+
+    var id: String { rawValue }
+
+    var title: String {
+        let isPortuguese = AppStrings.currentLanguage == .portuguese
+        switch self {
+        case .active:
+            return isPortuguese ? "Ativo" : "Active"
+        case .completed:
+            return isPortuguese ? "Arquivado" : "Archived"
+        case .archived:
+            return isPortuguese ? "Arquivado" : "Archived"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .active:
+            return AppPalette.savings
+        case .completed:
+            return AppPalette.mutedText
+        case .archived:
+            return AppPalette.mutedText
+        }
+    }
+}
+
+enum PlanningType: String, CaseIterable, Identifiable {
+    case travel
+    case renovation
+    case course
+    case event
+    case largePurchase
+    case family
+    case christmas
+    case other
+
+    var id: String { rawValue }
+
+    var title: String {
+        let isPortuguese = AppStrings.currentLanguage == .portuguese
+        switch self {
+        case .travel:
+            return isPortuguese ? "Viagem" : "Travel"
+        case .renovation:
+            return isPortuguese ? "Obras / Remodelação" : "Renovation"
+        case .course:
+            return isPortuguese ? "Curso / Formação" : "Course / Training"
+        case .event:
+            return isPortuguese ? "Evento / Festa" : "Event / Party"
+        case .largePurchase:
+            return isPortuguese ? "Compra Grande" : "Large Purchase"
+        case .family:
+            return isPortuguese ? "Família" : "Family"
+        case .christmas:
+            return isPortuguese ? "Natal" : "Christmas"
+        case .other:
+            return isPortuguese ? "Outro" : "Other"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .travel:
+            return "airplane"
+        case .renovation:
+            return "hammer.fill"
+        case .course:
+            return "graduationcap.fill"
+        case .event:
+            return "sparkles"
+        case .largePurchase:
+            return "shippingbox.fill"
+        case .family:
+            return "person.3.fill"
+        case .christmas:
+            return "gift.fill"
+        case .other:
+            return "ellipsis.circle.fill"
+        }
+    }
+
+    var colorIdentifier: String {
+        switch self {
+        case .travel:
+            return "blue"
+        case .renovation:
+            return "orange"
+        case .course:
+            return "purple"
+        case .event:
+            return "teal"
+        case .largePurchase:
+            return "green"
+        case .family:
+            return "pink"
+        case .christmas:
+            return "red"
+        case .other:
+            return "gray"
+        }
+    }
+
+    var color: Color {
+        PlanningPalette.color(for: colorIdentifier)
+    }
+
+    var suggestedItemTypes: [PlanningItemTypeTemplate] {
+        let isPortuguese = AppStrings.currentLanguage == .portuguese
+        switch self {
+        case .travel:
+            return [
+                .init(isPortuguese ? "Transporte" : "Transport", icon: "airplane", color: "blue"),
+                .init(isPortuguese ? "Alojamento" : "Accommodation", icon: "bed.double.fill", color: "purple"),
+                .init(isPortuguese ? "Alimentação" : "Food", icon: "fork.knife", color: "orange"),
+                .init(isPortuguese ? "Atividades" : "Activities", icon: "ticket.fill", color: "teal"),
+                .init(isPortuguese ? "Seguro" : "Insurance", icon: "shield.fill", color: "green"),
+                .init(isPortuguese ? "Compras" : "Shopping", icon: "bag.fill", color: "pink"),
+                .init(isPortuguese ? "Imprevistos" : "Unexpected", icon: "exclamationmark.triangle.fill", color: "red"),
+                .init(isPortuguese ? "Outros" : "Other", icon: "ellipsis.circle.fill", color: "gray")
+            ]
+        case .renovation:
+            return [
+                .init(isPortuguese ? "Materiais" : "Materials", icon: "shippingbox.fill", color: "orange"),
+                .init(isPortuguese ? "Mão de obra" : "Labor", icon: "person.fill.checkmark", color: "blue"),
+                .init(isPortuguese ? "Mobiliário" : "Furniture", icon: "sofa.fill", color: "purple"),
+                .init(isPortuguese ? "Eletrodomésticos" : "Appliances", icon: "washer.fill", color: "teal"),
+                .init(isPortuguese ? "Pintura" : "Painting", icon: "paintbrush.fill", color: "pink"),
+                .init(isPortuguese ? "Iluminação" : "Lighting", icon: "lightbulb.fill", color: "yellow"),
+                .init(isPortuguese ? "Ferramentas" : "Tools", icon: "hammer.fill", color: "gray"),
+                .init(isPortuguese ? "Transporte / Entregas" : "Transport / Delivery", icon: "truck.box.fill", color: "green"),
+                .init(isPortuguese ? "Licenças / Taxas" : "Licenses / Fees", icon: "doc.text.fill", color: "blue"),
+                .init(isPortuguese ? "Imprevistos" : "Unexpected", icon: "exclamationmark.triangle.fill", color: "red"),
+                .init(isPortuguese ? "Outros" : "Other", icon: "ellipsis.circle.fill", color: "gray")
+            ]
+        case .course:
+            return [
+                .init(isPortuguese ? "Inscrição" : "Enrollment", icon: "pencil.and.list.clipboard", color: "blue"),
+                .init(isPortuguese ? "Propinas / Mensalidades" : "Tuition / Fees", icon: "calendar.badge.clock", color: "purple"),
+                .init(isPortuguese ? "Material" : "Supplies", icon: "folder.fill", color: "orange"),
+                .init(isPortuguese ? "Livros" : "Books", icon: "book.fill", color: "teal"),
+                .init(isPortuguese ? "Equipamento" : "Equipment", icon: "laptopcomputer", color: "gray"),
+                .init(isPortuguese ? "Exames / Certificação" : "Exams / Certification", icon: "checkmark.seal.fill", color: "green"),
+                .init(isPortuguese ? "Transporte" : "Transport", icon: "car.fill", color: "blue"),
+                .init(isPortuguese ? "Alojamento" : "Accommodation", icon: "bed.double.fill", color: "purple"),
+                .init(isPortuguese ? "Alimentação" : "Food", icon: "fork.knife", color: "orange"),
+                .init(isPortuguese ? "Outros" : "Other", icon: "ellipsis.circle.fill", color: "gray")
+            ]
+        case .event:
+            return [
+                .init(isPortuguese ? "Espaço" : "Venue", icon: "building.2.fill", color: "purple"),
+                .init(isPortuguese ? "Alimentação" : "Food", icon: "fork.knife", color: "orange"),
+                .init(isPortuguese ? "Bebidas" : "Drinks", icon: "wineglass.fill", color: "teal"),
+                .init(isPortuguese ? "Decoração" : "Decoration", icon: "sparkles", color: "pink"),
+                .init(isPortuguese ? "Música" : "Music", icon: "music.note", color: "blue"),
+                .init(isPortuguese ? "Fotografia / Vídeo" : "Photo / Video", icon: "camera.fill", color: "gray"),
+                .init(isPortuguese ? "Roupa" : "Clothing", icon: "tshirt.fill", color: "green"),
+                .init(isPortuguese ? "Transporte" : "Transport", icon: "car.fill", color: "blue"),
+                .init(isPortuguese ? "Convites / Lembranças" : "Invites / Favors", icon: "envelope.fill", color: "orange"),
+                .init(isPortuguese ? "Imprevistos" : "Unexpected", icon: "exclamationmark.triangle.fill", color: "red"),
+                .init(isPortuguese ? "Outros" : "Other", icon: "ellipsis.circle.fill", color: "gray")
+            ]
+        case .largePurchase:
+            return [
+                .init(isPortuguese ? "Produto principal" : "Main product", icon: "shippingbox.fill", color: "blue"),
+                .init(isPortuguese ? "Acessórios" : "Accessories", icon: "bag.fill", color: "pink"),
+                .init(isPortuguese ? "Garantia" : "Warranty", icon: "checkmark.shield.fill", color: "green"),
+                .init(isPortuguese ? "Transporte / Entrega" : "Transport / Delivery", icon: "truck.box.fill", color: "orange"),
+                .init(isPortuguese ? "Instalação" : "Installation", icon: "wrench.and.screwdriver.fill", color: "gray"),
+                .init(isPortuguese ? "Seguro" : "Insurance", icon: "shield.fill", color: "teal"),
+                .init(isPortuguese ? "Imprevistos" : "Unexpected", icon: "exclamationmark.triangle.fill", color: "red"),
+                .init(isPortuguese ? "Outros" : "Other", icon: "ellipsis.circle.fill", color: "gray")
+            ]
+        case .family:
+            return [
+                .init(isPortuguese ? "Alimentação" : "Food", icon: "fork.knife", color: "orange"),
+                .init(isPortuguese ? "Atividades" : "Activities", icon: "ticket.fill", color: "teal"),
+                .init(isPortuguese ? "Saúde" : "Health", icon: "cross.case.fill", color: "green"),
+                .init(isPortuguese ? "Escola" : "School", icon: "graduationcap.fill", color: "purple"),
+                .init(isPortuguese ? "Transporte" : "Transport", icon: "car.fill", color: "blue"),
+                .init(isPortuguese ? "Presentes" : "Gifts", icon: "gift.fill", color: "pink"),
+                .init(isPortuguese ? "Imprevistos" : "Unexpected", icon: "exclamationmark.triangle.fill", color: "red"),
+                .init(isPortuguese ? "Outros" : "Other", icon: "ellipsis.circle.fill", color: "gray")
+            ]
+        case .christmas:
+            return [
+                .init(isPortuguese ? "Presentes" : "Gifts", icon: "gift.fill", color: "red"),
+                .init(isPortuguese ? "Alimentação" : "Food", icon: "fork.knife", color: "orange"),
+                .init(isPortuguese ? "Decoração" : "Decoration", icon: "sparkles", color: "pink"),
+                .init(isPortuguese ? "Viagens" : "Trips", icon: "airplane", color: "blue"),
+                .init(isPortuguese ? "Eventos" : "Events", icon: "calendar", color: "purple"),
+                .init(isPortuguese ? "Donativos" : "Donations", icon: "heart.fill", color: "green"),
+                .init(isPortuguese ? "Imprevistos" : "Unexpected", icon: "exclamationmark.triangle.fill", color: "red"),
+                .init(isPortuguese ? "Outros" : "Other", icon: "ellipsis.circle.fill", color: "gray")
+            ]
+        case .other:
+            return [
+                .init(isPortuguese ? "Principal" : "Main", icon: "star.fill", color: "blue"),
+                .init(isPortuguese ? "Apoio" : "Support", icon: "tag.fill", color: "teal"),
+                .init(isPortuguese ? "Transporte" : "Transport", icon: "car.fill", color: "orange"),
+                .init(isPortuguese ? "Imprevistos" : "Unexpected", icon: "exclamationmark.triangle.fill", color: "red"),
+                .init(isPortuguese ? "Outros" : "Other", icon: "ellipsis.circle.fill", color: "gray")
+            ]
+        }
+    }
+}
+
+struct PlanningItemTypeTemplate: Identifiable {
+    let id = UUID()
+    let name: String
+    let icon: String
+    let color: String
+
+    init(_ name: String, icon: String, color: String) {
+        self.name = name
+        self.icon = icon
+        self.color = color
+    }
+}
+
+enum PlanningPalette {
+    static func color(for identifier: String?) -> Color {
+        switch identifier {
+        case "blue":
+            return AppPalette.mediumBlue
+        case "green":
+            return AppPalette.savings
+        case "orange":
+            return AppPalette.primary
+        case "purple":
+            return .purple
+        case "teal":
+            return .teal
+        case "pink":
+            return .pink
+        case "red":
+            return .red
+        case "yellow":
+            return .yellow
+        case "gray":
+            return AppPalette.mutedText
+        default:
+            return AppPalette.mediumBlue
+        }
+    }
+}
+
+enum PlanningMovementAffectMode: String, CaseIterable, Identifiable {
+    case planningOnly
+    case account
+    case saving
+
+    var id: String { rawValue }
+
+    var title: String {
+        let isPortuguese = AppStrings.currentLanguage == .portuguese
+        switch self {
+        case .planningOnly:
+            return isPortuguese ? "Só no planeamento" : "Only in this planning"
+        case .account:
+            return isPortuguese ? "Retirar de uma conta" : "Withdraw from account"
+        case .saving:
+            return isPortuguese ? "Retirar de uma poupança" : "Withdraw from savings"
+        }
+    }
+
+    var subtitle: String {
+        let isPortuguese = AppStrings.currentLanguage == .portuguese
+        switch self {
+        case .planningOnly:
+            return isPortuguese ? "Este movimento só afeta este planeamento." : "This movement only affects this planning."
+        case .account:
+            return isPortuguese ? "Cria uma saída na conta escolhida." : "Creates an outgoing movement in the selected account."
+        case .saving:
+            return isPortuguese ? "Cria um levantamento na poupança escolhida." : "Creates a withdrawal in the selected saving."
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .planningOnly:
+            return "calendar.badge.checkmark"
+        case .account:
+            return "wallet.pass.fill"
+        case .saving:
+            return "leaf.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .planningOnly:
+            return AppPalette.mediumBlue
+        case .account:
+            return .blue
+        case .saving:
+            return .purple
+        }
+    }
+}
+
+extension Planning {
+    var planningType: PlanningType {
+        get { PlanningType(rawValue: type) ?? .other }
+        set { type = newValue.rawValue }
+    }
+
+    var planningStatus: PlanningStatus {
+        get { PlanningStatus(rawValue: status) ?? .active }
+        set { status = newValue.rawValue }
+    }
+}
+
+extension PlanningItemType {
+    var tint: Color {
+        PlanningPalette.color(for: colorIdentifier)
+    }
+
+    var iconName: String {
+        icon ?? "tag.fill"
+    }
+}
+
+extension PlanningItem {
+    var tint: Color {
+        PlanningPalette.color(for: colorIdentifier)
+    }
+
+    var iconName: String {
+        icon ?? "tag.fill"
+    }
+
+    func movements(from allMovements: [PlanningMovement]) -> [PlanningMovement] {
+        allMovements
+            .filter { $0.itemId == id }
+            .sorted { $0.date == $1.date ? $0.title < $1.title : $0.date > $1.date }
+    }
+
+    func realAmount(from allMovements: [PlanningMovement]) -> Double {
+        allMovements
+            .filter { $0.itemId == id }
+            .reduce(0) { $0 + abs($1.amount) }
+    }
+
+    func progress(from allMovements: [PlanningMovement]) -> Double {
+        guard plannedAmount > 0 else { return 0 }
+        return min(realAmount(from: allMovements) / plannedAmount, 1)
+    }
+}
+
+extension PlanningMovement {
+    var affectMode: PlanningMovementAffectMode {
+        get { PlanningMovementAffectMode(rawValue: affectModeRawValue) ?? .planningOnly }
+        set { affectModeRawValue = newValue.rawValue }
+    }
+}
+
 enum ExpenseTypeIcon {
     static func name(for title: String) -> String {
         let normalizedTitle = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
@@ -347,6 +710,9 @@ enum ExpenseTypeIcon {
         }
         if normalizedTitle.contains("seguro") || normalizedTitle.contains("insurance") {
             return "shield.fill"
+        }
+        if normalizedTitle.contains("educacao") || normalizedTitle.contains("education") {
+            return "graduationcap.fill"
         }
         if normalizedTitle.contains("subscr") || normalizedTitle.contains("subscription") {
             return "play.rectangle.fill"
@@ -527,7 +893,10 @@ struct TransactionEditorRequest: Identifiable {
 
 extension Array where Element == MoneyTransaction {
     func visible(in month: Date, payments: [ExpensePayment], exclusions: [RecurrenceExclusion]) -> [MoneyTransaction] {
-        filter { $0.occurs(in: month, exclusions: exclusions) }
+        filter { transaction in
+            guard transaction.occurs(in: month, exclusions: exclusions) else { return false }
+            return transaction.recurrence != .weekly || !transaction.occurrenceDays(in: month, exclusions: exclusions).isEmpty
+        }
             .sorted { first, second in
                 let firstRank = first.listRank(in: month, payments: payments)
                 let secondRank = second.listRank(in: month, payments: payments)
@@ -970,7 +1339,6 @@ extension Date {
 
 enum AppPreferences {
     static let selectedCurrencyCodeKey = "selectedCurrencyCode"
-    static let iCloudSyncEnabledKey = "iCloudSyncEnabled"
     static let appLockEnabledKey = "appLockEnabled"
     static let appLockBiometricsEnabledKey = "appLockBiometricsEnabled"
     static let notificationsEnabledKey = "notificationsEnabled"

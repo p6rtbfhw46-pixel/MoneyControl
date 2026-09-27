@@ -284,6 +284,9 @@ final class CreditMovement {
     var note: String
     var expenseCategory: String? = nil
     var expenseName: String? = nil
+    var linkedTransactionID: UUID?
+    var linkedTransactionMonthStart: Date?
+    var linkedTransactionOccurrenceDay: Int?
 
     init(
         creditID: UUID,
@@ -292,7 +295,10 @@ final class CreditMovement {
         amount: Double,
         note: String,
         expenseCategory: String? = nil,
-        expenseName: String? = nil
+        expenseName: String? = nil,
+        linkedTransactionID: UUID? = nil,
+        linkedTransactionMonthStart: Date? = nil,
+        linkedTransactionOccurrenceDay: Int? = nil
     ) {
         self.id = UUID()
         self.creditID = creditID
@@ -302,6 +308,9 @@ final class CreditMovement {
         self.note = note
         self.expenseCategory = expenseCategory
         self.expenseName = expenseName
+        self.linkedTransactionID = linkedTransactionID
+        self.linkedTransactionMonthStart = linkedTransactionMonthStart
+        self.linkedTransactionOccurrenceDay = linkedTransactionOccurrenceDay
     }
 }
 
@@ -342,6 +351,9 @@ final class SavingMovement {
     var amount: Double
     var note: String
     var linkedIncomeTransactionID: UUID?
+    var linkedTransactionID: UUID?
+    var linkedTransactionMonthStart: Date?
+    var linkedTransactionOccurrenceDay: Int?
 
     init(
         savingID: UUID,
@@ -349,7 +361,10 @@ final class SavingMovement {
         type: String,
         amount: Double,
         note: String,
-        linkedIncomeTransactionID: UUID? = nil
+        linkedIncomeTransactionID: UUID? = nil,
+        linkedTransactionID: UUID? = nil,
+        linkedTransactionMonthStart: Date? = nil,
+        linkedTransactionOccurrenceDay: Int? = nil
     ) {
         self.id = UUID()
         self.savingID = savingID
@@ -358,5 +373,150 @@ final class SavingMovement {
         self.amount = amount
         self.note = note
         self.linkedIncomeTransactionID = linkedIncomeTransactionID
+        self.linkedTransactionID = linkedTransactionID
+        self.linkedTransactionMonthStart = linkedTransactionMonthStart
+        self.linkedTransactionOccurrenceDay = linkedTransactionOccurrenceDay
+    }
+}
+
+@Model
+final class Planning {
+    var id: UUID
+    var name: String
+    var type: String
+    var totalBudget: Double
+    var startDate: Date?
+    var endDate: Date?
+    var status: String
+    var createdAt: Date
+
+    init(
+        name: String,
+        type: String,
+        totalBudget: Double,
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        status: String = PlanningStatus.active.rawValue,
+        createdAt: Date = Date()
+    ) {
+        self.id = UUID()
+        self.name = name
+        self.type = type
+        self.totalBudget = totalBudget
+        self.startDate = startDate
+        self.endDate = endDate
+        self.status = status
+        self.createdAt = createdAt
+    }
+}
+
+@Model
+final class PlanningItemType {
+    var id: UUID
+    var name: String
+    var icon: String?
+    var colorIdentifier: String?
+    var planningId: UUID
+    var isCustom: Bool
+    var createdAt: Date
+
+    init(
+        name: String,
+        icon: String? = nil,
+        colorIdentifier: String? = nil,
+        planningId: UUID,
+        isCustom: Bool = false,
+        createdAt: Date = Date()
+    ) {
+        self.id = UUID()
+        self.name = name
+        self.icon = icon
+        self.colorIdentifier = colorIdentifier
+        self.planningId = planningId
+        self.isCustom = isCustom
+        self.createdAt = createdAt
+    }
+}
+
+@Model
+final class PlanningItem {
+    var id: UUID
+    var planningId: UUID
+    var itemTypeId: UUID?
+    var name: String
+    var details: String
+    var plannedAmount: Double
+    var icon: String?
+    var colorIdentifier: String?
+    var sortOrder: Double?
+    var createdAt: Date
+
+    init(
+        planningId: UUID,
+        itemTypeId: UUID? = nil,
+        name: String,
+        details: String = "",
+        plannedAmount: Double,
+        icon: String? = nil,
+        colorIdentifier: String? = nil,
+        sortOrder: Double? = nil,
+        createdAt: Date = Date()
+    ) {
+        self.id = UUID()
+        self.planningId = planningId
+        self.itemTypeId = itemTypeId
+        self.name = name
+        self.details = details
+        self.plannedAmount = plannedAmount
+        self.icon = icon
+        self.colorIdentifier = colorIdentifier
+        self.sortOrder = sortOrder
+        self.createdAt = createdAt
+    }
+}
+
+@Model
+final class PlanningMovement {
+    var id: UUID
+    var planningId: UUID
+    var itemId: UUID
+    var date: Date
+    var title: String
+    var amount: Double
+    var note: String
+    var affectModeRawValue: String
+    var linkedAccountID: UUID?
+    var linkedSavingID: UUID?
+    var linkedAccountMovementID: UUID?
+    var linkedSavingMovementID: UUID?
+    var createdAt: Date
+
+    init(
+        planningId: UUID,
+        itemId: UUID,
+        date: Date = Date(),
+        title: String,
+        amount: Double,
+        note: String = "",
+        affectModeRawValue: String = PlanningMovementAffectMode.planningOnly.rawValue,
+        linkedAccountID: UUID? = nil,
+        linkedSavingID: UUID? = nil,
+        linkedAccountMovementID: UUID? = nil,
+        linkedSavingMovementID: UUID? = nil,
+        createdAt: Date = Date()
+    ) {
+        self.id = UUID()
+        self.planningId = planningId
+        self.itemId = itemId
+        self.date = date
+        self.title = title
+        self.amount = amount
+        self.note = note
+        self.affectModeRawValue = affectModeRawValue
+        self.linkedAccountID = linkedAccountID
+        self.linkedSavingID = linkedSavingID
+        self.linkedAccountMovementID = linkedAccountMovementID
+        self.linkedSavingMovementID = linkedSavingMovementID
+        self.createdAt = createdAt
     }
 }

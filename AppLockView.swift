@@ -113,15 +113,23 @@ struct AppLockView: View {
     @State private var isConfirmingPIN = false
     @State private var message: String?
     @State private var isAuthenticating = false
+    @State private var didFinishInitialBiometricAttempt = false
+    @State private var isCompletingUnlock = false
 
     private let pinLength = 4
+    private var canUseBiometrics: Bool {
+        mode == .unlock && biometricsEnabled && allowsBiometrics && AppLockService.biometricsAvailable
+    }
+    private var showsPINEntry: Bool {
+        mode == .setup || !canUseBiometrics || didFinishInitialBiometricAttempt
+    }
 
     private var title: String {
         switch mode {
         case .setup:
             isConfirmingPIN ? "Confirmar código" : "Criar código"
         case .unlock:
-            "SpendWise bloqueada"
+            showsPINEntry ? "SpendWise bloqueada" : "A desbloquear"
         }
     }
 
@@ -130,7 +138,9 @@ struct AppLockView: View {
         case .setup:
             isConfirmingPIN ? "Volte a introduzir o código para confirmar." : "Escolha um código de 4 dígitos para proteger a app."
         case .unlock:
-            "Introduza o código ou use \(AppLockService.biometricTypeName)."
+            showsPINEntry
+                ? "Introduza o código ou use \(AppLockService.biometricTypeName)."
+                : "A tentar usar \(AppLockService.biometricTypeName)."
         }
     }
 
@@ -152,42 +162,54 @@ struct AppLockView: View {
                     .shadow(color: AppPalette.background.opacity(0.14), radius: 18, y: 10)
 
                 VStack(spacing: 8) {
-                    Text(title)
+                    Text(isCompletingUnlock ? "A abrir" : title)
                         .font(.largeTitle.bold())
                         .foregroundStyle(AppPalette.background)
                         .multilineTextAlignment(.center)
 
-                    Text(subtitle)
+                    Text(isCompletingUnlock ? "A preparar a Conta Corrente." : subtitle)
                         .font(.body)
                         .foregroundStyle(AppPalette.bodyText)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                pinDots
+                if isCompletingUnlock {
+                    ProgressView()
+                        .tint(AppPalette.primary)
+                        .scaleEffect(1.1)
+                        .padding(.top, 8)
+                } else if showsPINEntry {
+                    pinDots
 
-                if let message {
-                    Text(message)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppPalette.primary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                keypad
-
-                if mode == .unlock, biometricsEnabled, allowsBiometrics, AppLockService.biometricsAvailable {
-                    Button {
-                        authenticateWithBiometrics()
-                    } label: {
-                        Label("Usar \(AppLockService.biometricTypeName)", systemImage: biometricIconName)
-                            .font(.headline)
-                            .foregroundStyle(AppPalette.surface)
-                            .frame(maxWidth: .infinity, minHeight: 50)
-                            .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 16))
+                    if let message {
+                        Text(message)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppPalette.primary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isAuthenticating)
+
+                    keypad
+
+                    if canUseBiometrics {
+                        Button {
+                            authenticateWithBiometrics()
+                        } label: {
+                            Label("Usar \(AppLockService.biometricTypeName)", systemImage: biometricIconName)
+                                .font(.headline)
+                                .foregroundStyle(AppPalette.surface)
+                                .frame(maxWidth: .infinity, minHeight: 50)
+                                .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 16))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isAuthenticating)
+                    }
+                } else {
+                    ProgressView()
+                        .tint(AppPalette.primary)
+                        .scaleEffect(1.1)
+                        .padding(.top, 8)
                 }
 
                 Spacer()
@@ -196,7 +218,7 @@ struct AppLockView: View {
         }
         .preferredColorScheme(.light)
         .task {
-            if mode == .unlock, biometricsEnabled, allowsBiometrics {
+            if canUseBiometrics {
                 authenticateWithBiometrics()
             }
         }
@@ -308,7 +330,7 @@ struct AppLockView: View {
 
     private func unlockIfPossible() {
         if AppLockService.validate(pin: pin) {
-            onUnlocked()
+            completeUnlock()
         } else {
             message = "Código incorreto."
             pin = ""
@@ -323,9 +345,21 @@ struct AppLockView: View {
             await MainActor.run {
                 isAuthenticating = false
                 if success {
-                    onUnlocked()
+                    completeUnlock()
+                } else {
+                    didFinishInitialBiometricAttempt = true
+                    message = "Não foi possível usar \(AppLockService.biometricTypeName). Introduza o código."
                 }
             }
+        }
+    }
+
+    private func completeUnlock() {
+        guard !isCompletingUnlock else { return }
+        isCompletingUnlock = true
+        Task { @MainActor in
+            await Task.yield()
+            onUnlocked()
         }
     }
 }

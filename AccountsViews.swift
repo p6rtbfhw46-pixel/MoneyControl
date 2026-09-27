@@ -545,6 +545,7 @@ private struct AccountEditorView: View {
     @State private var selectedColor: SpendAccountColor = .blue
     @State private var isPrimary = false
     @State private var validationMessage: String?
+    @State private var saveNotice: SaveResultNotice?
 
     private var totalBalance: Double {
         accounts.reduce(0) { $0 + $1.balance(with: movements) }
@@ -633,6 +634,15 @@ private struct AccountEditorView: View {
                 }
             }
             .onAppear(perform: load)
+            .alert(item: $saveNotice) { notice in
+                Alert(
+                    title: Text(notice.title),
+                    message: Text(notice.message),
+                    dismissButton: .default(Text(AppStrings.text(.ok))) {
+                        dismiss()
+                    }
+                )
+            }
         }
     }
 
@@ -682,7 +692,10 @@ private struct AccountEditorView: View {
             accountID: target.id
         )
 
-        dismiss()
+        saveNotice = .saved(String(
+            format: AppStrings.text(isNewAccount ? .accountCreatedMessage : .accountUpdatedMessage),
+            target.displayName
+        ))
     }
 }
 
@@ -697,6 +710,7 @@ private struct AccountTransferEditorView: View {
     @State private var amount = 0.0
     @State private var note = ""
     @State private var validationMessage: String?
+    @State private var saveNotice: SaveResultNotice?
 
     private var orderedAccounts: [SpendAccount] {
         accounts.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -755,6 +769,15 @@ private struct AccountTransferEditorView: View {
             }
             .onAppear {
                 normalizeAccountSelections()
+            }
+            .alert(item: $saveNotice) { notice in
+                Alert(
+                    title: Text(notice.title),
+                    message: Text(notice.message),
+                    dismissButton: .default(Text(AppStrings.text(.ok))) {
+                        dismiss()
+                    }
+                )
             }
         }
     }
@@ -831,7 +854,7 @@ private struct AccountTransferEditorView: View {
             accountID: fromAccountID,
             relatedAccountID: toAccountID
         ))
-        dismiss()
+        saveNotice = .saved(String(format: AppStrings.text(.accountTransferCreatedMessage), amount.currencyText))
     }
 }
 
@@ -846,6 +869,7 @@ private struct AccountBalanceAdjustmentView: View {
 
     @State private var newBalance = 0.0
     @State private var note = ""
+    @State private var saveNotice: SaveResultNotice?
 
     private var totalBalance: Double {
         accounts.reduce(0) { $0 + $1.balance(with: movements) }
@@ -872,6 +896,15 @@ private struct AccountBalanceAdjustmentView: View {
             .onAppear {
                 newBalance = currentBalance
             }
+            .alert(item: $saveNotice) { notice in
+                Alert(
+                    title: Text(notice.title),
+                    message: Text(notice.message),
+                    dismissButton: .default(Text(AppStrings.text(.ok))) {
+                        dismiss()
+                    }
+                )
+            }
         }
     }
 
@@ -896,6 +929,10 @@ private struct AccountBalanceAdjustmentView: View {
             balanceAfter: totalBalance + difference,
             accountID: account.id
         ))
-        dismiss()
+        saveNotice = .saved(String(
+            format: AppStrings.text(.accountBalanceAdjustedMessage),
+            account.displayName,
+            newBalance.currencyText
+        ))
     }
 }

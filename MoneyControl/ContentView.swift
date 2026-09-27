@@ -264,6 +264,7 @@ private enum ManagementSidebarTab: CaseIterable, Identifiable, Hashable {
     case recurringIncome
     case savings
     case credits
+    case planning
 
     var id: Self { self }
 
@@ -279,6 +280,8 @@ private enum ManagementSidebarTab: CaseIterable, Identifiable, Hashable {
             SavingsStrings.text(.settingsTitle)
         case .credits:
             CreditStrings.text(.settingsTitle)
+        case .planning:
+            AppStrings.text(.planning)
         }
     }
 
@@ -294,6 +297,8 @@ private enum ManagementSidebarTab: CaseIterable, Identifiable, Hashable {
             "target"
         case .credits:
             "creditcard.fill"
+        case .planning:
+            "map.fill"
         }
     }
 }
@@ -317,6 +322,192 @@ enum CurrentAccountPaymentFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum CurrentAccountIncomeFilter: String, CaseIterable, Identifiable {
+    case all
+    case received
+    case pending
+
+    var id: String { rawValue }
+
+    var title: String {
+        let isPortuguese = AppStrings.currentLanguage == .portuguese
+        switch self {
+        case .all:
+            return AppStrings.text(.all)
+        case .received:
+            return isPortuguese ? "Recebidos" : "Received"
+        case .pending:
+            return isPortuguese ? "Por receber" : "Pending"
+        }
+    }
+}
+
+private struct PhoneCurrentAccountActionsOverlay: View {
+    let activeFilterCount: Int
+    let showsSavingAction: Bool
+    let showsCreditAction: Bool
+    let onExpense: () -> Void
+    let onIncome: () -> Void
+    let onSaving: () -> Void
+    let onCredit: () -> Void
+    let onReceipt: () -> Void
+    let onFilters: () -> Void
+
+    @State private var showsQuickActions = false
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            if showsQuickActions {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.82)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.snappy) {
+                            showsQuickActions = false
+                        }
+                    }
+                    .transition(.opacity)
+            }
+
+            VStack(alignment: .trailing, spacing: 10) {
+                if showsQuickActions {
+                    quickActions
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                bottomActionButton(
+                    systemImage: showsQuickActions ? "xmark" : "plus",
+                    accessibilityLabel: AppStrings.text(.add)
+                ) {
+                    withAnimation(.snappy) {
+                        showsQuickActions.toggle()
+                    }
+                }
+
+                bottomActionButton(
+                    systemImage: "line.3.horizontal.decrease",
+                    badge: activeFilterCount > 0 ? "\(activeFilterCount)" : nil,
+                    accessibilityLabel: AppStrings.text(.filters)
+                ) {
+                    showsQuickActions = false
+                    onFilters()
+                }
+            }
+            .padding(.trailing, 18)
+            .padding(.bottom, 64)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+    }
+
+    private var quickActions: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            quickActionButton(
+                title: AppStrings.text(.expense),
+                imageName: "QuickActionDespesa",
+                action: closeAndRun(onExpense)
+            )
+
+            quickActionButton(
+                title: AppStrings.text(.income),
+                imageName: "QuickActionReceita",
+                action: closeAndRun(onIncome)
+            )
+
+            if showsSavingAction {
+                quickActionButton(
+                    title: SavingsStrings.text(.saving),
+                    imageName: "QuickActionPoupanca",
+                    action: closeAndRun(onSaving)
+                )
+            }
+
+            if showsCreditAction {
+                quickActionButton(
+                    title: CreditStrings.text(.credit),
+                    imageName: "QuickActionCredito",
+                    action: closeAndRun(onCredit)
+                )
+            }
+
+            quickActionButton(
+                title: AppStrings.text(.readReceipt),
+                imageName: "QuickActionLerFatura",
+                action: closeAndRun(onReceipt)
+            )
+        }
+    }
+
+    private func closeAndRun(_ action: @escaping () -> Void) -> () -> Void {
+        {
+            showsQuickActions = false
+            action()
+        }
+    }
+
+    private func quickActionButton(title: String, imageName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(AppPalette.background)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(width: 124, height: 34)
+                    .background(AppPalette.surface.opacity(0.98), in: Capsule())
+                    .shadow(color: AppPalette.background.opacity(0.12), radius: 8, y: 4)
+
+                Image(imageName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 58, height: 58)
+                    .shadow(color: AppPalette.background.opacity(0.18), radius: 12, y: 7)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    private func bottomActionButton(
+        systemImage: String,
+        badge: String? = nil,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(AppPalette.background.opacity(0.82))
+                    .frame(width: 58, height: 58)
+                    .background {
+                        Circle()
+                            .fill(AppPalette.surface.opacity(0.58))
+                            .overlay {
+                                Circle()
+                                    .stroke(.black.opacity(0.6), lineWidth: 0.4)
+                            }
+                            .shadow(color: AppPalette.background.opacity(0.12), radius: 12, y: 6)
+                    }
+                    .contentShape(Circle())
+
+                if let badge {
+                    Text(badge)
+                        .font(.caption2.bold())
+                        .foregroundStyle(AppPalette.surface)
+                        .frame(width: 22, height: 22)
+                        .background(AppPalette.primary, in: Circle())
+                        .offset(x: 2, y: -2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
 private struct ExpenseNoticeItem {
     let transaction: MoneyTransaction
     let month: Date
@@ -325,6 +516,15 @@ private struct ExpenseNoticeItem {
     var day: Int {
         occurrenceDay ?? transaction.effectiveDay(in: month)
     }
+}
+
+private struct CurrentAccountSummaryMetrics {
+    let inAccount: Double
+    let monthUnpaidExpenses: Double
+    let monthRemaining: Double?
+    let balanceHelpText: String
+    let balanceFootnote: String
+    let balanceHelpTitle: String?
 }
 
 private enum AnalyticsListTab: String, CaseIterable, Identifiable {
@@ -811,11 +1011,14 @@ struct ContentView: View {
     @Query private var spendAccounts: [SpendAccount]
     @Query private var accountMovements: [AccountMovement]
     @Query private var auditLogEntries: [AuditLogEntry]
+    @Query private var plannings: [Planning]
+    @Query private var planningMovements: [PlanningMovement]
 
     @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
     @AppStorage(AppPreferences.notificationsEnabledKey) private var notificationsEnabled = true
     @AppStorage(AppPreferences.launchPaymentReminderEnabledKey) private var launchPaymentReminderEnabled = true
     @AppStorage("currentAccountPaymentFilter") private var storedPaymentFilter = CurrentAccountPaymentFilter.all.rawValue
+    @AppStorage("currentAccountIncomeFilter") private var storedIncomeFilter = CurrentAccountIncomeFilter.all.rawValue
     @AppStorage("currentAccountFilteredCategories") private var storedFilteredCategories = ""
     @AppStorage("currentAccountFilteredExpenseType") private var storedFilteredExpenseType = ""
     @AppStorage("currentAccountFreeTextFilter") private var storedFreeTextFilter = ""
@@ -860,11 +1063,14 @@ struct ContentView: View {
     @State private var showsFilters = false
     @State private var showsUnpaidExpensesBreakdown = false
     @State private var paymentFilter: CurrentAccountPaymentFilter = .all
+    @State private var incomeFilter: CurrentAccountIncomeFilter = .all
     @State private var filteredCategories: Set<ExpenseCategory> = []
     @State private var filteredExpenseType = ""
     @State private var freeTextFilter = ""
+    @State private var filtersAffectSummaryCards = false
     @State private var expenseNotice: ExpenseNotice?
     @State private var savingsHistoryRequest: SavingsHistoryRequest?
+    @State private var currentAccountSummaryMetrics: CurrentAccountSummaryMetrics?
     @State private var didLoadStoredFilters = false
     @State private var didCheckOverdueExpenses = false
     @State private var didRunStartupMaintenance = false
@@ -890,6 +1096,17 @@ struct ContentView: View {
         creditAccounts
             .filter { $0.creditStatus == .active }
             .reduce(0) { $0 + $1.balance(with: creditMovements) }
+    }
+    private var managementActivePlanningCount: Int {
+        plannings.filter { $0.planningStatus == .active }.count
+    }
+
+    private var managementActivePlanningSummary: String {
+        if AppStrings.currentLanguage == .portuguese {
+            return managementActivePlanningCount == 1 ? "Ativo" : "Ativos"
+        } else {
+            return managementActivePlanningCount == 1 ? "Active" : "Active"
+        }
     }
     private var primarySpendAccount: SpendAccount? {
         spendAccounts.first(where: \.isPrimary) ?? spendAccounts.first
@@ -919,44 +1136,107 @@ struct ContentView: View {
     private var currentYearMonths: [Date] {
         MoneyCalculationService.monthsInYear(currentYear)
     }
-    private var notificationScheduleSignature: String {
-        let transactionSignature = transactions
-            .map { transaction in
-                [
-                    transaction.id.uuidString,
-                    transaction.title,
-                    transaction.displayName,
-                    transaction.kind,
-                    transaction.expenseCategory ?? "",
-                    "\(transaction.day)",
-                    "\(transaction.amount)",
-                    transaction.monthStart.ISO8601Format(),
-                    transaction.recurrenceType ?? "",
-                    "\(transaction.recurrenceMonth)",
-                    transaction.recurrenceEndMonthStart?.ISO8601Format() ?? ""
-                ].joined(separator: "|")
-            }
-            .sorted()
-            .joined(separator: ";")
-        let paymentSignature = payments
-            .map { "\($0.transactionID.uuidString)|\($0.monthStart.ISO8601Format())|\($0.amountPaid ?? -1)" }
-            .sorted()
-            .joined(separator: ";")
-        let exclusionSignature = exclusions
-            .map { "\($0.transactionID.uuidString)|\($0.monthStart.ISO8601Format())" }
-            .sorted()
-            .joined(separator: ";")
+    private var notificationScheduleSignature: Int {
+        var hasher = Hasher()
+        hasher.combine(notificationsEnabled)
 
-        return [transactionSignature, paymentSignature, exclusionSignature].joined(separator: "#")
+        transactions.forEach { transaction in
+            hasher.combine(transaction.id)
+            hasher.combine(transaction.title)
+            hasher.combine(transaction.displayName)
+            hasher.combine(transaction.kind)
+            hasher.combine(transaction.day)
+            hasher.combine(transaction.amount)
+            hasher.combine(transaction.monthStart)
+            hasher.combine(transaction.recurrenceType)
+            hasher.combine(transaction.recurrenceMonth)
+            hasher.combine(transaction.recurrenceEndMonthStart)
+        }
+
+        payments.forEach { payment in
+            hasher.combine(payment.transactionID)
+            hasher.combine(payment.monthStart)
+            hasher.combine(payment.occurrenceDay)
+            hasher.combine(payment.amountPaid)
+        }
+
+        exclusions.forEach { exclusion in
+            hasher.combine(exclusion.transactionID)
+            hasher.combine(exclusion.monthStart)
+        }
+
+        return hasher.finalize()
+    }
+
+    private var currentAccountSummarySignature: Int {
+        var hasher = Hasher()
+        hasher.combine(selectedMonthOffset)
+        hasher.combine(filtersAffectSummaryCards)
+        if filtersAffectSummaryCards {
+            hasher.combine(paymentFilter.rawValue)
+            hasher.combine(incomeFilter.rawValue)
+            hasher.combine(filteredExpenseType)
+            hasher.combine(freeTextFilter)
+            filteredCategories
+                .map(\.rawValue)
+                .sorted()
+                .forEach { hasher.combine($0) }
+        }
+
+        transactions.forEach { transaction in
+            hasher.combine(transaction.id)
+            hasher.combine(transaction.title)
+            hasher.combine(transaction.displayName)
+            hasher.combine(transaction.kind)
+            hasher.combine(transaction.expenseCategory)
+            hasher.combine(transaction.day)
+            hasher.combine(transaction.amount)
+            hasher.combine(transaction.monthStart)
+            hasher.combine(transaction.recurrenceType)
+            hasher.combine(transaction.recurrenceMonth)
+            hasher.combine(transaction.recurrenceEndMonthStart)
+            hasher.combine(transaction.budgetAllocationType)
+            hasher.combine(transaction.budgetMonthStart)
+        }
+
+        payments.forEach { payment in
+            hasher.combine(payment.transactionID)
+            hasher.combine(payment.monthStart)
+            hasher.combine(payment.occurrenceDay)
+            hasher.combine(payment.amountPaid)
+        }
+
+        exclusions.forEach { exclusion in
+            hasher.combine(exclusion.transactionID)
+            hasher.combine(exclusion.monthStart)
+        }
+
+        spendAccounts.forEach { account in
+            hasher.combine(account.id)
+            hasher.combine(account.initialBalance)
+            hasher.combine(account.isPrimary)
+        }
+
+        accountMovements.forEach { movement in
+            hasher.combine(movement.accountID)
+            hasher.combine(movement.amount)
+            hasher.combine(movement.date)
+        }
+
+        return hasher.finalize()
     }
 
     private var activeFilterCount: Int {
         var count = 0
         if paymentFilter != .all { count += 1 }
+        if incomeFilter != .all { count += 1 }
         if !filteredCategories.isEmpty { count += 1 }
         if !filteredExpenseType.isEmpty { count += 1 }
         if !freeTextFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { count += 1 }
         return count
+    }
+    private var shouldApplyFiltersToSummaryCards: Bool {
+        filtersAffectSummaryCards && activeFilterCount > 0
     }
     private var selectedMonthExpenseTypeOptions: [ExpenseTypePoint] {
         var options: [String: ExpenseTypePoint] = [:]
@@ -1025,7 +1305,7 @@ struct ContentView: View {
     }
 
     private var monthUnpaidExpenses: Double {
-        guard activeFilterCount > 0 else {
+        guard shouldApplyFiltersToSummaryCards else {
             return unpaidExpenses(in: selectedMonth)
         }
 
@@ -1055,7 +1335,7 @@ struct ContentView: View {
     }
 
     private var unpaidExpenseLines: [UnpaidExpenseLine] {
-        let sourceTransactions = activeFilterCount > 0 ? selectedFilteredTransactions : selectedTransactions
+        let sourceTransactions = shouldApplyFiltersToSummaryCards ? selectedFilteredTransactions : selectedTransactions
 
         return sourceTransactions
             .filter { $0.kind == TransactionKind.expense.rawValue }
@@ -1127,6 +1407,9 @@ struct ContentView: View {
     private var totalAvailableBalance: Double {
         spendAccounts.isEmpty ? accountSummary.availableBalance : totalSpendAccountsBalance
     }
+    private var currentSpendableBalance: Double {
+        totalAvailableBalance - futureBudgetReservationTotal
+    }
 
     private func auditBalanceAfter(delta: Double = 0) -> Double {
         totalAvailableBalance + delta
@@ -1176,10 +1459,120 @@ struct ContentView: View {
         let calendar = Calendar.current
         let selectedMonthStart = selectedMonth.monthStart
         let currentMonthStart = currentMonth.monthStart
-        var projectedRemaining = totalAvailableBalance - unpaidExpenses(in: currentMonthStart)
+        var projectedRemaining = currentSpendableBalance - unpaidExpenses(in: currentMonthStart)
 
         guard selectedMonthStart > currentMonthStart else {
-            return activeFilterCount > 0 ? totalAvailableBalance - monthUnpaidExpenses : projectedRemaining
+            return shouldApplyFiltersToSummaryCards ? currentSpendableBalance - monthUnpaidExpenses : projectedRemaining
+        }
+
+        var projectedMonth = calendar.date(byAdding: .month, value: 1, to: currentMonthStart)?.monthStart
+        while let month = projectedMonth, month <= selectedMonthStart {
+            let summary = calculator.monthSummary(in: month)
+            projectedRemaining += summary.income - summary.unpaidExpenses
+            projectedMonth = calendar.date(byAdding: .month, value: 1, to: month)?.monthStart
+        }
+
+        return projectedRemaining
+    }
+
+    @MainActor
+    private func refreshCurrentAccountSummaryMetrics(for signature: Int) async {
+        currentAccountSummaryMetrics = nil
+        await Task.yield()
+
+        guard !Task.isCancelled, signature == currentAccountSummarySignature else { return }
+        currentAccountSummaryMetrics = makeCurrentAccountSummaryMetrics()
+    }
+
+    private func makeCurrentAccountSummaryMetrics() -> CurrentAccountSummaryMetrics {
+        let now = Date()
+        let calculator = MoneyCalculationService(transactions: transactions, payments: payments, exclusions: exclusions)
+        let accountSummary = calculator.accountSummary(until: now)
+        let totalSpendAccountsBalance = spendAccounts.reduce(0) { $0 + $1.balance(with: accountMovements) }
+        let primarySpendAccount = spendAccounts.first(where: \.isPrimary) ?? spendAccounts.first
+        let primarySpendAccountBalance = primarySpendAccount?.balance(with: accountMovements)
+        let inAccount = primarySpendAccountBalance ?? accountSummary.availableBalance
+        let totalAvailableBalance = spendAccounts.isEmpty ? accountSummary.availableBalance : totalSpendAccountsBalance
+        let futureBudgetReservations = accountSummary.reservedForFutureBudgets
+        let firstFutureBudgetReservation = futureBudgetReservations.first
+        let futureBudgetReservationTotal = accountSummary.reservedForFutureBudgetsTotal
+        let futureBudgetReservationFootnote: String
+
+        if let firstFutureBudgetReservation {
+            futureBudgetReservationFootnote = String(
+                format: AppStrings.text(.reservedForBudgetSummary),
+                futureBudgetReservationTotal.currencyText,
+                firstFutureBudgetReservation.budgetMonth.monthTitle
+            )
+        } else {
+            futureBudgetReservationFootnote = ""
+        }
+
+        var balanceFootnoteParts: [String] = []
+        if spendAccounts.count > 1 {
+            balanceFootnoteParts.append(String(format: AppStrings.text(.totalAllAccountsSummary), totalSpendAccountsBalance.currencyText))
+        }
+        if !futureBudgetReservationFootnote.isEmpty {
+            balanceFootnoteParts.append(futureBudgetReservationFootnote)
+        }
+
+        let balanceHelpText: String
+        if let firstFutureBudgetReservation, futureBudgetReservationTotal > 0 {
+            balanceHelpText = String(
+                format: AppStrings.text(.reservedBalanceHelpMessage),
+                inAccount.currencyText,
+                futureBudgetReservationTotal.currencyText,
+                firstFutureBudgetReservation.budgetMonth.monthTitle,
+                currentMonth.monthTitle
+            )
+        } else {
+            balanceHelpText = AppStrings.text(.balanceThisMonthHelp)
+        }
+
+        let monthUnpaidExpenses = currentAccountMonthUnpaidExpenses(using: calculator)
+        let currentSpendableBalance = totalAvailableBalance - futureBudgetReservationTotal
+        let monthRemaining = currentAccountMonthRemaining(
+            using: calculator,
+            currentSpendableBalance: currentSpendableBalance,
+            monthUnpaidExpenses: monthUnpaidExpenses
+        )
+
+        return CurrentAccountSummaryMetrics(
+            inAccount: inAccount,
+            monthUnpaidExpenses: monthUnpaidExpenses,
+            monthRemaining: monthRemaining,
+            balanceHelpText: balanceHelpText,
+            balanceFootnote: balanceFootnoteParts.joined(separator: "\n"),
+            balanceHelpTitle: futureBudgetReservationTotal > 0 ? AppStrings.text(.reservedBalanceHelpTitle) : nil
+        )
+    }
+
+    private func currentAccountMonthUnpaidExpenses(using calculator: MoneyCalculationService) -> Double {
+        guard shouldApplyFiltersToSummaryCards else {
+            return calculator.monthSummary(in: selectedMonth).unpaidExpenses
+        }
+
+        return filteredTransactions(in: selectedMonth)
+            .filter { $0.kind == TransactionKind.expense.rawValue }
+            .reduce(0) { total, transaction in
+                total + filteredUnpaidAmount(for: transaction, in: selectedMonth)
+            }
+    }
+
+    private func currentAccountMonthRemaining(
+        using calculator: MoneyCalculationService,
+        currentSpendableBalance: Double,
+        monthUnpaidExpenses: Double
+    ) -> Double? {
+        guard isSelectedMonthInSpendableWindow else { return nil }
+
+        let calendar = Calendar.current
+        let selectedMonthStart = selectedMonth.monthStart
+        let currentMonthStart = currentMonth.monthStart
+        var projectedRemaining = currentSpendableBalance - calculator.monthSummary(in: currentMonthStart).unpaidExpenses
+
+        guard selectedMonthStart > currentMonthStart else {
+            return shouldApplyFiltersToSummaryCards ? currentSpendableBalance - monthUnpaidExpenses : projectedRemaining
         }
 
         var projectedMonth = calendar.date(byAdding: .month, value: 1, to: currentMonthStart)?.monthStart
@@ -1270,6 +1663,7 @@ struct ContentView: View {
             .filter { movement in
                 Calendar.current.isDate(movement.date, equalTo: month, toGranularity: .month)
                     && movement.kind == .deposit
+                    && movement.linkedTransactionID == nil
                     && !linkedSavingMovementIDs.contains(movement.id)
             }
             .reduce(0) { $0 + abs($1.amount) }
@@ -1312,6 +1706,7 @@ struct ContentView: View {
             .filter { movement in
                 Calendar.current.isDate(movement.date, equalTo: month, toGranularity: .month)
                     && movement.kind == .deposit
+                    && movement.linkedTransactionID == nil
                     && !linkedSavingMovementIDs.contains(movement.id)
             }
             .map { movement in
@@ -1397,9 +1792,16 @@ struct ContentView: View {
     }
 
     private func transactionMatchesCurrentAccountFilters(_ transaction: MoneyTransaction, in month: Date) -> Bool {
-        if paymentFilter != .all {
-            guard transaction.kind == TransactionKind.expense.rawValue else { return false }
-            guard transactionHasOccurrenceMatchingPaymentFilter(transaction, in: month) else { return false }
+        if transaction.kind == TransactionKind.expense.rawValue,
+           paymentFilter != .all,
+           !transactionHasOccurrenceMatchingPaymentFilter(transaction, in: month) {
+            return false
+        }
+
+        if transaction.kind == TransactionKind.income.rawValue,
+           incomeFilter != .all,
+           !transactionHasOccurrenceMatchingIncomeFilter(transaction, in: month) {
+            return false
         }
 
         if !filteredCategories.isEmpty {
@@ -1442,8 +1844,25 @@ struct ContentView: View {
         }
     }
 
+    private func transactionHasOccurrenceMatchingIncomeFilter(_ transaction: MoneyTransaction, in month: Date) -> Bool {
+        transaction.occurrenceDays(in: month, exclusions: exclusions).contains { day in
+            let receivedDate = month.monthStart.date(day: transaction.recurrence == .weekly ? day : transaction.effectiveDay(in: month))
+            let isReceived = Calendar.current.startOfDay(for: receivedDate) <= Calendar.current.startOfDay(for: Date())
+
+            switch incomeFilter {
+            case .all:
+                return true
+            case .received:
+                return isReceived
+            case .pending:
+                return !isReceived
+            }
+        }
+    }
+
     private func clearCurrentAccountFilters() {
         paymentFilter = .all
+        incomeFilter = .all
         filteredCategories = []
         filteredExpenseType = ""
         freeTextFilter = ""
@@ -1475,6 +1894,9 @@ struct ContentView: View {
                 onConfirm: { amount, note, accountID in
                     addPaymentAmount(request.transaction, in: request.month, occurrenceDay: occurrenceDay, amount: amount, note: note, accountID: accountID)
                 },
+                onCloseBudgetWithConsumedValue: { consumedValue in
+                    closeBudgetWithConsumedValue(request.transaction, in: request.month, occurrenceDay: occurrenceDay, consumedValue: consumedValue)
+                },
                 onDeleteHistoryEntry: { entry in
                     deletePaymentHistoryEntry(entry, for: request.transaction, in: request.month, occurrenceDay: occurrenceDay)
                 }
@@ -1492,9 +1914,11 @@ struct ContentView: View {
         .sheet(isPresented: $showsFilters) {
             CurrentAccountFilterView(
                 paymentFilter: $paymentFilter,
+                incomeFilter: $incomeFilter,
                 filteredCategories: $filteredCategories,
                 filteredExpenseType: $filteredExpenseType,
                 freeTextFilter: $freeTextFilter,
+                filtersAffectSummaryCards: $filtersAffectSummaryCards,
                 expenseTypeOptions: selectedMonthExpenseTypeOptions,
                 onClear: clearCurrentAccountFilters
             )
@@ -1526,10 +1950,11 @@ struct ContentView: View {
         .task {
             await handleStartupMaintenance()
         }
-        .task(id: "\(notificationScheduleSignature)#notifications=\(notificationsEnabled)") {
+        .task(id: notificationScheduleSignature) {
             await refreshExpensePaymentNotifications()
         }
         .onChange(of: paymentFilter) { _, _ in persistCurrentAccountFilters() }
+        .onChange(of: incomeFilter) { _, _ in persistCurrentAccountFilters() }
         .onChange(of: filteredCategories) { _, _ in persistCurrentAccountFilters() }
         .onChange(of: filteredExpenseType) { _, _ in persistCurrentAccountFilters() }
         .onChange(of: freeTextFilter) { _, _ in persistCurrentAccountFilters() }
@@ -1583,25 +2008,26 @@ struct ContentView: View {
         .tint(selectedPhoneTabTint)
         .minimizeTabBarOnScrollDownIfAvailable()
         .overlay {
-            if selectedPhoneTab == .currentAccount && showsQuickActions {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .opacity(0.82)
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.snappy) {
-                            showsQuickActions = false
-                        }
-                    }
-                    .transition(.opacity)
-            }
-        }
-        .overlay(alignment: .bottomTrailing) {
             if selectedPhoneTab == .currentAccount {
-                phoneBottomAddButton
-                    .padding(.trailing, 18)
-                    .padding(.bottom, 82)
+                PhoneCurrentAccountActionsOverlay(
+                    activeFilterCount: activeFilterCount,
+                    showsSavingAction: hasActiveSavings,
+                    showsCreditAction: hasActiveCredits,
+                    onExpense: {
+                        editorRequest = TransactionEditorRequest(mode: .expense, month: selectedMonth)
+                    },
+                    onIncome: {
+                        editorRequest = TransactionEditorRequest(mode: .income, month: selectedMonth)
+                    },
+                    onSaving: {
+                        openPresetExpense(title: AppStrings.text(.newSavingExpense), expenseName: savingExpenseName)
+                    },
+                    onCredit: openCurrentAccountCreditMovement,
+                    onReceipt: openReceiptScanner,
+                    onFilters: {
+                        showsFilters = true
+                    }
+                )
             }
         }
     }
@@ -1824,7 +2250,7 @@ struct ContentView: View {
             }
 
             Section {
-                ForEach([ManagementSidebarTab.savings, ManagementSidebarTab.credits]) { tab in
+                ForEach([ManagementSidebarTab.savings, ManagementSidebarTab.credits, ManagementSidebarTab.planning]) { tab in
                     managementSidebarMenuButton(for: tab)
                 }
             } header: {
@@ -2107,6 +2533,7 @@ struct ContentView: View {
                 paymentHistory: paymentHistory,
                 exclusions: exclusions,
                 paymentFilter: paymentFilter,
+                incomeFilter: incomeFilter,
                 hasActiveFilters: activeFilterCount > 0,
                 creditAccounts: creditAccounts,
                 savingAccounts: savingAccounts,
@@ -2931,23 +3358,17 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 16) {
             analyticsMonthYearExpenseCard
 
-            if usesSidebarNavigation {
-                lightweightEvolutionSection
-            } else {
-                // Fallback used while isolating EXC_BAD_ACCESS in "Analise Mes e Ano"
-                // on physical iPhone devices. The original section remains intact above.
-                lightweightEvolutionUnavailableSection
-            }
+            lightweightEvolutionSection
         }
     }
 
     private var lightweightEvolutionUnavailableSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Evolução temporal")
+            Text(AppStrings.text(.temporalEvolution))
                 .font(.headline.bold())
                 .foregroundStyle(AppPalette.background)
 
-            Text("Esta secção está temporariamente indisponível.")
+            Text(AppStrings.text(.temporalEvolutionUnavailable))
                 .font(.caption)
                 .foregroundStyle(AppPalette.mutedText)
         }
@@ -3018,11 +3439,11 @@ struct ContentView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Evolução temporal")
+                Text(AppStrings.text(.temporalEvolution))
                     .font(.headline.bold())
                     .foregroundStyle(AppPalette.background)
 
-                Text("30 dias visíveis, com histórico e previsão")
+                Text(AppStrings.text(.temporalEvolutionSubtitle))
                     .font(.caption)
                     .foregroundStyle(AppPalette.mutedText)
             }
@@ -3045,13 +3466,13 @@ struct ContentView: View {
                     )
                     lightweightEvolutionMetric(
                         icon: "chart.line.uptrend.xyaxis",
-                        title: "Máximo",
+                        title: AppStrings.text(.maximum),
                         value: displayedLightweightEvolutionRoundedValue(maxValue, for: selectedLightweightEvolutionKind),
                         tint: selectedLightweightEvolutionKind.tint
                     )
                     lightweightEvolutionMetric(
                         icon: "calendar.badge.clock",
-                        title: "Previsto fim mês",
+                        title: AppStrings.text(.expectedEndOfMonth),
                         value: displayedLightweightEvolutionRoundedValue(monthEndValue, for: selectedLightweightEvolutionKind),
                         tint: selectedLightweightEvolutionKind.tint
                     )
@@ -3068,7 +3489,7 @@ struct ContentView: View {
                         lightweightEvolutionMiniSummaries
                     }
                 } else {
-                    Text("Ainda não existem dados suficientes para apresentar a evolução.")
+                    Text(AppStrings.text(.temporalEvolutionNoData))
                         .font(.subheadline)
                         .foregroundStyle(AppPalette.mutedText)
                         .frame(maxWidth: .infinity, minHeight: 120)
@@ -3086,7 +3507,7 @@ struct ContentView: View {
             if isLightweightEvolutionLoading {
                 ProgressView()
                     .tint(selectedLightweightEvolutionKind.tint)
-                Text("A preparar evolução temporal...")
+                Text(AppStrings.text(.temporalEvolutionLoading))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppPalette.mutedText)
             } else {
@@ -3099,7 +3520,7 @@ struct ContentView: View {
                 Button {
                     scheduleLightweightEvolutionTableRefreshIfNeeded()
                 } label: {
-                    Text("Carregar gráfico")
+                    Text(AppStrings.text(.loadChart))
                         .font(.caption.weight(.bold))
                         .foregroundStyle(AppPalette.surface)
                         .padding(.horizontal, 16)
@@ -3108,7 +3529,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
 
-                Text("A página continua disponível enquanto os dados são preparados.")
+                Text(AppStrings.text(.temporalEvolutionLoadingNote))
                     .font(.caption2)
                     .foregroundStyle(AppPalette.mutedText)
                     .multilineTextAlignment(.center)
@@ -3391,7 +3812,7 @@ struct ContentView: View {
                 Capsule()
                     .fill(kind.tint)
                     .frame(width: 26, height: 3)
-                Text("Histórico")
+                Text(AppStrings.text(.history))
             }
 
             HStack(spacing: 4) {
@@ -3401,7 +3822,7 @@ struct ContentView: View {
                 Capsule()
                     .fill(kind.tint.opacity(0.55))
                     .frame(width: 8, height: 3)
-                Text("Previsto")
+                Text(AppStrings.text(.forecast))
             }
         }
         .font(.caption.weight(.semibold))
@@ -3455,7 +3876,7 @@ struct ContentView: View {
     }
 
     private func lightweightEvolutionMonthDetails(points: [LightweightEvolutionPoint], kind: LightweightEvolutionKind) -> some View {
-        VStack(spacing: 8) {
+        return VStack(spacing: 8) {
             ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
                 let previousValue = index > 0 ? points[index - 1].value : point.value
                 let delta = point.value - previousValue
@@ -3547,6 +3968,8 @@ struct ContentView: View {
             CreditsSettingsView()
                 .navigationTitle(CreditStrings.text(.settingsTitle))
                 .navigationBarTitleDisplayMode(.inline)
+        case .planning:
+            planningManagementView
         }
     }
 
@@ -3601,6 +4024,17 @@ struct ContentView: View {
                         summaryTint: AppPalette.primary,
                         route: .credits
                     )
+
+                    managementCard(
+                        title: AppStrings.text(.planning),
+                        subtitle: AppStrings.text(.planningDescription),
+                        imageName: "ManagementPlaneamentosIcon",
+                        summaryTitle: managementActivePlanningSummary,
+                        summaryValue: nil,
+                        summaryValueText: "\(managementActivePlanningCount)",
+                        summaryTint: AppPalette.mediumBlue,
+                        route: .planning
+                    )
                 }
             }
             .padding(.horizontal, 14)
@@ -3629,7 +4063,13 @@ struct ContentView: View {
             CreditsSettingsView()
                 .navigationTitle(CreditStrings.text(.settingsTitle))
                 .navigationBarTitleDisplayMode(.inline)
+        case .planning:
+            planningManagementView
         }
+    }
+
+    private var planningManagementView: some View {
+        PlanningManagementView()
     }
 
     private func managementCard(
@@ -3637,7 +4077,9 @@ struct ContentView: View {
         subtitle: String,
         imageName: String,
         summaryTitle: String,
-        summaryValue: Double,
+        summaryValue: Double?,
+        summaryValueText: String? = nil,
+        summaryText: String? = nil,
         summaryTint: Color,
         route: ManagementSidebarTab
     ) -> some View {
@@ -3661,16 +4103,36 @@ struct ContentView: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
-                    HStack(spacing: 6) {
-                        Text(summaryTitle)
+                    if let summaryText {
+                        Text(summaryText)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(AppPalette.mutedText)
-                            .lineLimit(1)
-                        Text(summaryValue.currencyText)
-                            .font(.subheadline.bold())
                             .foregroundStyle(summaryTint)
                             .lineLimit(1)
                             .minimumScaleFactor(0.78)
+                    } else if let summaryValueText {
+                        HStack(spacing: 6) {
+                            Text(summaryTitle)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AppPalette.mutedText)
+                                .lineLimit(1)
+                            Text(summaryValueText)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(summaryTint)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                        }
+                    } else if let summaryValue {
+                        HStack(spacing: 6) {
+                            Text(summaryTitle)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AppPalette.mutedText)
+                                .lineLimit(1)
+                            Text(summaryValue.currencyText)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(summaryTint)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                        }
                     }
                 }
                 .layoutPriority(1)
@@ -4288,6 +4750,12 @@ struct ContentView: View {
 
     private func scheduleLightweightEvolutionTableRefreshIfNeeded() {
         guard !isLightweightEvolutionLoading else { return }
+        let signature = lightweightEvolutionSignature
+        if lightweightEvolutionSignatureSnapshot != signature {
+            lightweightEvolutionTable = .empty
+            lightweightEvolutionSignatureSnapshot = signature
+        }
+
         let kind = selectedLightweightEvolutionKind
         guard lightweightEvolutionTable.points(for: kind).isEmpty else { return }
 
@@ -5545,7 +6013,7 @@ struct ContentView: View {
             }
 
             phoneVerticalQuickActionButton(
-                title: "Ler fatura",
+                title: AppStrings.text(.readReceipt),
                 imageName: "QuickActionLerFatura"
             ) {
                 openReceiptScanner()
@@ -5593,12 +6061,12 @@ struct ContentView: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(AppPalette.background)
                     .frame(width: 50, height: 50)
-                    .background(AppPalette.surface.opacity(0.98), in: Circle())
+                    .background(AppPalette.surface.opacity(0.78), in: Circle())
                     .overlay {
                         Circle()
-                            .strokeBorder(AppPalette.background.opacity(0.12), lineWidth: 1)
+                            .strokeBorder(AppPalette.background.opacity(0.08), lineWidth: 1)
                     }
-                    .shadow(color: AppPalette.background.opacity(0.18), radius: 12, y: 7)
+                    .shadow(color: AppPalette.background.opacity(0.10), radius: 10, y: 5)
 
                 if let badge {
                     Text(badge)
@@ -5627,12 +6095,12 @@ struct ContentView: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(AppPalette.background)
                     .frame(width: 40, height: 40)
-                    .background(AppPalette.surface.opacity(0.96), in: Circle())
+                    .background(AppPalette.surface.opacity(0.78), in: Circle())
                     .overlay {
                         Circle()
-                            .strokeBorder(AppPalette.background.opacity(0.12), lineWidth: 1)
+                            .strokeBorder(AppPalette.background.opacity(0.08), lineWidth: 1)
                     }
-                    .shadow(color: AppPalette.background.opacity(0.12), radius: 8, y: 4)
+                    .shadow(color: AppPalette.background.opacity(0.08), radius: 7, y: 3)
 
                 if let badge {
                     Text(badge)
@@ -5685,38 +6153,46 @@ struct ContentView: View {
     }
 
     private var summaryBar: some View {
-        VStack(spacing: 8) {
+        let metrics = currentAccountSummaryMetrics
+        let summarySignature = currentAccountSummarySignature
+        let showsMonthRemainingCard = metrics?.monthRemaining != nil || isSelectedMonthInSpendableWindow
+
+        return VStack(spacing: 8) {
             SummaryTile(
                 title: AppStrings.text(.balanceThisMonth),
-                value: inAccount,
-                helpText: balanceHelpText,
+                value: metrics?.inAccount ?? 0,
+                helpText: metrics?.balanceHelpText ?? AppStrings.text(.balanceThisMonthHelp),
                 iconImageName: "SaldoDisponivelIcon",
-                footnote: balanceCardFootnote,
-                helpTitle: futureBudgetReservationTotal > 0 ? AppStrings.text(.reservedBalanceHelpTitle) : nil,
+                footnote: metrics?.balanceFootnote ?? "",
+                helpTitle: metrics?.balanceHelpTitle,
                 isCompact: !usesSidebarNavigation,
+                isLoading: metrics == nil,
                 onTap: openAccountsManagement
             )
 
             HStack(spacing: 8) {
                 SummaryTile(
                     title: AppStrings.text(.monthUnpaid),
-                    value: monthUnpaidExpenses,
+                    value: metrics?.monthUnpaidExpenses ?? 0,
                     helpText: AppStrings.text(.monthUnpaidHelp),
                     iconImageName: "FaltaPagarIcon",
                     helpArrowEdge: .bottom,
                     isCompact: !usesSidebarNavigation,
+                    isLoading: metrics == nil,
                     titleLineLimit: 1,
                     fixedHeight: usesSidebarNavigation ? nil : 82,
                     onTap: { showsUnpaidExpensesBreakdown = true }
                 )
-                if let monthRemaining {
+                if showsMonthRemainingCard {
+                    let remaining = metrics?.monthRemaining ?? 0
                     SummaryTile(
-                        title: monthRemaining < 0 ? AppStrings.text(.monthBudgetExceeded) : AppStrings.text(.monthRemaining),
-                        value: monthRemaining,
+                        title: remaining < 0 ? AppStrings.text(.monthBudgetExceeded) : AppStrings.text(.monthRemaining),
+                        value: remaining,
                         helpText: AppStrings.text(.monthRemainingHelp),
                         iconImageName: "PodeGastarIcon",
                         boldHelpNote: AppStrings.text(.monthRemainingHelpNote),
                         isCompact: !usesSidebarNavigation,
+                        isLoading: metrics == nil,
                         titleLineLimit: 1,
                         fixedHeight: usesSidebarNavigation ? nil : 82
                     )
@@ -5727,6 +6203,9 @@ struct ContentView: View {
         .padding(.top, usesSidebarNavigation ? 4 : 0)
         .padding(.bottom, usesSidebarNavigation ? 12 : 4)
         .background(AppPalette.appBackground)
+        .task(id: summarySignature) {
+            await refreshCurrentAccountSummaryMetrics(for: summarySignature)
+        }
     }
 
     private var quickActionsBar: some View {
@@ -5865,7 +6344,7 @@ struct ContentView: View {
 
     private var receiptQuickActionButton: some View {
         quickActionButton(
-            title: "Ler fatura",
+            title: AppStrings.text(.readReceipt),
             imageName: "QuickActionLerFatura"
         ) {
             openReceiptScanner()
@@ -5960,8 +6439,8 @@ struct ContentView: View {
 
         if result.amount == nil {
             expenseNotice = ExpenseNotice(
-                title: "Fatura lida",
-                message: "Não foi possível detetar o valor total automaticamente. Confirma os dados antes de guardar."
+                title: AppStrings.text(.receiptReadTitle),
+                message: AppStrings.text(.receiptReadMissingTotalMessage)
             )
         }
     }
@@ -5969,7 +6448,7 @@ struct ContentView: View {
     private func handleReceiptScanFailure(_ message: String) {
         showsReceiptScanner = false
         expenseNotice = ExpenseNotice(
-            title: "Não foi possível ler a fatura",
+            title: AppStrings.text(.receiptReadFailureTitle),
             message: message
         )
     }
@@ -6000,6 +6479,7 @@ struct ContentView: View {
         migrateSpendAccountsIfNeeded()
         loadStoredCurrentAccountFilters()
         autoMarkDueRecurringExpensesAsPaid()
+        repairLinkedSavingDepositsFromPayments()
         checkOverdueExpenses()
     }
 
@@ -6129,11 +6609,41 @@ struct ContentView: View {
         }
     }
 
+    private func repairLinkedSavingDepositsFromPayments() {
+        let linkedSavingTransactionIDs = Set(
+            transactions
+                .filter { $0.kind == TransactionKind.expense.rawValue && $0.linkedSavingID != nil }
+                .map(\.id)
+        )
+        guard !linkedSavingTransactionIDs.isEmpty else { return }
+
+        payments
+            .filter { linkedSavingTransactionIDs.contains($0.transactionID) }
+            .forEach { payment in
+                guard let transaction = transactions.first(where: { $0.id == payment.transactionID }),
+                      transaction.linkedSavingID != nil
+                else { return }
+
+                let occurrenceDay = transaction.recurrence == .weekly ? payment.occurrenceDay : nil
+                let scheduledAmount = transaction.scheduledAmount(in: payment.monthStart, occurrenceDay: occurrenceDay)
+                let paidAmount = payment.amountPaid ?? scheduledAmount
+                guard paidAmount > 0 else { return }
+
+                syncLinkedSavingDeposit(
+                    for: transaction,
+                    in: payment.monthStart,
+                    occurrenceDay: occurrenceDay,
+                    paidAmount: paidAmount
+                )
+            }
+    }
+
     private func loadStoredCurrentAccountFilters() {
         guard !didLoadStoredFilters else { return }
         didLoadStoredFilters = true
 
         paymentFilter = CurrentAccountPaymentFilter(rawValue: storedPaymentFilter) ?? .all
+        incomeFilter = CurrentAccountIncomeFilter(rawValue: storedIncomeFilter) ?? .all
         filteredCategories = Set(storedFilteredCategories
             .split(separator: ",")
             .compactMap { ExpenseCategory(rawValue: String($0)) })
@@ -6143,6 +6653,7 @@ struct ContentView: View {
 
     private func persistCurrentAccountFilters() {
         storedPaymentFilter = paymentFilter.rawValue
+        storedIncomeFilter = incomeFilter.rawValue
         storedFilteredCategories = filteredCategories
             .map(\.rawValue)
             .sorted()
@@ -6384,8 +6895,9 @@ struct ContentView: View {
         let normalizedOccurrenceDay = normalizedPaymentOccurrenceDay(for: transaction, occurrenceDay: occurrenceDay)
         let scheduledAmount = transaction.scheduledAmount(in: monthStart, occurrenceDay: normalizedOccurrenceDay)
         let matchingPayments = paymentRecords(for: transaction, in: monthStart, occurrenceDay: normalizedOccurrenceDay)
-        let currentPaid = matchingPayments.reduce(0) { $0 + ($1.amountPaid ?? scheduledAmount) }
-        let newPaidAmount = min(currentPaid + paymentAmount, scheduledAmount)
+        let storedPaid = matchingPayments.reduce(0) { $0 + ($1.amountPaid ?? scheduledAmount) }
+        let newPaidAmount = storedPaid + paymentAmount
+        let appliedPaymentAmount = paymentAmount
 
         if let existingPayment = matchingPayments.first {
             existingPayment.amountPaid = newPaidAmount
@@ -6401,7 +6913,7 @@ struct ContentView: View {
             transactionID: transaction.id,
             monthStart: monthStart,
             occurrenceDay: normalizedOccurrenceDay,
-            amount: paymentAmount,
+            amount: appliedPaymentAmount,
             paidAt: paidAt,
             note: note,
             accountID: accountID
@@ -6414,7 +6926,7 @@ struct ContentView: View {
                 paymentHistoryID: historyEntry.id,
                 date: paidAt,
                 type: AccountMovementKind.expensePayment.rawValue,
-                amount: -paymentAmount,
+                amount: -appliedPaymentAmount,
                 note: note ?? transaction.displayName
             ))
         }
@@ -6424,15 +6936,15 @@ struct ContentView: View {
             title: transaction.displayName,
             details: accountName.map { "Conta: \($0)" } ?? "",
             note: note ?? "",
-            amount: -paymentAmount,
-            balanceAfter: auditBalanceAfter(delta: -paymentAmount),
+            amount: -appliedPaymentAmount,
+            balanceAfter: auditBalanceAfter(delta: -appliedPaymentAmount),
             accountID: accountID,
             transactionID: transaction.id,
             paymentHistoryID: historyEntry.id,
             date: paidAt
         )
-        syncLinkedCreditPayment(for: transaction, in: month, paidAmount: newPaidAmount)
-        syncLinkedSavingDeposit(for: transaction, in: month, paidAmount: newPaidAmount)
+        syncLinkedCreditPayment(for: transaction, in: month, occurrenceDay: normalizedOccurrenceDay, paidAmount: newPaidAmount)
+        syncLinkedSavingDeposit(for: transaction, in: month, occurrenceDay: normalizedOccurrenceDay, paidAmount: newPaidAmount)
     }
 
     private func deletePaymentHistoryEntry(_ entry: PaymentHistoryEntry, for transaction: MoneyTransaction, in month: Date, occurrenceDay: Int? = nil) {
@@ -6477,8 +6989,8 @@ struct ContentView: View {
             }
         }
 
-        syncLinkedCreditPayment(for: transaction, in: monthStart, paidAmount: newPaidAmount)
-        syncLinkedSavingDeposit(for: transaction, in: monthStart, paidAmount: newPaidAmount)
+        syncLinkedCreditPayment(for: transaction, in: monthStart, occurrenceDay: normalizedOccurrenceDay, paidAmount: newPaidAmount)
+        syncLinkedSavingDeposit(for: transaction, in: monthStart, occurrenceDay: normalizedOccurrenceDay, paidAmount: newPaidAmount)
     }
 
     private func normalizedPaymentOccurrenceDay(for transaction: MoneyTransaction, occurrenceDay: Int?) -> Int? {
@@ -6499,76 +7011,274 @@ struct ContentView: View {
             && (transaction.recurrence != .weekly || entry.occurrenceDay == occurrenceDay)
     }
 
-    private func syncLinkedCreditPayment(for transaction: MoneyTransaction, in month: Date, paidAmount: Double) {
+    private func syncLinkedCreditPayment(for transaction: MoneyTransaction, in month: Date, occurrenceDay: Int?, paidAmount: Double) {
         guard let linkedCreditID = transaction.linkedCreditID else { return }
+        let monthStart = month.monthStart
+        let movement = linkedCreditMovement(for: transaction, creditID: linkedCreditID, month: monthStart, occurrenceDay: occurrenceDay)
 
         if paidAmount <= 0 {
-            if let linkedCreditMovementID = transaction.linkedCreditMovementID,
-               let movement = creditMovements.first(where: { $0.id == linkedCreditMovementID }) {
+            if let movement {
                 modelContext.delete(movement)
             }
-            transaction.linkedCreditMovementID = nil
+            if !transaction.isRecurring {
+                transaction.linkedCreditMovementID = nil
+            }
             return
         }
 
-        let note = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? transaction.displayName
-            : transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let movementDate = linkedMovementDate(for: transaction, in: monthStart, occurrenceDay: occurrenceDay)
+        let note = linkedMovementNote(for: transaction)
 
-        if let linkedCreditMovementID = transaction.linkedCreditMovementID,
-           let movement = creditMovements.first(where: { $0.id == linkedCreditMovementID }) {
+        if let movement {
             movement.creditID = linkedCreditID
-            movement.date = month.date(day: transaction.effectiveDay(in: month))
+            movement.date = movementDate
             movement.type = CreditMovementKind.payment.rawValue
             movement.amount = paidAmount
             movement.note = note
+            movement.linkedTransactionID = transaction.id
+            movement.linkedTransactionMonthStart = monthStart
+            movement.linkedTransactionOccurrenceDay = occurrenceDay
         } else {
             let movement = CreditMovement(
                 creditID: linkedCreditID,
-                date: month.date(day: transaction.effectiveDay(in: month)),
+                date: movementDate,
                 type: CreditMovementKind.payment.rawValue,
                 amount: paidAmount,
-                note: note
+                note: note,
+                linkedTransactionID: transaction.id,
+                linkedTransactionMonthStart: monthStart,
+                linkedTransactionOccurrenceDay: occurrenceDay
             )
             modelContext.insert(movement)
-            transaction.linkedCreditMovementID = movement.id
+            if !transaction.isRecurring {
+                transaction.linkedCreditMovementID = movement.id
+            }
         }
     }
 
-    private func syncLinkedSavingDeposit(for transaction: MoneyTransaction, in month: Date, paidAmount: Double) {
+    private func linkedCreditMovement(for transaction: MoneyTransaction, creditID: UUID, month: Date, occurrenceDay: Int?) -> CreditMovement? {
+        if let movement = creditMovements.first(where: {
+            $0.linkedTransactionID == transaction.id
+                && Calendar.current.isDate($0.linkedTransactionMonthStart ?? .distantPast, equalTo: month.monthStart, toGranularity: .month)
+                && $0.linkedTransactionOccurrenceDay == occurrenceDay
+        }) {
+            return movement
+        }
+
+        if !transaction.isRecurring,
+           let linkedCreditMovementID = transaction.linkedCreditMovementID,
+           let movement = creditMovements.first(where: { $0.id == linkedCreditMovementID }) {
+            return movement
+        }
+
+        if let linkedCreditMovementID = transaction.linkedCreditMovementID,
+           let movement = creditMovements.first(where: { $0.id == linkedCreditMovementID }),
+           Calendar.current.isDate(movement.date, equalTo: linkedMovementDate(for: transaction, in: month, occurrenceDay: occurrenceDay), toGranularity: .day) {
+            return movement
+        }
+
+        let movementDate = linkedMovementDate(for: transaction, in: month, occurrenceDay: occurrenceDay)
+        let note = linkedMovementNote(for: transaction)
+        return creditMovements.first {
+            $0.creditID == creditID
+                && $0.kind == .payment
+                && Calendar.current.isDate($0.date, equalTo: movementDate, toGranularity: .day)
+                && $0.note == note
+        }
+    }
+
+    private func syncLinkedSavingDeposit(for transaction: MoneyTransaction, in month: Date, occurrenceDay: Int?, paidAmount: Double) {
         guard let linkedSavingID = transaction.linkedSavingID else { return }
+        let monthStart = month.monthStart
+        let movement = linkedSavingMovement(for: transaction, savingID: linkedSavingID, month: monthStart, occurrenceDay: occurrenceDay)
 
         if paidAmount <= 0 {
-            if let linkedSavingMovementID = transaction.linkedSavingMovementID,
-               let movement = savingMovements.first(where: { $0.id == linkedSavingMovementID }) {
+            if let movement {
                 modelContext.delete(movement)
             }
-            transaction.linkedSavingMovementID = nil
+            if !transaction.isRecurring {
+                transaction.linkedSavingMovementID = nil
+            }
             return
         }
 
-        let note = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? transaction.displayName
-            : transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let movementDate = linkedMovementDate(for: transaction, in: monthStart, occurrenceDay: occurrenceDay)
+        let note = linkedMovementNote(for: transaction)
 
-        if let linkedSavingMovementID = transaction.linkedSavingMovementID,
-           let movement = savingMovements.first(where: { $0.id == linkedSavingMovementID }) {
+        if let movement {
             movement.savingID = linkedSavingID
-            movement.date = month.date(day: transaction.effectiveDay(in: month))
+            movement.date = movementDate
             movement.type = SavingMovementKind.deposit.rawValue
             movement.amount = paidAmount
             movement.note = note
+            movement.linkedTransactionID = transaction.id
+            movement.linkedTransactionMonthStart = monthStart
+            movement.linkedTransactionOccurrenceDay = occurrenceDay
         } else {
             let movement = SavingMovement(
                 savingID: linkedSavingID,
-                date: month.date(day: transaction.effectiveDay(in: month)),
+                date: movementDate,
                 type: SavingMovementKind.deposit.rawValue,
                 amount: paidAmount,
-                note: note
+                note: note,
+                linkedTransactionID: transaction.id,
+                linkedTransactionMonthStart: monthStart,
+                linkedTransactionOccurrenceDay: occurrenceDay
             )
             modelContext.insert(movement)
-            transaction.linkedSavingMovementID = movement.id
+            if !transaction.isRecurring {
+                transaction.linkedSavingMovementID = movement.id
+            }
         }
+    }
+
+    private func linkedSavingMovement(for transaction: MoneyTransaction, savingID: UUID, month: Date, occurrenceDay: Int?) -> SavingMovement? {
+        if let movement = savingMovements.first(where: {
+            $0.linkedTransactionID == transaction.id
+                && Calendar.current.isDate($0.linkedTransactionMonthStart ?? .distantPast, equalTo: month.monthStart, toGranularity: .month)
+                && $0.linkedTransactionOccurrenceDay == occurrenceDay
+        }) {
+            return movement
+        }
+
+        if !transaction.isRecurring,
+           let linkedSavingMovementID = transaction.linkedSavingMovementID,
+           let movement = savingMovements.first(where: { $0.id == linkedSavingMovementID }) {
+            return movement
+        }
+
+        if let linkedSavingMovementID = transaction.linkedSavingMovementID,
+           let movement = savingMovements.first(where: { $0.id == linkedSavingMovementID }),
+           Calendar.current.isDate(movement.date, equalTo: linkedMovementDate(for: transaction, in: month, occurrenceDay: occurrenceDay), toGranularity: .day) {
+            return movement
+        }
+
+        let movementDate = linkedMovementDate(for: transaction, in: month, occurrenceDay: occurrenceDay)
+        let note = linkedMovementNote(for: transaction)
+        return savingMovements.first {
+            $0.savingID == savingID
+                && $0.kind == .deposit
+                && Calendar.current.isDate($0.date, equalTo: movementDate, toGranularity: .day)
+                && $0.note == note
+        }
+    }
+
+    private func linkedMovementDate(for transaction: MoneyTransaction, in month: Date, occurrenceDay: Int?) -> Date {
+        month.monthStart.date(day: occurrenceDay ?? transaction.effectiveDay(in: month))
+    }
+
+    private func linkedMovementNote(for transaction: MoneyTransaction) -> String {
+        let trimmedTitle = transaction.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? transaction.displayName : trimmedTitle
+    }
+
+    private func closeBudgetWithConsumedValue(_ transaction: MoneyTransaction, in month: Date, occurrenceDay: Int?, consumedValue: Double) {
+        guard transaction.kind == TransactionKind.expense.rawValue else { return }
+        let consumedAmount = max(consumedValue, 0)
+        guard consumedAmount > 0 else { return }
+
+        let monthStart = month.monthStart
+        let normalizedOccurrenceDay = normalizedPaymentOccurrenceDay(for: transaction, occurrenceDay: occurrenceDay)
+        let previousBudget = transaction.scheduledAmount(in: monthStart, occurrenceDay: normalizedOccurrenceDay)
+        guard consumedAmount < previousBudget else { return }
+
+        if transaction.isRecurring {
+            closeRecurringBudgetWithConsumedValue(
+                transaction,
+                in: monthStart,
+                occurrenceDay: normalizedOccurrenceDay,
+                consumedAmount: consumedAmount,
+                previousBudget: previousBudget
+            )
+        } else {
+            transaction.amount = consumedAmount
+            syncLinkedCreditPayment(for: transaction, in: monthStart, occurrenceDay: nil, paidAmount: consumedAmount)
+            syncLinkedSavingDeposit(for: transaction, in: monthStart, occurrenceDay: nil, paidAmount: consumedAmount)
+            insertBudgetClosedAuditLog(for: transaction, month: monthStart, previousBudget: previousBudget, consumedAmount: consumedAmount)
+        }
+    }
+
+    private func closeRecurringBudgetWithConsumedValue(
+        _ transaction: MoneyTransaction,
+        in month: Date,
+        occurrenceDay: Int?,
+        consumedAmount: Double,
+        previousBudget: Double
+    ) {
+        let closedTransaction = MoneyTransaction(
+            title: transaction.title,
+            day: occurrenceDay ?? transaction.effectiveDay(in: month),
+            monthStart: month.monthStart,
+            amount: consumedAmount,
+            kind: TransactionKind.expense.rawValue,
+            repeatsEveryMonth: false,
+            expenseCategory: transaction.expenseCategory,
+            expenseName: transaction.expenseName,
+            linkedCreditID: transaction.linkedCreditID,
+            linkedSavingID: transaction.linkedSavingID,
+            accountID: transaction.accountID
+        )
+        modelContext.insert(closedTransaction)
+
+        let matchingPayments = paymentRecords(for: transaction, in: month, occurrenceDay: occurrenceDay)
+        matchingPayments.forEach { payment in
+            payment.transactionID = closedTransaction.id
+            payment.monthStart = month.monthStart
+            payment.amountPaid = consumedAmount
+            payment.occurrenceDay = nil
+        }
+        matchingPayments.dropFirst().forEach(modelContext.delete)
+
+        let matchingHistoryEntries = paymentHistory.filter {
+            paymentHistoryEntry($0, matches: transaction, in: month, occurrenceDay: occurrenceDay)
+        }
+        let matchingHistoryIDs = Set(matchingHistoryEntries.map(\.id))
+        matchingHistoryEntries.forEach { entry in
+            entry.transactionID = closedTransaction.id
+            entry.monthStart = month.monthStart
+            entry.occurrenceDay = nil
+        }
+        accountMovements
+            .filter { movement in
+                guard let paymentHistoryID = movement.paymentHistoryID else { return false }
+                return matchingHistoryIDs.contains(paymentHistoryID)
+            }
+            .forEach { $0.transactionID = closedTransaction.id }
+
+        if let linkedCreditID = transaction.linkedCreditID,
+           let movement = linkedCreditMovement(for: transaction, creditID: linkedCreditID, month: month, occurrenceDay: occurrenceDay) {
+            movement.linkedTransactionID = closedTransaction.id
+            movement.linkedTransactionMonthStart = month.monthStart
+            movement.linkedTransactionOccurrenceDay = nil
+            movement.amount = consumedAmount
+            closedTransaction.linkedCreditMovementID = movement.id
+        }
+        if let linkedSavingID = transaction.linkedSavingID,
+           let movement = linkedSavingMovement(for: transaction, savingID: linkedSavingID, month: month, occurrenceDay: occurrenceDay) {
+            movement.linkedTransactionID = closedTransaction.id
+            movement.linkedTransactionMonthStart = month.monthStart
+            movement.linkedTransactionOccurrenceDay = nil
+            movement.amount = consumedAmount
+            closedTransaction.linkedSavingMovementID = movement.id
+        }
+
+        addExclusion(for: transaction, in: month, occurrenceDay: occurrenceDay)
+        insertBudgetClosedAuditLog(for: closedTransaction, month: month, previousBudget: previousBudget, consumedAmount: consumedAmount)
+    }
+
+    private func insertBudgetClosedAuditLog(for transaction: MoneyTransaction, month: Date, previousBudget: Double, consumedAmount: Double) {
+        let isPortuguese = AppStrings.currentLanguage == .portuguese
+        let details = isPortuguese
+            ? "Orçamento fechado com o valor consumido: \(previousBudget.currencyText) -> \(consumedAmount.currencyText)"
+            : "Budget closed with consumed value: \(previousBudget.currencyText) -> \(consumedAmount.currencyText)"
+        insertAuditLog(
+            action: .expenseUpdated,
+            title: transaction.displayName,
+            details: details,
+            accountID: transaction.accountID,
+            transactionID: transaction.id,
+            date: Date()
+        )
     }
 
     private func deleteTransaction(_ transaction: MoneyTransaction, in month: Date, occurrenceDay: Int? = nil) {
@@ -6609,6 +7319,8 @@ struct ContentView: View {
                     return matchingHistoryEntries.contains { $0.id == paymentHistoryID }
                 }
                 .forEach(modelContext.delete)
+            syncLinkedCreditPayment(for: transaction, in: month, occurrenceDay: normalizedOccurrenceDay, paidAmount: 0)
+            syncLinkedSavingDeposit(for: transaction, in: month, occurrenceDay: normalizedOccurrenceDay, paidAmount: 0)
             addExclusion(for: transaction, in: month, occurrenceDay: transaction.recurrence == .weekly ? occurrenceDay : nil)
             payments
                 .filter { $0.matches(transactionID: transaction.id, month: month, occurrenceDay: transaction.recurrence == .weekly ? occurrenceDay : nil) }
@@ -6729,9 +7441,11 @@ private struct SavingsHistorySheet: View {
 private struct CurrentAccountFilterView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var paymentFilter: CurrentAccountPaymentFilter
+    @Binding var incomeFilter: CurrentAccountIncomeFilter
     @Binding var filteredCategories: Set<ExpenseCategory>
     @Binding var filteredExpenseType: String
     @Binding var freeTextFilter: String
+    @Binding var filtersAffectSummaryCards: Bool
 
     let expenseTypeOptions: [ExpenseTypePoint]
     let onClear: () -> Void
@@ -6748,6 +7462,16 @@ private struct CurrentAccountFilterView: View {
                 Section(AppStrings.text(.paymentStatus)) {
                     Picker(AppStrings.text(.paymentStatus), selection: $paymentFilter) {
                         ForEach(CurrentAccountPaymentFilter.allCases) { filter in
+                            Text(filter.title).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section(AppStrings.text(.income)) {
+                    Picker(AppStrings.text(.income), selection: $incomeFilter) {
+                        ForEach(CurrentAccountIncomeFilter.allCases) { filter in
                             Text(filter.title).tag(filter)
                         }
                     }
@@ -6805,6 +7529,33 @@ private struct CurrentAccountFilterView: View {
                 Section(AppStrings.text(.freeTextFilter)) {
                     TextField(AppStrings.text(.searchPlaceholder), text: $freeTextFilter)
                         .textInputAutocapitalization(.never)
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section {
+                    Button {
+                        filtersAffectSummaryCards.toggle()
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: filtersAffectSummaryCards ? "checkmark.square.fill" : "square")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(filtersAffectSummaryCards ? AppPalette.primary : AppPalette.mutedText)
+                                .frame(width: 26, height: 26)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(AppStrings.text(.applyFiltersToSummaryCards))
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(AppPalette.background)
+
+                                Text(AppStrings.text(.applyFiltersToSummaryCardsDescription))
+                                    .font(.footnote)
+                                    .foregroundStyle(AppPalette.mutedText)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(filtersAffectSummaryCards ? AppStrings.text(.yes) : AppStrings.text(.no))
                 }
                 .listRowBackground(AppPalette.surface)
             }
@@ -6876,7 +7627,7 @@ private struct UnpaidExpensesBreakdownSheet: View {
                     ContentUnavailableView(
                         "Sem despesas por pagar",
                         systemImage: "checkmark.circle",
-                        description: Text("Não há registos individuais a formar este valor.")
+                        description: Text(AppStrings.text(.noBreakdownRecords))
                     )
                     .foregroundStyle(AppPalette.background)
                 } else {
@@ -6886,7 +7637,7 @@ private struct UnpaidExpensesBreakdownSheet: View {
                                 unpaidExpenseRow(line)
                             }
                         } footer: {
-                            Text("Total detalhado: \(total.currencyText)")
+                            Text(String(format: AppStrings.text(.detailedTotal), total.currencyText))
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(AppPalette.background)
                         }
@@ -6897,7 +7648,7 @@ private struct UnpaidExpensesBreakdownSheet: View {
                 }
             }
             .background(AppPalette.appBackground)
-            .navigationTitle("Por pagar")
+            .navigationTitle(AppStrings.text(.payable))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -6931,8 +7682,8 @@ private struct UnpaidExpensesBreakdownSheet: View {
             }
 
             HStack(spacing: 8) {
-                unpaidAmountChip(title: "Previsto", value: line.scheduledAmount)
-                unpaidAmountChip(title: "Pago", value: line.paidAmount)
+                unpaidAmountChip(title: AppStrings.text(.expected), value: line.scheduledAmount)
+                unpaidAmountChip(title: AppStrings.text(.paid), value: line.paidAmount)
                 if line.isWeekly {
                     Text(AppStrings.text(.weeklyRecurrence))
                         .font(.caption2.weight(.semibold))

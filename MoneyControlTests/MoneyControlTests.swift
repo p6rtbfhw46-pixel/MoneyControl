@@ -332,6 +332,19 @@ struct MoneyControlTests {
         #expect(service.monthSummary(in: month).unpaidExpenses == 0)
     }
 
+    @Test func weeklyExpenseWithAllOccurrencesExcludedIsHidden() {
+        let month = Date.monthStart(month: 8, year: 2026)
+        let mondayExpense = makeExpense(day: 2, month: month, amount: 10, recurrenceType: .weekly)
+        let exclusions = mondayExpense.weeklyOccurrenceDays(in: month).map {
+            RecurrenceExclusion(transactionID: mondayExpense.id, monthStart: month, occurrenceDay: $0)
+        }
+        let service = MoneyCalculationService(transactions: [mondayExpense], payments: [], exclusions: exclusions)
+
+        #expect(service.visibleTransactions(in: month).isEmpty)
+        #expect(service.monthSummary(in: month).expenses == 0)
+        #expect(service.monthSummary(in: month).unpaidExpenses == 0)
+    }
+
     @Test func analyticsPaidOnlyExpensesIgnoreUnpaidTransactions() {
         let month = Date.monthStart(month: 8, year: 2026)
         let paidExpense = makeExpense(

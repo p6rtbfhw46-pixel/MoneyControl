@@ -89,6 +89,7 @@ enum AppTextKey: String, CaseIterable {
     case newExpense
     case editExpense
     case newSavingExpense
+    case newSavingExpenseInfo
     case creditPaymentExpenseButton
     case newCreditPaymentExpense
     case newRecurringSavingExpense
@@ -191,7 +192,6 @@ enum AppTextKey: String, CaseIterable {
     case appDataPrivacyNote
     case appSecurityTitle
     case appSecurityMessage
-    case appSecurityICloudBackupMessage
     case aboutSpendWisePurposeTitle
     case aboutSpendWisePurposeMessage
     case linkedTrackingOptionalHelpTitle
@@ -201,6 +201,11 @@ enum AppTextKey: String, CaseIterable {
     case managementBudgetDescription
     case managementSavingsDescription
     case managementCreditsDescription
+    case planning
+    case planningDescription
+    case planningSummary
+    case planningBannerTitle
+    case planningBannerMessage
     case monthlyFixedExpensesInfo
     case salaryHelp
     case monthlyExpenseHelp
@@ -222,13 +227,6 @@ enum AppTextKey: String, CaseIterable {
     case importBackupSuccessMessage
     case importBackupFailureTitle
     case importBackupFailureMessage
-    case iCloudSyncTitle
-    case iCloudSyncMessage
-    case iCloudSyncRestartNote
-    case iCloudSyncPromptTitle
-    case iCloudSyncPromptMessage
-    case iCloudSyncEnable
-    case iCloudSyncNotNow
     case confirm
     case clear
     case category503020
@@ -344,6 +342,8 @@ enum AppTextKey: String, CaseIterable {
     case filters
     case clearFilters
     case paymentStatus
+    case applyFiltersToSummaryCards
+    case applyFiltersToSummaryCardsDescription
     case all
     case paidPlural
     case unpaidPlural
@@ -437,6 +437,54 @@ enum AppTextKey: String, CaseIterable {
     case accountIconOther
     case transferInAccountTitle
     case transferOutAccountTitle
+    case flexible
+    case closeBudgetWithConsumedValue
+    case quickPayment
+    case temporalEvolution
+    case temporalEvolutionSubtitle
+    case temporalEvolutionUnavailable
+    case temporalEvolutionNoData
+    case temporalEvolutionLoading
+    case loadChart
+    case temporalEvolutionLoadingNote
+    case maximum
+    case expectedEndOfMonth
+    case history
+    case forecast
+    case readReceipt
+    case receiptReadTitle
+    case receiptReadMissingTotalMessage
+    case receiptReadFailureTitle
+    case noBreakdownRecords
+    case detailedTotal
+    case payable
+    case expected
+    case savedTitle
+    case dataStoreErrorTitle
+    case dataStoreErrorMessage
+    case tryAgain
+    case accountCreatedMessage
+    case accountUpdatedMessage
+    case accountTransferCreatedMessage
+    case accountBalanceAdjustedMessage
+    case savingCreatedMessage
+    case savingUpdatedMessage
+    case savingMovementSavedMessage
+    case creditCreatedMessage
+    case creditUpdatedMessage
+    case creditPaymentSavedMessage
+    case creditMovementSavedMessage
+    case budgetExpenseCreatedMessage
+    case budgetExpenseUpdatedMessage
+    case incomeCreatedMessage
+    case incomeUpdatedMessage
+    case planningCreatedMessage
+    case planningUpdatedMessage
+    case planningItemTypeCreatedMessage
+    case planningItemTypeUpdatedMessage
+    case planningItemCreatedMessage
+    case planningItemUpdatedMessage
+    case planningMovementSavedMessage
 }
 
 enum AppStrings {
@@ -465,8 +513,8 @@ enum AppStrings {
                 ("Boas práticas", "🎯 Um pequeno ajuste mensal pode fazer uma grande diferença ao fim de um ano."),
                 ("Boas práticas", "📅 Reveja o seu orçamento pelo menos uma vez por semana."),
                 ("Boas práticas", "💳 Evite compras por impulso. Espere 24 horas antes de decidir."),
-                ("Metodologia 50/30/20", "🏠 Tente manter as Necessidades até 50% do rendimento."),
-                ("Metodologia 50/30/20", "🎉 Os Desejos são importantes, mas idealmente não devem ultrapassar 30% do rendimento."),
+                ("Metodologia 50/30/20", "🏠 Tente manter as Necessidades (Essenciais) até 50% do rendimento."),
+                ("Metodologia 50/30/20", "🎉 Os Desejos (Estilo de Vida) são importantes, mas idealmente não devem ultrapassar 30% do rendimento."),
                 ("Metodologia 50/30/20", "🌱 Reserve cerca de 20% do rendimento para poupança ou amortização de dívidas."),
                 ("Metodologia 50/30/20", "📈 A regra 50/30/20 é uma orientação. Adapte-a à sua realidade."),
                 ("Metodologia 50/30/20", "⚖️ O equilíbrio é mais importante do que a perfeição."),
@@ -498,8 +546,8 @@ enum AppStrings {
                 ("Best practices", "🎯 A small monthly adjustment can make a big difference over a year."),
                 ("Best practices", "📅 Review your budget at least once a week."),
                 ("Best practices", "💳 Avoid impulse purchases. Wait 24 hours before deciding."),
-                ("50/30/20 Method", "🏠 Try to keep Needs up to 50% of income."),
-                ("50/30/20 Method", "🎉 Wants matter, but ideally should not exceed 30% of income."),
+                ("50/30/20 Method", "🏠 Try to keep Needs (Essentials) up to 50% of income."),
+                ("50/30/20 Method", "🎉 Wants (Lifestyle) matter, but ideally should not exceed 30% of income."),
                 ("50/30/20 Method", "🌱 Reserve around 20% of income for savings or debt repayment."),
                 ("50/30/20 Method", "📈 The 50/30/20 rule is guidance. Adapt it to your reality."),
                 ("50/30/20 Method", "⚖️ Balance matters more than perfection."),
@@ -598,6 +646,7 @@ enum AppStrings {
             .newExpense: "Agendar nova despesa",
             .editExpense: "Editar Despesa",
             .newSavingExpense: "Agendar nova poupança",
+            .newSavingExpenseInfo: "Será criada uma despesa do tipo poupança. Se já tiver uma poupança configurada, pode selecioná-la na área Classificação para que os pagamentos também fiquem refletidos no histórico dessa poupança.",
             .creditPaymentExpenseButton: "Crédito",
             .newCreditPaymentExpense: "Agendar pagamento de crédito",
             .newRecurringSavingExpense: "Agendar Nova Poupança Recorrente",
@@ -623,8 +672,8 @@ enum AppStrings {
             .recurringIncomeDescription: "Rendimentos que se repetem no orçamento.",
             .expenseLowercase: "despesa",
             .incomeLowercase: "receita",
-            .needsCategory: "50% Necessidades",
-            .wantsCategory: "30% Desejos",
+            .needsCategory: "50% Necessidades (Essenciais)",
+            .wantsCategory: "30% Desejos (Estilo de Vida)",
             .savingsAndDebtCategory: "20% Pagamentos e Poupança",
             .futureEditTitle: "Editar meses seguintes",
             .futureEditMessage: "Esta alteração só vai afetar os meses seguintes. Para alterar o mês corrente, edita a despesa ou receita diretamente no mês.",
@@ -700,7 +749,6 @@ enum AppStrings {
             .appDataPrivacyNote: "Os seus dados ficam guardados apenas neste dispositivo, exceto quando exporta um backup manualmente.",
             .appSecurityTitle: "Segurança dos dados",
             .appSecurityMessage: "A SpendWise não se liga a servidores externos, não cria contas e não envia os seus dados para terceiros. Toda a informação registada fica no dispositivo. Os backups são ficheiros criados manualmente por si e só são partilhados se escolher guardar ou enviar esse ficheiro.",
-            .appSecurityICloudBackupMessage: "Se selecionar Sincronizar com iCloud, os dados também ficam guardados no seu iCloud e podem ser sincronizados ou recuperados nos seus dispositivos Apple com a mesma conta. Este backup/sincronização fica associado ao seu iCloud e não é enviado para servidores da SpendWise.",
             .aboutSpendWisePurposeTitle: "Para que serve a SpendWise",
             .aboutSpendWisePurposeMessage: "A SpendWise ajuda a acompanhar o dinheiro disponível, despesas, rendimentos, poupanças e créditos num só lugar. O objetivo é dar uma visão simples do mês, apoiar a regra 50/30/20 e ajudar a tomar decisões financeiras com mais clareza, sem funcionar como banco ou simulador financeiro. As notas informativas apresentadas na app são apenas orientações gerais. A SpendWise não se responsabiliza pelas decisões tomadas pelo utilizador; qualquer decisão financeira deve ser tomada de forma consciente e com base na sua própria situação.",
             .linkedTrackingOptionalHelpTitle: "Ligação opcional",
@@ -710,6 +758,11 @@ enum AppStrings {
             .managementBudgetDescription: "Despesas e rendimentos recorrentes",
             .managementSavingsDescription: "Objetivos e progresso das suas poupanças",
             .managementCreditsDescription: "Dívidas, pagamentos e saldo em aberto",
+            .planning: "Planeamentos",
+            .planningDescription: "Organize viagens, projetos e grandes despesas.",
+            .planningSummary: "2 ativos · 6.500 € planeados",
+            .planningBannerTitle: "Planeamentos",
+            .planningBannerMessage: "Esta área vai concentrar viagens, projetos e grandes despesas para acompanhar valores planeados, progresso e prioridades. Por agora, a página fica preparada para receber essa gestão.",
             .monthlyFixedExpensesInfo: "Tem um total de %@ de despesas fixas mensais.",
             .salaryHelp: "Permite adicionar rendimentos recorrentes com periodicidade mensal, trimestral, semestral ou anual, como salário, pensão, freelance ou outros rendimentos.",
             .monthlyExpenseHelp: "Permite adicionar despesas recorrentes com periodicidade mensal, trimestral, semestral ou anual. Aparecem automaticamente na Conta Corrente quando chegam ao mês correspondente.",
@@ -731,18 +784,11 @@ enum AppStrings {
             .importBackupSuccessMessage: "Os dados do backup foram importados com sucesso.",
             .importBackupFailureTitle: "Não foi possível importar o backup",
             .importBackupFailureMessage: "O ficheiro selecionado não é um backup válido da SpendWise.",
-            .iCloudSyncTitle: "Sincronizar com iCloud",
-            .iCloudSyncMessage: "Os seus dados são privados. Não criamos perfis nem partilhamos a sua informação. Se ativar a sincronização, os dados são guardados no seu iCloud para estarem disponíveis nos seus dispositivos Apple.",
-            .iCloudSyncRestartNote: "Depois de alterar esta opção, reinicie a app para aplicar a configuração de sincronização.",
-            .iCloudSyncPromptTitle: "Usar dados do iCloud?",
-            .iCloudSyncPromptMessage: "Se já usa a SpendWise noutro dispositivo Apple, pode ativar a sincronização com iCloud para tentar obter os seus dados. Os dados ficam guardados no seu iCloud.",
-            .iCloudSyncEnable: "Ativar iCloud",
-            .iCloudSyncNotNow: "Agora não",
             .confirm: "Confirmar",
             .clear: "Limpar",
             .category503020: "Categoria 50/30/20",
             .rule503020Title: "Regra 50/30/20",
-            .rule503020Help: "A metodologia 50/30/20 ajuda a distribuir o rendimento de forma equilibrada: 50% para necessidades, 30% para desejos e 20% para poupança. Não é uma regra obrigatória, mas uma referência para uma melhor gestão financeira.",
+            .rule503020Help: "A metodologia 50/30/20 ajuda a distribuir o rendimento de forma equilibrada: 50% para necessidades (essenciais), 30% para desejos (estilo de vida) e 20% para poupança. Não é uma regra obrigatória, mas uma referência para uma melhor gestão financeira.",
             .incomeNameRequired: "Indique o nome do rendimento.",
             .incomeValueRequired: "Indique o valor do rendimento.",
             .expenseValueRequired: "Indique o valor da despesa.",
@@ -778,7 +824,7 @@ enum AppStrings {
             .next: "Seguinte",
             .startUsingSpendWise: "Começar a utilizar a\nSpendWise",
             .budgetAnalysisNoIncome: "Adicione os seus rendimentos para obter uma análise inicial do orçamento.",
-            .budgetAnalysisNeedsHigh: "Está acima do recomendado em Necessidades. Pode acompanhar esta área com mais atenção nos próximos meses.",
+            .budgetAnalysisNeedsHigh: "Está acima do recomendado em Necessidades (Essenciais). Pode acompanhar esta área com mais atenção nos próximos meses.",
             .budgetAnalysisSavingsLow: "Ainda pode aumentar a sua poupança para se aproximar da regra 50/30/20.",
             .budgetAnalysisExcellent: "Excelente equilíbrio financeiro. Está dentro do orçamento recomendado.",
             .budgetAnalysisHealthy: "Está dentro de um ponto de partida saudável para acompanhar e ajustar o orçamento todos os meses.",
@@ -853,6 +899,8 @@ enum AppStrings {
             .filters: "Filtros",
             .clearFilters: "Limpar filtros",
             .paymentStatus: "Estado de pagamento",
+            .applyFiltersToSummaryCards: "Aplicar filtros aos cartões do resumo",
+            .applyFiltersToSummaryCardsDescription: "Quando ativo, os cartões Ainda por Pagar e Disponível no mês também respeitam os filtros da Conta Corrente.",
             .all: "Todos",
             .paidPlural: "Pagas",
             .unpaidPlural: "Por pagar",
@@ -945,7 +993,55 @@ enum AppStrings {
             .accountIconHome: "Casa",
             .accountIconOther: "Outro",
             .transferInAccountTitle: "%@ → esta conta",
-            .transferOutAccountTitle: "Esta conta → %@"
+            .transferOutAccountTitle: "Esta conta → %@",
+            .flexible: "Flexível",
+            .closeBudgetWithConsumedValue: "Fechar com o valor usado",
+            .quickPayment: "Pagamento rápido",
+            .temporalEvolution: "Evolução temporal",
+            .temporalEvolutionSubtitle: "30 dias visíveis, com histórico e previsão",
+            .temporalEvolutionUnavailable: "Esta secção está temporariamente indisponível.",
+            .temporalEvolutionNoData: "Ainda não existem dados suficientes para apresentar a evolução.",
+            .temporalEvolutionLoading: "A preparar evolução temporal...",
+            .loadChart: "Carregar gráfico",
+            .temporalEvolutionLoadingNote: "A página continua disponível enquanto os dados são preparados.",
+            .maximum: "Máximo",
+            .expectedEndOfMonth: "Previsto fim mês",
+            .history: "Histórico",
+            .forecast: "Previsto",
+            .readReceipt: "Ler fatura",
+            .receiptReadTitle: "Fatura lida",
+            .receiptReadMissingTotalMessage: "Não foi possível detetar o valor total automaticamente. Confirma os dados antes de guardar.",
+            .receiptReadFailureTitle: "Não foi possível ler a fatura",
+            .noBreakdownRecords: "Não há registos individuais a formar este valor.",
+            .detailedTotal: "Total detalhado: %@",
+            .payable: "Por pagar",
+            .expected: "Previsto",
+            .savedTitle: "Guardado",
+            .dataStoreErrorTitle: "Não foi possível abrir os dados",
+            .dataStoreErrorMessage: "A SpendWise não conseguiu abrir a base de dados local. Não apague a app. Tente novamente e, se o problema continuar, preserve os dados para análise.",
+            .tryAgain: "Tentar novamente",
+            .accountCreatedMessage: "A conta “%@” foi criada.",
+            .accountUpdatedMessage: "A conta “%@” foi atualizada.",
+            .accountTransferCreatedMessage: "A transferência de %@ foi criada.",
+            .accountBalanceAdjustedMessage: "O saldo de “%@” foi ajustado para %@.",
+            .savingCreatedMessage: "A poupança “%@” foi criada.",
+            .savingUpdatedMessage: "A poupança “%@” foi atualizada.",
+            .savingMovementSavedMessage: "O movimento de poupança “%@” foi guardado.",
+            .creditCreatedMessage: "O crédito “%@” foi criado.",
+            .creditUpdatedMessage: "O crédito “%@” foi atualizado.",
+            .creditPaymentSavedMessage: "O pagamento do crédito foi guardado.",
+            .creditMovementSavedMessage: "O movimento de crédito “%@” foi guardado.",
+            .budgetExpenseCreatedMessage: "O orçamento/despesa foi criado.",
+            .budgetExpenseUpdatedMessage: "O orçamento/despesa foi atualizado.",
+            .incomeCreatedMessage: "O rendimento foi criado.",
+            .incomeUpdatedMessage: "O rendimento foi atualizado.",
+            .planningCreatedMessage: "O planeamento “%@” foi criado.",
+            .planningUpdatedMessage: "O planeamento “%@” foi atualizado.",
+            .planningItemTypeCreatedMessage: "O tipo “%@” foi criado.",
+            .planningItemTypeUpdatedMessage: "O tipo “%@” foi atualizado.",
+            .planningItemCreatedMessage: "O item “%@” foi criado.",
+            .planningItemUpdatedMessage: "O item “%@” foi atualizado.",
+            .planningMovementSavedMessage: "O movimento “%@” foi guardado."
         ],
         .english: [
             .appName: "SpendWise",
@@ -1017,6 +1113,7 @@ enum AppStrings {
             .newExpense: "Schedule new expense",
             .editExpense: "Edit Expense",
             .newSavingExpense: "Schedule new saving",
+            .newSavingExpenseInfo: "This creates a saving-type expense. If you already have a saving configured, select it in the Classification area so payments are also reflected in that saving's history.",
             .creditPaymentExpenseButton: "Credit",
             .newCreditPaymentExpense: "Schedule credit payment",
             .newRecurringSavingExpense: "Schedule New Recurring Saving",
@@ -1042,8 +1139,8 @@ enum AppStrings {
             .recurringIncomeDescription: "Income that repeats in the budget.",
             .expenseLowercase: "expense",
             .incomeLowercase: "income",
-            .needsCategory: "50% Needs",
-            .wantsCategory: "30% Wants",
+            .needsCategory: "50% Needs (Essentials)",
+            .wantsCategory: "30% Wants (Lifestyle)",
             .savingsAndDebtCategory: "20% Payments and Savings",
             .futureEditTitle: "Edit following months",
             .futureEditMessage: "This change will only affect following months. To change the current month, edit the expense or income directly in that month.",
@@ -1119,7 +1216,6 @@ enum AppStrings {
             .appDataPrivacyNote: "Your data stays stored only on this device, except when you manually export a backup.",
             .appSecurityTitle: "Data security",
             .appSecurityMessage: "SpendWise does not connect to external servers, does not create accounts and does not send your data to third parties. All registered information stays on the device. Backups are files created manually by you and are only shared if you choose to save or send that file.",
-            .appSecurityICloudBackupMessage: "If you select Sync with iCloud, your data is also stored in your iCloud and can be synced or recovered on your Apple devices using the same account. This backup/sync is associated with your iCloud and is not sent to SpendWise servers.",
             .aboutSpendWisePurposeTitle: "What SpendWise is for",
             .aboutSpendWisePurposeMessage: "SpendWise helps you track available money, expenses, income, savings and credits in one place. Its purpose is to give a simple monthly overview, support the 50/30/20 rule and help you make clearer financial decisions, without acting as a bank or financial simulator. The informational notes shown in the app are general guidance only. SpendWise is not responsible for decisions made by the user; any financial decision should be made consciously and based on your own situation.",
             .linkedTrackingOptionalHelpTitle: "Optional link",
@@ -1129,6 +1225,11 @@ enum AppStrings {
             .managementBudgetDescription: "Recurring expenses and income",
             .managementSavingsDescription: "Goals and progress for your savings",
             .managementCreditsDescription: "Debts, payments and outstanding balance",
+            .planning: "Planning",
+            .planningDescription: "Organize trips, projects and large expenses.",
+            .planningSummary: "2 active · €6,500 planned",
+            .planningBannerTitle: "Planning",
+            .planningBannerMessage: "This area will bring together trips, projects and large expenses so you can track planned values, progress and priorities. For now, the page is ready for that future management.",
             .monthlyFixedExpensesInfo: "You have a total of %@ in fixed monthly expenses.",
             .salaryHelp: "Adds recurring income with a monthly, quarterly, semiannual or annual frequency, such as salary, pension, freelance or other income.",
             .monthlyExpenseHelp: "Adds recurring expenses with a monthly, quarterly, semiannual or annual frequency. They appear automatically in Current Account when the matching month arrives.",
@@ -1150,18 +1251,11 @@ enum AppStrings {
             .importBackupSuccessMessage: "The backup data was imported successfully.",
             .importBackupFailureTitle: "Could not import backup",
             .importBackupFailureMessage: "The selected file is not a valid SpendWise backup.",
-            .iCloudSyncTitle: "Sync with iCloud",
-            .iCloudSyncMessage: "Your data is private. We do not create profiles or share your information. If you enable sync, your data is stored in your iCloud so it is available on your Apple devices.",
-            .iCloudSyncRestartNote: "After changing this option, restart the app to apply the sync configuration.",
-            .iCloudSyncPromptTitle: "Use iCloud data?",
-            .iCloudSyncPromptMessage: "If you already use SpendWise on another Apple device, you can enable iCloud sync to try to retrieve your data. The data stays stored in your iCloud.",
-            .iCloudSyncEnable: "Enable iCloud",
-            .iCloudSyncNotNow: "Not now",
             .confirm: "Confirm",
             .clear: "Clear",
             .category503020: "50/30/20 Category",
             .rule503020Title: "50/30/20 Rule",
-            .rule503020Help: "The 50/30/20 method helps distribute income in a balanced way: 50% for needs, 30% for wants and 20% for savings. It is not mandatory, but a reference for better financial management.",
+            .rule503020Help: "The 50/30/20 method helps distribute income in a balanced way: 50% for needs (essentials), 30% for wants (lifestyle) and 20% for savings. It is not mandatory, but a reference for better financial management.",
             .incomeNameRequired: "Enter the income name.",
             .incomeValueRequired: "Enter the income amount.",
             .expenseValueRequired: "Enter the expense amount.",
@@ -1197,7 +1291,7 @@ enum AppStrings {
             .next: "Next",
             .startUsingSpendWise: "Start using\nSpendWise",
             .budgetAnalysisNoIncome: "Add your income to get an initial budget analysis.",
-            .budgetAnalysisNeedsHigh: "You are above the recommended amount for Needs. You can monitor this area more closely over the next months.",
+            .budgetAnalysisNeedsHigh: "You are above the recommended amount for Needs (Essentials). You can monitor this area more closely over the next months.",
             .budgetAnalysisSavingsLow: "You can still increase your savings to get closer to the 50/30/20 rule.",
             .budgetAnalysisExcellent: "Excellent financial balance. You are within the recommended budget.",
             .budgetAnalysisHealthy: "This is a healthy starting point to monitor and adjust your budget every month.",
@@ -1272,6 +1366,8 @@ enum AppStrings {
             .filters: "Filters",
             .clearFilters: "Clear filters",
             .paymentStatus: "Payment status",
+            .applyFiltersToSummaryCards: "Apply filters to summary cards",
+            .applyFiltersToSummaryCardsDescription: "When enabled, the Left to pay and Still available this month cards also follow the Current Account filters.",
             .all: "All",
             .paidPlural: "Paid",
             .unpaidPlural: "Unpaid",
@@ -1364,7 +1460,55 @@ enum AppStrings {
             .accountIconHome: "Home",
             .accountIconOther: "Other",
             .transferInAccountTitle: "%@ → this account",
-            .transferOutAccountTitle: "This account → %@"
+            .transferOutAccountTitle: "This account → %@",
+            .flexible: "Flexible",
+            .closeBudgetWithConsumedValue: "Close with used value",
+            .quickPayment: "Quick payment",
+            .temporalEvolution: "Timeline evolution",
+            .temporalEvolutionSubtitle: "30 visible days, with history and forecast",
+            .temporalEvolutionUnavailable: "This section is temporarily unavailable.",
+            .temporalEvolutionNoData: "There is not enough data yet to show the evolution.",
+            .temporalEvolutionLoading: "Preparing timeline evolution...",
+            .loadChart: "Load chart",
+            .temporalEvolutionLoadingNote: "The page remains available while the data is being prepared.",
+            .maximum: "Maximum",
+            .expectedEndOfMonth: "Expected end of month",
+            .history: "History",
+            .forecast: "Forecast",
+            .readReceipt: "Read receipt",
+            .receiptReadTitle: "Receipt read",
+            .receiptReadMissingTotalMessage: "The total amount could not be detected automatically. Confirm the details before saving.",
+            .receiptReadFailureTitle: "Could not read the receipt",
+            .noBreakdownRecords: "There are no individual records forming this value.",
+            .detailedTotal: "Detailed total: %@",
+            .payable: "Payable",
+            .expected: "Expected",
+            .savedTitle: "Saved",
+            .dataStoreErrorTitle: "Could not open data",
+            .dataStoreErrorMessage: "SpendWise could not open the local database. Do not delete the app. Try again and, if the problem continues, preserve the data for analysis.",
+            .tryAgain: "Try again",
+            .accountCreatedMessage: "The account “%@” was created.",
+            .accountUpdatedMessage: "The account “%@” was updated.",
+            .accountTransferCreatedMessage: "The %@ transfer was created.",
+            .accountBalanceAdjustedMessage: "The balance of “%@” was adjusted to %@.",
+            .savingCreatedMessage: "The saving “%@” was created.",
+            .savingUpdatedMessage: "The saving “%@” was updated.",
+            .savingMovementSavedMessage: "The saving movement “%@” was saved.",
+            .creditCreatedMessage: "The credit “%@” was created.",
+            .creditUpdatedMessage: "The credit “%@” was updated.",
+            .creditPaymentSavedMessage: "The credit payment was saved.",
+            .creditMovementSavedMessage: "The credit movement “%@” was saved.",
+            .budgetExpenseCreatedMessage: "The budget/expense was created.",
+            .budgetExpenseUpdatedMessage: "The budget/expense was updated.",
+            .incomeCreatedMessage: "The income was created.",
+            .incomeUpdatedMessage: "The income was updated.",
+            .planningCreatedMessage: "The planning “%@” was created.",
+            .planningUpdatedMessage: "The planning “%@” was updated.",
+            .planningItemTypeCreatedMessage: "The type “%@” was created.",
+            .planningItemTypeUpdatedMessage: "The type “%@” was updated.",
+            .planningItemCreatedMessage: "The item “%@” was created.",
+            .planningItemUpdatedMessage: "The item “%@” was updated.",
+            .planningMovementSavedMessage: "The movement “%@” was saved."
         ]
     ]
 
@@ -1376,6 +1520,7 @@ enum AppStrings {
                 "Alimentação: compras de supermercado",
                 "Contas de serviços essenciais: eletricidade, gás, água e telecomunicações",
                 "Seguros: saúde, vida e automóvel essenciais",
+                "Educação",
                 "Outros"
             ],
             .wants: [
@@ -1399,6 +1544,7 @@ enum AppStrings {
                 "Food: supermarket groceries",
                 "Essential bills: electricity, gas, water and telecommunications",
                 "Insurance: essential health, life and car insurance",
+                "Education",
                 "Other"
             ],
             .wants: [

@@ -272,8 +272,8 @@ private struct RuleIllustration: View {
             .frame(width: 220, height: 220)
 
             VStack(alignment: .leading, spacing: 10) {
-                legend("50% Necessidades", AppPalette.background)
-                legend("30% Desejos", AppPalette.primary)
+                legend("50% Necessidades (Essenciais)", AppPalette.background)
+                legend("30% Desejos (Estilo de Vida)", AppPalette.primary)
                 legend("20% Poupança", AppPalette.savings)
             }
         }

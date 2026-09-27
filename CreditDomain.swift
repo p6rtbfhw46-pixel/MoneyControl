@@ -166,6 +166,18 @@ enum CreditTextKey {
     case fillMovementValue
     case credit
     case selectCredit
+    case affectedCredit
+    case creditUsageQuestion
+    case currentAccountEntry
+    case accountEntryCreateMessage
+    case accountEntryEditMessage
+    case createAccountToReceiveValue
+    case affectCurrentAccount
+    case paymentCreatesCurrentAccountExpenseMessage
+    case paymentEditCurrentAccountExpenseMessage
+    case debtIncreaseCreditOnlyMessage
+    case debtIncreaseAccountEntryMessage
+    case selectReceivingAccount
 }
 
 enum CreditStrings {
@@ -225,7 +237,19 @@ enum CreditStrings {
             .fillCreditValue: "Preenche o valor atual em dívida.",
             .fillMovementValue: "Preenche o valor do movimento.",
             .credit: "Crédito",
-            .selectCredit: "Selecionar crédito"
+            .selectCredit: "Selecionar crédito",
+            .affectedCredit: "Crédito afetado",
+            .creditUsageQuestion: "Como utilizou este crédito?",
+            .currentAccountEntry: "Entrada numa conta",
+            .accountEntryCreateMessage: "O valor também será lançado como entrada na conta escolhida.",
+            .accountEntryEditMessage: "Este movimento já existe. Para evitar duplicar saldo, a entrada automática numa conta só é criada em novos movimentos.",
+            .createAccountToReceiveValue: "Cria uma conta para poder receber este valor.",
+            .affectCurrentAccount: "Afetar a Conta Corrente",
+            .paymentCreatesCurrentAccountExpenseMessage: "Será criada uma despesa de Amortização de dívida ligada ao crédito. A dívida só baixa quando essa despesa for marcada como paga.",
+            .paymentEditCurrentAccountExpenseMessage: "Este pagamento já é um movimento de crédito e não cria uma nova despesa na Conta Corrente ao editar.",
+            .debtIncreaseCreditOnlyMessage: "Este aumento de dívida fica apenas registado no crédito e não cria movimento na Conta Corrente.",
+            .debtIncreaseAccountEntryMessage: "Este aumento de dívida também pode entrar numa conta, porque representa dinheiro transferido do crédito.",
+            .selectReceivingAccount: "Seleciona uma conta para receber este valor."
         ],
         .english: [
             .settingsTitle: "Credits",
@@ -278,7 +302,19 @@ enum CreditStrings {
             .fillCreditValue: "Fill in the current debt amount.",
             .fillMovementValue: "Fill in the movement amount.",
             .credit: "Credit",
-            .selectCredit: "Select credit"
+            .selectCredit: "Select credit",
+            .affectedCredit: "Affected credit",
+            .creditUsageQuestion: "How did you use this credit?",
+            .currentAccountEntry: "Entry into an account",
+            .accountEntryCreateMessage: "The value will also be recorded as an entry in the selected account.",
+            .accountEntryEditMessage: "This movement already exists. To avoid duplicating balance, automatic account entry is only created for new movements.",
+            .createAccountToReceiveValue: "Create an account to receive this value.",
+            .affectCurrentAccount: "Affect Current Account",
+            .paymentCreatesCurrentAccountExpenseMessage: "A debt amortization expense linked to the credit will be created. The debt only decreases when that expense is marked as paid.",
+            .paymentEditCurrentAccountExpenseMessage: "This payment is already a credit movement and does not create a new Current Account expense when edited.",
+            .debtIncreaseCreditOnlyMessage: "This debt increase is only recorded in the credit and does not create a Current Account movement.",
+            .debtIncreaseAccountEntryMessage: "This debt increase can also enter an account because it represents money transferred from the credit.",
+            .selectReceivingAccount: "Select an account to receive this value."
         ]
     ]
 }
