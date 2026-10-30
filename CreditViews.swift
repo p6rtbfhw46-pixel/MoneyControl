@@ -464,10 +464,11 @@ private struct CreditEditor: View {
             note: trimmedDetails.isEmpty ? nil : trimmedDetails
         )
 
-        saveNotice = .saved(String(
+        SaveResultNoticeCenter.shared.show(.saved(String(
             format: AppStrings.text(isNewCredit ? .creditCreatedMessage : .creditUpdatedMessage),
             credit.displayName
-        ))
+        )))
+        dismiss()
     }
 
     private func deleteCredit() {
@@ -517,6 +518,9 @@ struct CreditDetailView: View {
     @State private var movementEditorRequest: CreditMovementEditorRequest?
     @State private var isEvolutionExpanded = false
     @State private var isPaymentEstimateExpanded = false
+    @State private var selectedMovementYear = Calendar.current.component(.year, from: Date())
+    @State private var selectedMovementMonth: Int? = Calendar.current.component(.month, from: Date())
+    @State private var selectedCreditUsageID: String?
 
     private var movements: [CreditMovement] { credit.movements(from: allMovements) }
     private var balance: Double { credit.balance(with: allMovements) }
@@ -722,6 +726,10 @@ struct CreditDetailView: View {
                 .font(.headline.bold())
                 .foregroundStyle(AppPalette.background)
 
+            movementFilters
+            movementKindFilter
+            movementTotals
+
             if movementGroups.isEmpty {
                 ContentUnavailableView(CreditStrings.text(.noMovements), systemImage: "list.bullet.rectangle")
                     .foregroundStyle(AppPalette.background)
@@ -747,8 +755,190 @@ struct CreditDetailView: View {
         .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 20))
     }
 
+    private var movementFilters: some View {
+        HStack(spacing: 8) {
+            movementFilterPicker(title: AppStrings.text(.year)) {
+                Picker(AppStrings.text(.year), selection: $selectedMovementYear) {
+                    ForEach(availableMovementYears, id: \.self) { year in
+                        Text(year.formatted(.number.grouping(.never))).tag(year)
+                    }
+                }
+            }
+
+            movementFilterPicker(title: AppStrings.text(.month)) {
+                Picker(AppStrings.text(.month), selection: $selectedMovementMonth) {
+                    Text(AppStrings.text(.all)).tag(Optional<Int>.none)
+                    ForEach(1...12, id: \.self) { month in
+                        Text(Date.monthName(forMonthNumber: month)).tag(Optional(month))
+                    }
+                }
+            }
+        }
+    }
+
+    private var movementKindFilter: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(CreditStrings.text(.movementUsageFilter))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppPalette.mutedText)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    movementKindButton(
+                        title: AppStrings.text(.all),
+                        iconName: "square.grid.2x2.fill",
+                        color: AppPalette.background,
+                        usageID: nil
+                    )
+
+                    ForEach(CreditAccountExpenseTypeOption.creditUsageOptions) { option in
+                        movementKindButton(
+                            title: option.name,
+                            iconName: ExpenseTypeIcon.name(for: option.name),
+                            color: option.category.color,
+                            usageID: option.id
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func movementKindButton(
+        title: String,
+        iconName: String,
+        color: Color,
+        usageID: String?
+    ) -> some View {
+        let isSelected = selectedCreditUsageID == usageID
+
+        return Button {
+            selectedCreditUsageID = usageID
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: iconName)
+                    .foregroundStyle(isSelected ? AppPalette.surface : color)
+                Text(title)
+                    .foregroundStyle(isSelected ? AppPalette.surface : AppPalette.background)
+            }
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 9)
+                .background(
+                    isSelected ? AppPalette.background : AppPalette.appBackground,
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var movementTotals: some View {
+        HStack(spacing: 8) {
+            movementTotalCard(
+                symbol: "+",
+                value: positiveMovementTotal,
+                color: AppPalette.primary
+            )
+            movementTotalCard(
+                symbol: "−",
+                value: negativeMovementTotal,
+                color: AppPalette.positive
+            )
+        }
+    }
+
+    private func movementTotalCard(symbol: String, value: Double, color: Color) -> some View {
+        HStack(spacing: 8) {
+            Text(symbol)
+                .font(.headline.bold())
+                .foregroundStyle(color)
+                .frame(width: 28, height: 28)
+                .background(color.opacity(0.12), in: Circle())
+
+            Text(value.currencyText)
+                .font(.subheadline.bold())
+                .foregroundStyle(AppPalette.background)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func movementFilterPicker<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(AppPalette.mutedText)
+                .lineLimit(1)
+
+            content()
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .tint(AppPalette.background)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var availableMovementYears: [Int] {
+        let currentYear = Calendar.current.component(.year, from: Date())
+        let movementYears = movements.map { Calendar.current.component(.year, from: $0.date) }
+        return Array(Set(movementYears + [currentYear])).sorted(by: >)
+    }
+
+    private var filteredMovements: [CreditMovement] {
+        let calendar = Calendar.current
+        return movements.filter { movement in
+            guard calendar.component(.year, from: movement.date) == selectedMovementYear else {
+                return false
+            }
+            if let selectedMovementMonth,
+               calendar.component(.month, from: movement.date) != selectedMovementMonth {
+                return false
+            }
+            if let selectedCreditUsageID,
+               creditUsageOption(for: movement).id != selectedCreditUsageID {
+                return false
+            }
+            return true
+        }
+    }
+
+    private func creditUsageOption(for movement: CreditMovement) -> CreditAccountExpenseTypeOption {
+        guard let expenseName = movement.expenseName,
+              !expenseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let option = CreditAccountExpenseTypeOption.creditUsageOptions.first(where: {
+                  $0.name.caseInsensitiveCompare(expenseName) == .orderedSame
+              }) else {
+            return CreditAccountExpenseTypeOption.other
+        }
+        return option
+    }
+
+    private var positiveMovementTotal: Double {
+        filteredMovements.reduce(0) { total, movement in
+            total + max(movement.balanceEffect, 0)
+        }
+    }
+
+    private var negativeMovementTotal: Double {
+        filteredMovements.reduce(0) { total, movement in
+            total + abs(min(movement.balanceEffect, 0))
+        }
+    }
+
     private var movementGroups: [CreditMovementGroup] {
-        Dictionary(grouping: movements, by: { $0.date.monthStart })
+        Dictionary(grouping: filteredMovements, by: { $0.date.monthStart })
             .map { CreditMovementGroup(month: $0.key, movements: $0.value.sorted { $0.date > $1.date }) }
             .sorted { $0.month > $1.month }
     }
@@ -1368,7 +1558,8 @@ private struct CreditMovementEditor: View {
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         if kind == .payment && request.movement == nil {
             savePaymentThroughCurrentAccount(note: trimmedNote)
-            saveNotice = .saved(AppStrings.text(.creditPaymentSavedMessage))
+            SaveResultNoticeCenter.shared.show(.saved(AppStrings.text(.creditPaymentSavedMessage)))
+            dismiss()
             return
         }
 
@@ -1424,7 +1615,8 @@ private struct CreditMovementEditor: View {
             note: trimmedNote.isEmpty ? request.credit.displayName : trimmedNote
         )
 
-        saveNotice = .saved(String(format: AppStrings.text(.creditMovementSavedMessage), kind.title))
+        SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.creditMovementSavedMessage), kind.title)))
+        dismiss()
     }
 
     private func savePaymentThroughCurrentAccount(note: String) {
@@ -1543,6 +1735,8 @@ private struct CreditAccountExpenseTypeOption: Identifiable, Hashable {
         CreditAccountExpenseTypeOption(category: .savingsAndDebt, name: "Transferência de saldo"),
         CreditAccountExpenseTypeOption(category: .wants, name: "Outro")
     ]
+
+    static let other = CreditAccountExpenseTypeOption(category: .wants, name: "Outro")
 }
 
 struct CurrentAccountCreditMovementRequest: Identifiable {
@@ -2023,7 +2217,8 @@ struct CurrentAccountCreditMovementEditor: View {
             break
         }
 
-        saveNotice = .saved(String(format: AppStrings.text(.creditMovementSavedMessage), kind.title))
+        SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.creditMovementSavedMessage), kind.title)))
+        dismiss()
     }
 
     private func savePayment(for credit: CreditAccount, note: String) {

@@ -103,6 +103,142 @@ struct MoneyControlTests {
         #expect(septemberSummary.income == 1_800)
     }
 
+    @Test func recurringIncomeEntersAccountOnlyWhenConfiguredDayArrives() {
+        let august = Date.monthStart(month: 8, year: 2026)
+        let salary = makeIncome(
+            title: "Salario",
+            day: 20,
+            month: august,
+            amount: 1_800,
+            recurrenceType: .monthly,
+            budgetAllocation: .nextMonth
+        )
+        let service = MoneyCalculationService(transactions: [salary], payments: [], exclusions: [])
+
+        let beforeDueDate = service.recurringIncomeOccurrencesDue(
+            after: august,
+            through: august.date(day: 19)
+        )
+        let onDueDate = service.recurringIncomeOccurrencesDue(
+            after: august,
+            through: august.date(day: 20)
+        )
+
+        #expect(beforeDueDate.isEmpty)
+        #expect(onDueDate.count == 1)
+        #expect(onDueDate.first?.transaction.id == salary.id)
+        #expect(onDueDate.first?.receivedDate == august.date(day: 20))
+        #expect(onDueDate.first?.amount == 1_800)
+    }
+
+    @Test func deactivatedRecurringTransactionKeepsCurrentMonthAndRemovesFutureOccurrences() {
+        let currentMonth = Date().monthStart
+        let nextMonth = currentMonth.nextMonthStart
+        let expense = makeExpense(
+            title: "Seguro",
+            day: 10,
+            month: currentMonth,
+            amount: 50,
+            recurrenceType: .monthly
+        )
+
+        expense.recurrenceDisabledFromMonthStart = nextMonth
+
+        #expect(expense.occurs(in: currentMonth, exclusions: []))
+        #expect(!expense.occurs(in: nextMonth, exclusions: []))
+
+        expense.recurrenceDisabledFromMonthStart = nil
+
+        #expect(expense.occurs(in: nextMonth, exclusions: []))
+    }
+
+    @Test func recurringIncomeDoesNotRecreateOccurrencesIncludedInAccountOpeningBalance() {
+        let august = Date.monthStart(month: 8, year: 2026)
+        let september = Date.monthStart(month: 9, year: 2026)
+        let salary = makeIncome(
+            title: "Salario",
+            day: 20,
+            month: august,
+            amount: 1_800,
+            recurrenceType: .monthly,
+            budgetAllocation: .nextMonth
+        )
+        let service = MoneyCalculationService(transactions: [salary], payments: [], exclusions: [])
+
+        let occurrences = service.recurringIncomeOccurrencesDue(
+            after: august.date(day: 21),
+            through: september.date(day: 20)
+        )
+
+        #expect(occurrences.count == 1)
+        #expect(occurrences.first?.receivedDate == september.date(day: 20))
+    }
+
+    @Test func weeklyIncomePlanningHonorsActivationDateAndExcludedOccurrences() {
+        let october = Date.monthStart(month: 10, year: 2026)
+        let income = makeIncome(
+            title: "Semanal",
+            day: 2,
+            month: october.date(day: 15),
+            amount: 100,
+            recurrenceType: .weekly
+        )
+        let validDays = income.occurrenceDays(in: october)
+        let exclusion = RecurrenceExclusion(
+            transactionID: income.id,
+            monthStart: october,
+            occurrenceDay: validDays.last
+        )
+        let service = MoneyCalculationService(
+            transactions: [income],
+            payments: [],
+            exclusions: [exclusion]
+        )
+
+        #expect(validDays == [19, 26])
+        #expect(service.monthSummary(in: october).income == 100)
+        #expect(service.accountSummary(until: october.date(day: 31)).incomeUntilToday == 100)
+    }
+
+    @Test func weeklyIncomeAccountSummaryOnlyIncludesOccurrencesAlreadyDue() {
+        let october = Date.monthStart(month: 10, year: 2026)
+        let income = makeIncome(
+            title: "Semanal",
+            day: 2,
+            month: october,
+            amount: 100,
+            recurrenceType: .weekly
+        )
+        let service = MoneyCalculationService(transactions: [income], payments: [], exclusions: [])
+
+        #expect(service.accountSummary(until: october.date(day: 11)).incomeUntilToday == 100)
+        #expect(service.accountSummary(until: october.date(day: 12)).incomeUntilToday == 200)
+    }
+
+    @Test func backupIntegrityRejectsDuplicateAccountIdentifiers() {
+        let first = SpendAccount(name: "Principal", initialBalance: 100, isPrimary: true)
+        let duplicate = SpendAccount(name: "Duplicada", initialBalance: 0)
+        duplicate.id = first.id
+        let backup = SpendWiseBackup(
+            transactions: [],
+            payments: [],
+            exclusions: [],
+            spendAccounts: [BackupSpendAccount(account: first), BackupSpendAccount(account: duplicate)]
+        )
+
+        #expect(throws: BackupError.self) {
+            try backup.validateIntegrity()
+        }
+    }
+
+    @Test func encryptedBackupRoundTripUsesCurrentFormat() throws {
+        let source = Data("SpendWise backup".utf8)
+        let encrypted = try EncryptedSpendWiseBackup(backupData: source, password: "uma senha segura")
+
+        #expect(encrypted.version == EncryptedSpendWiseBackup.currentVersion)
+        #expect(try encrypted.decrypt(password: "uma senha segura") == source)
+    }
+
     @Test func customBudgetMonthMovesOneOffIncomeAnalysisOnly() {
         let august = Date.monthStart(month: 8, year: 2026)
         let october = Date.monthStart(month: 10, year: 2026)

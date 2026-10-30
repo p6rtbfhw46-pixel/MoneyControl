@@ -33,6 +33,9 @@ struct MoneyControlApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isShowingLaunchLoading = true
     @State private var isAppUnlocked = false
+    @State private var appInactiveSince: Date?
+
+    private let appLockGracePeriod: TimeInterval = 30
 
     @State private var modelContainerState = MoneyControlApp.makeModelContainerState()
 
@@ -118,8 +121,19 @@ struct MoneyControlApp: App {
         .animation(.easeInOut(duration: 0.25), value: isShowingLaunchLoading)
         .animation(.easeInOut(duration: 0.2), value: isAppUnlocked)
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase != .active, hasCompletedInitialSetup, appLockEnabled {
-                isAppUnlocked = false
+            guard hasCompletedInitialSetup, appLockEnabled else {
+                appInactiveSince = nil
+                return
+            }
+
+            if newPhase == .active {
+                if let appInactiveSince,
+                   Date().timeIntervalSince(appInactiveSince) >= appLockGracePeriod {
+                    isAppUnlocked = false
+                }
+                appInactiveSince = nil
+            } else if appInactiveSince == nil {
+                appInactiveSince = Date()
             }
         }
         .tint(AppPalette.primary)
@@ -130,7 +144,7 @@ struct MoneyControlApp: App {
         ZStack {
             if shouldRequireUnlock {
                 AppLockView(mode: .unlock) {
-                    isShowingLaunchLoading = true
+                    isShowingLaunchLoading = false
                     isAppUnlocked = true
                 }
                 .transition(.opacity)

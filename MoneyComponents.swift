@@ -18,6 +18,214 @@ struct SaveResultNotice: Identifiable {
     }
 }
 
+@MainActor
+@Observable
+final class SaveResultNoticeCenter {
+    static let shared = SaveResultNoticeCenter()
+
+    private(set) var notice: SaveResultNotice?
+
+    private init() {}
+
+    func show(_ notice: SaveResultNotice) {
+        self.notice = notice
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(10))
+            guard self.notice?.id == notice.id else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                self.notice = nil
+            }
+        }
+    }
+
+    func dismiss() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            notice = nil
+        }
+    }
+}
+
+struct SaveResultNoticeOverlay: View {
+    let notice: SaveResultNotice
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.28)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 42, weight: .semibold))
+                    .foregroundStyle(AppPalette.positive)
+
+                VStack(spacing: 7) {
+                    Text(notice.title)
+                        .font(.title3.bold())
+                        .foregroundStyle(AppPalette.background)
+
+                    Text(notice.message)
+                        .font(.subheadline)
+                        .foregroundStyle(AppPalette.mutedText)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button(AppStrings.text(.ok), action: onDismiss)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 12))
+            }
+            .padding(22)
+            .frame(maxWidth: 330)
+            .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 20))
+            .shadow(color: .black.opacity(0.22), radius: 24, y: 10)
+            .padding(.horizontal, 24)
+        }
+        .accessibilityAddTraits(.isModal)
+        .transition(.opacity)
+        .zIndex(1000)
+    }
+}
+
+struct ConfirmationNoticeOverlay: View {
+    let title: String
+    let message: String
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.28)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 42, weight: .semibold))
+                    .foregroundStyle(AppPalette.primary)
+
+                VStack(spacing: 7) {
+                    Text(title)
+                        .font(.title3.bold())
+                        .foregroundStyle(AppPalette.background)
+
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(AppPalette.mutedText)
+                        .multilineTextAlignment(.center)
+                }
+
+                HStack(spacing: 10) {
+                    Button(AppStrings.text(.cancel), action: onCancel)
+                        .foregroundStyle(AppPalette.background)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(AppPalette.appBackground, in: RoundedRectangle(cornerRadius: 12))
+
+                    Button(AppStrings.text(.ok), action: onConfirm)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .font(.headline)
+            }
+            .padding(22)
+            .frame(maxWidth: 350)
+            .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 20))
+            .shadow(color: .black.opacity(0.22), radius: 24, y: 10)
+            .padding(.horizontal, 24)
+        }
+        .accessibilityAddTraits(.isModal)
+        .zIndex(3000)
+    }
+}
+
+struct SaveResultToast: View {
+    let notice: SaveResultNotice
+    var onDismiss: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(AppPalette.positive)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(notice.title)
+                    .font(.headline.bold())
+                    .foregroundStyle(AppPalette.background)
+
+                Text(notice.message)
+                    .font(.subheadline)
+                    .foregroundStyle(AppPalette.mutedText)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 15)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(AppPalette.positive.opacity(0.85), lineWidth: 2)
+        }
+        .shadow(color: AppPalette.positive.opacity(0.24), radius: 18, y: 8)
+        .accessibilityElement(children: .combine)
+        .gesture(
+            DragGesture(minimumDistance: 12)
+                .onEnded { value in
+                    if value.translation.height < -20 {
+                        onDismiss?()
+                    }
+                }
+        )
+    }
+}
+
+private struct SaveResultToastPresenter: ViewModifier {
+    @State private var noticeCenter = SaveResultNoticeCenter.shared
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            if let notice = noticeCenter.notice {
+                SaveResultToast(notice: notice, onDismiss: noticeCenter.dismiss)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(2000)
+            }
+        }
+    }
+}
+
+extension View {
+    func saveResultToastPresenter() -> some View {
+        modifier(SaveResultToastPresenter())
+    }
+
+    func confirmationNotice(
+        isPresented: Binding<Bool>,
+        title: String,
+        message: String,
+        onConfirm: @escaping () -> Void
+    ) -> some View {
+        overlay {
+            if isPresented.wrappedValue {
+                ConfirmationNoticeOverlay(
+                    title: title,
+                    message: message,
+                    onCancel: { isPresented.wrappedValue = false },
+                    onConfirm: {
+                        isPresented.wrappedValue = false
+                        onConfirm()
+                    }
+                )
+            }
+        }
+    }
+}
+
 struct SpendWiseIcon: View {
     let systemName: String
     let color: Color
@@ -130,15 +338,18 @@ struct MonthPage: View {
     let exclusions: [RecurrenceExclusion]
     var paymentFilter: CurrentAccountPaymentFilter = .all
     var incomeFilter: CurrentAccountIncomeFilter = .all
+    var sortOrder: CurrentAccountSortOrder = .currentPaymentStatusOrder
     var hasActiveFilters = false
     let creditAccounts: [CreditAccount]
     let savingAccounts: [SavingAccount]
     let onPay: (MoneyTransaction, Date, Int?, Double) -> Void
     let onEdit: (MoneyTransaction) -> Void
     let onDelete: (MoneyTransaction, Int?) -> Void
+    let onScrollDirectionChanged: (Bool) -> Void
 
     @State private var expandedTransactionID: String?
     @State private var isFlexibleSectionCollapsed = false
+    @State private var previousScrollDragY: CGFloat = 0
 
     private struct MonthTransactionOccurrence: Identifiable {
         let transaction: MoneyTransaction
@@ -254,6 +465,18 @@ struct MonthPage: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .background(AppPalette.appBackground)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 8)
+                        .onChanged { value in
+                            let delta = value.translation.height - previousScrollDragY
+                            guard abs(delta) > 2 else { return }
+                            previousScrollDragY = value.translation.height
+                            onScrollDirectionChanged(delta < 0)
+                        }
+                        .onEnded { _ in
+                            previousScrollDragY = 0
+                        }
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -341,6 +564,29 @@ struct MonthPage: View {
         }
         .filter { occurrenceMatchesCurrentFilters($0, paymentsByKey: paymentsByKey) }
         .sorted { first, second in
+            if sortOrder == .dateNewestFirst || sortOrder == .dateOldestFirst {
+                if first.day != second.day {
+                    return sortOrder == .dateNewestFirst ? first.day > second.day : first.day < second.day
+                }
+                return compareNames(first, second)
+            }
+
+            if sortOrder == .amountHighestFirst || sortOrder == .amountLowestFirst {
+                let firstAmount = scheduledAmount(for: first)
+                let secondAmount = scheduledAmount(for: second)
+                if firstAmount != secondAmount {
+                    return sortOrder == .amountHighestFirst ? firstAmount > secondAmount : firstAmount < secondAmount
+                }
+                if first.day != second.day { return first.day > second.day }
+                return compareNames(first, second)
+            }
+
+            if sortOrder == .nameAscending {
+                let nameComparison = freeTextSortValue(for: first).localizedCaseInsensitiveCompare(freeTextSortValue(for: second))
+                if nameComparison != .orderedSame { return nameComparison == .orderedAscending }
+                return first.day > second.day
+            }
+
             let firstRank = displayRank(for: first, paymentsByKey: paymentsByKey)
             let secondRank = displayRank(for: second, paymentsByKey: paymentsByKey)
 
@@ -349,6 +595,9 @@ struct MonthPage: View {
             }
 
             if first.day != second.day {
+                if sortOrder == .paymentStatusNewestFirst {
+                    return first.day > second.day
+                }
                 return first.day < second.day
             }
 
@@ -358,6 +607,30 @@ struct MonthPage: View {
 
             return first.transaction.displayName.localizedCaseInsensitiveCompare(second.transaction.displayName) == .orderedAscending
         }
+    }
+
+    private func scheduledAmount(for occurrence: MonthTransactionOccurrence) -> Double {
+        occurrence.transaction.scheduledAmount(
+            in: month,
+            occurrenceDay: paymentOccurrenceDay(for: occurrence)
+        )
+    }
+
+    private func compareNames(_ first: MonthTransactionOccurrence, _ second: MonthTransactionOccurrence) -> Bool {
+        first.transaction.displayName.localizedCaseInsensitiveCompare(second.transaction.displayName) == .orderedAscending
+    }
+
+    private func freeTextSortValue(for occurrence: MonthTransactionOccurrence) -> String {
+        let transaction = occurrence.transaction
+        let value: String
+        if transaction.kind == TransactionKind.expense.rawValue {
+            value = transaction.title
+        } else {
+            value = transaction.incomeDescription ?? ""
+        }
+
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? transaction.displayName : trimmedValue
     }
 
     private func occurrenceMatchesCurrentFilters(
@@ -1158,12 +1431,14 @@ struct TransactionCard: View {
                         Button(role: .destructive) {
                             showsDeleteConfirmation = true
                         } label: {
-                            CompactActionLabel(title: AppStrings.text(.delete), systemImage: "trash")
-                                .frame(minWidth: isExpense ? 94 : nil, maxWidth: isExpense ? 94 : .infinity, minHeight: 40)
+                            Image(systemName: "trash")
+                                .font(.subheadline.bold())
+                                .frame(width: 44, height: 40)
                                 .background(AppPalette.destructive, in: RoundedRectangle(cornerRadius: 8))
                                 .foregroundStyle(.white)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(AppStrings.text(.delete))
                     }
                     .font(.caption.bold())
                 }
@@ -1382,6 +1657,7 @@ struct SettingsTransactionCard: View {
     let isExpanded: Bool
     let onExpansionChange: (Bool) -> Void
     let onEdit: () -> Void
+    let onSetEnabled: (Bool) -> Void
     let onDelete: () -> Void
 
     @State private var showsDeleteConfirmation = false
@@ -1474,6 +1750,7 @@ struct SettingsTransactionCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityValue(transaction.isRecurrenceEnabled ? "Ativo" : "Desativado")
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 10) {
@@ -1490,6 +1767,22 @@ struct SettingsTransactionCard: View {
                                 .foregroundStyle(AppPalette.background)
                                 .frame(maxWidth: .infinity, minHeight: 40)
                                 .background(AppPalette.paleOrange, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            onSetEnabled(!transaction.isRecurrenceEnabled)
+                        } label: {
+                            CompactActionLabel(
+                                title: transaction.isRecurrenceEnabled ? "Desativar" : "Ativar",
+                                systemImage: transaction.isRecurrenceEnabled ? "pause.circle" : "play.circle"
+                            )
+                            .foregroundStyle(transaction.isRecurrenceEnabled ? AppPalette.background : .white)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .background(
+                                transaction.isRecurrenceEnabled ? AppPalette.secondary : AppPalette.positive,
+                                in: RoundedRectangle(cornerRadius: 8)
+                            )
                         }
                         .buttonStyle(.plain)
 
@@ -1663,6 +1956,84 @@ struct SettingsTransactionCard: View {
             background: iconBackground,
             size: 44
         )
+        .overlay(alignment: .topTrailing) {
+            if !transaction.isRecurrenceEnabled {
+                Image(systemName: "pause.fill")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 17, height: 17)
+                    .background(AppPalette.destructive, in: Circle())
+                    .overlay {
+                        Circle()
+                            .stroke(AppPalette.surface, lineWidth: 2)
+                    }
+                    .offset(x: 3, y: -3)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+private struct CollapsiblePaymentCard<Content: View>: View {
+    let title: String
+    @Binding var isExpanded: Bool
+    let content: Content
+
+    init(
+        title: String,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self._isExpanded = isExpanded
+        self.content = content()
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            content
+                .padding(.top, 10)
+        } label: {
+            Text(title)
+                .font(.subheadline.bold())
+                .foregroundStyle(AppPalette.background)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .tint(AppPalette.background)
+        .padding(12)
+        .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: AppPalette.background.opacity(0.04), radius: 8, y: 4)
+    }
+}
+
+private struct ClosePlanningOnSaveRow: View {
+    @Binding var isSelected: Bool
+
+    var body: some View {
+        Button {
+            isSelected.toggle()
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? AppPalette.positive : AppPalette.mutedText)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(AppStrings.text(.closePlanningOnSave))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppPalette.background)
+
+                    Text(AppStrings.text(.closePlanningOnSaveDescription))
+                        .font(.caption)
+                        .foregroundStyle(AppPalette.mutedText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -1680,6 +2051,7 @@ struct PaymentAmountPicker: View {
     let accountMovements: [AccountMovement]
     let transactionAccountID: UUID?
     let onConfirm: (Double, String?, UUID?) -> Void
+    let onConfirmAndCloseBudgetWithConsumedValue: (Double, String?, UUID?, Double) -> Void
     let onCloseBudgetWithConsumedValue: (Double) -> Void
     let onDeleteHistoryEntry: (PaymentHistoryEntry) -> Void
 
@@ -1687,6 +2059,9 @@ struct PaymentAmountPicker: View {
     @State private var paidAmountInSheet: Double = 0
     @State private var paymentNote = ""
     @State private var selectedAccountID: UUID?
+    @State private var isAccountSectionExpanded = false
+    @State private var isQuickPaymentSectionExpanded = false
+    @State private var closesPlanningOnSave = false
     @State private var showsOverpaymentConfirmation = false
     @State private var showsCloseBudgetConfirmation = false
     @State private var showsFuturePaymentConfirmation = false
@@ -1727,6 +2102,16 @@ struct PaymentAmountPicker: View {
 
     private var defaultAccountID: UUID? {
         transactionAccountID ?? accounts.first(where: \.isPrimary)?.id ?? accounts.first?.id
+    }
+
+    private var selectedAccountName: String? {
+        guard let accountID = selectedAccountID ?? defaultAccountID else { return nil }
+        return accounts.first(where: { $0.id == accountID })?.displayName
+    }
+
+    private var accountSectionTitle: String {
+        guard let selectedAccountName else { return AppStrings.text(.account) }
+        return "\(AppStrings.text(.account)) - \(selectedAccountName)"
     }
 
     private var isFuturePaymentDate: Bool {
@@ -1819,7 +2204,7 @@ struct PaymentAmountPicker: View {
                     Button(AppStrings.text(.cancel)) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(AppStrings.text(.ok), action: confirmPayment)
+                    Button(AppStrings.text(.save), action: confirmPayment)
                 }
             }
             .alert(AppStrings.text(.deletePaymentHistoryTitle), isPresented: isShowingDeleteHistoryConfirmation) {
@@ -1832,31 +2217,27 @@ struct PaymentAmountPicker: View {
             } message: {
                 Text(AppStrings.text(.deletePaymentHistoryMessage))
             }
-            .alert("Fechar orçamento?", isPresented: $showsCloseBudgetConfirmation) {
-                Button(AppStrings.text(.cancel), role: .cancel) {}
-                Button(AppStrings.text(.ok)) {
-                    onCloseBudgetWithConsumedValue(paidAmountInSheet)
-                    dismiss()
-                }
-            } message: {
-                Text(closeBudgetConfirmationMessage)
+            .confirmationNotice(
+                isPresented: $showsCloseBudgetConfirmation,
+                title: "Fechar orçamento?",
+                message: closeBudgetConfirmationMessage
+            ) {
+                onCloseBudgetWithConsumedValue(paidAmountInSheet)
+                dismiss()
             }
-            .alert(AppStrings.text(.overpaymentTitle), isPresented: $showsOverpaymentConfirmation) {
-                Button(AppStrings.text(.cancel), role: .cancel) {}
-                Button(AppStrings.text(.ok)) {
-                    performPayment()
-                }
-            } message: {
-                Text(AppStrings.text(.overpaymentMessage))
-            }
-            .alert(AppStrings.text(.futurePaymentTitle), isPresented: $showsFuturePaymentConfirmation) {
-                Button(AppStrings.text(.cancel), role: .cancel) {}
-                Button(AppStrings.text(.ok)) {
-                    hasConfirmedFuturePayment = true
-                    confirmPayment()
-                }
-            } message: {
-                Text(futurePaymentMessage)
+            .confirmationNotice(
+                isPresented: $showsOverpaymentConfirmation,
+                title: AppStrings.text(.overpaymentTitle),
+                message: AppStrings.text(.overpaymentMessage),
+                onConfirm: performPayment
+            )
+            .confirmationNotice(
+                isPresented: $showsFuturePaymentConfirmation,
+                title: AppStrings.text(.futurePaymentTitle),
+                message: futurePaymentMessage
+            ) {
+                hasConfirmedFuturePayment = true
+                confirmPayment()
             }
             .onAppear {
                 paidAmountInSheet = initialAmount
@@ -1905,45 +2286,57 @@ struct PaymentAmountPicker: View {
     }
 
     private var accountSelectionSection: some View {
-        paymentCard(title: AppStrings.text(.account)) {
+        CollapsiblePaymentCard(
+            title: accountSectionTitle,
+            isExpanded: $isAccountSectionExpanded
+        ) {
             accountSelectionStrip
         }
     }
 
     private var quickPaymentSection: some View {
-        paymentCard(title: AppStrings.text(.quickPayment)) {
-            HStack(spacing: 12) {
-                Button {
-                    selectedAmount = remainingAmount
-                    confirmPayment()
-                } label: {
-                    Label(AppStrings.text(.payFullAmount), systemImage: "checkmark.circle.fill")
-                        .font(.headline)
-                        .foregroundStyle(AppPalette.surface)
-                        .frame(maxWidth: .infinity, minHeight: 74)
-                        .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 12))
-                }
-                .buttonStyle(.plain)
-
-                if canCloseBudgetWithConsumedValue {
+        CollapsiblePaymentCard(
+            title: AppStrings.text(.quickPayment),
+            isExpanded: $isQuickPaymentSectionExpanded
+        ) {
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
                     Button {
-                        showsCloseBudgetConfirmation = true
+                        selectedAmount = remainingAmount
+                        confirmPayment()
                     } label: {
-                        Label(AppStrings.text(.closeBudgetWithConsumedValue), systemImage: "checkmark.seal.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(AppPalette.background)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.8)
+                        Label(AppStrings.text(.payFullAmount), systemImage: "checkmark.circle.fill")
+                            .font(.headline)
+                            .foregroundStyle(AppPalette.surface)
                             .frame(maxWidth: .infinity, minHeight: 74)
-                            .padding(.horizontal, 16)
-                            .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 12))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(AppPalette.mediumBlue.opacity(0.35), lineWidth: 1)
-                            }
+                            .background(AppPalette.background, in: RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
+
+                    if canCloseBudgetWithConsumedValue {
+                        Button {
+                            showsCloseBudgetConfirmation = true
+                        } label: {
+                            Label(AppStrings.text(.closeBudgetWithConsumedValue), systemImage: "checkmark.seal.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(AppPalette.background)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.8)
+                                .frame(maxWidth: .infinity, minHeight: 74)
+                                .padding(.horizontal, 16)
+                                .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 12))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(AppPalette.mediumBlue.opacity(0.35), lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+
+                Divider()
+
+                ClosePlanningOnSaveRow(isSelected: $closesPlanningOnSave)
             }
         }
     }
@@ -2000,8 +2393,22 @@ struct PaymentAmountPicker: View {
     }
 
     private func performPayment() {
-        let note = paymentNote.trimmingCharacters(in: .whitespacesAndNewlines)
-        onConfirm(selectedAmount, note.isEmpty ? nil : note, selectedAccountID ?? defaultAccountID)
+        let trimmedNote = paymentNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = trimmedNote.isEmpty ? nil : trimmedNote
+        let accountID = selectedAccountID ?? defaultAccountID
+        let totalPaidAfterSaving = paidAmountInSheet + selectedAmount
+
+        if closesPlanningOnSave, totalPaidAfterSaving < totalAmount {
+            onConfirmAndCloseBudgetWithConsumedValue(
+                selectedAmount,
+                note,
+                accountID,
+                totalPaidAfterSaving
+            )
+        } else {
+            onConfirm(selectedAmount, note, accountID)
+        }
+
         dismiss()
     }
 
@@ -2481,6 +2888,7 @@ struct RecurringList: View {
     let transactions: [MoneyTransaction]
     let payments: [ExpensePayment]
     let onEdit: (MoneyTransaction) -> Void
+    let onSetEnabled: (MoneyTransaction, Bool) -> Void
     let onDelete: (MoneyTransaction) -> Void
 
     @State private var expandedTransactionID: UUID?
@@ -2501,6 +2909,7 @@ struct RecurringList: View {
                                 expandedTransactionID = isExpanded ? transaction.id : nil
                             },
                             onEdit: { onEdit(transaction) },
+                            onSetEnabled: { onSetEnabled(transaction, $0) },
                             onDelete: { onDelete(transaction) }
                         )
                     }

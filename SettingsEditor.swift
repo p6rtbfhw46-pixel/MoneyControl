@@ -28,7 +28,12 @@ struct SettingsEditor: View {
     @Query private var spendAccounts: [SpendAccount]
     @Query private var accountMovements: [AccountMovement]
     @Query private var auditLogEntries: [AuditLogEntry]
+    @Query private var plannings: [Planning]
+    @Query private var planningItemTypes: [PlanningItemType]
+    @Query private var planningItems: [PlanningItem]
+    @Query private var planningMovements: [PlanningMovement]
     @State private var editorRequest: TransactionEditorRequest?
+    @State private var saveNotice: SaveResultNotice?
     @State private var selectedList = 0
     @State private var selectedListDirection = 1
     @State private var selectedTab: SettingsTab = .budget
@@ -63,7 +68,7 @@ struct SettingsEditor: View {
 
     private var recurringExpenses: [MoneyTransaction] {
         transactions
-            .filter { $0.kind == TransactionKind.expense.rawValue && $0.isRecurring && $0.isActiveForSettingsList }
+            .filter { $0.kind == TransactionKind.expense.rawValue && $0.isRecurring && $0.isVisibleInSettingsList }
             .sorted { first, second in
                 if first.day != second.day { return first.day < second.day }
                 return first.displayName.localizedCaseInsensitiveCompare(second.displayName) == .orderedAscending
@@ -72,7 +77,7 @@ struct SettingsEditor: View {
 
     private var recurringIncome: [MoneyTransaction] {
         transactions
-            .filter { $0.kind == TransactionKind.income.rawValue && $0.isRecurring && $0.isActiveForSettingsList }
+            .filter { $0.kind == TransactionKind.income.rawValue && $0.isRecurring && $0.isVisibleInSettingsList }
             .sorted { first, second in
                 if first.day != second.day { return first.day < second.day }
                 return first.title.localizedCaseInsensitiveCompare(second.title) == .orderedAscending
@@ -126,7 +131,14 @@ struct SettingsEditor: View {
                 }
             }
             .sheet(item: $editorRequest) { request in
-                TransactionEditor(request: request)
+                TransactionEditor(request: request, onSaved: presentSaveNoticeAfterEditorCloses)
+            }
+            .overlay {
+                if let saveNotice {
+                    SaveResultNoticeOverlay(notice: saveNotice) {
+                        self.saveNotice = nil
+                    }
+                }
             }
             .alert(
                 pendingAction?.title ?? "",
@@ -137,7 +149,7 @@ struct SettingsEditor: View {
                 presenting: pendingAction
             ) { action in
                 Button(AppStrings.text(.cancel), role: .cancel) {}
-                Button(AppStrings.text(.continueAction), role: action.kind == .delete ? .destructive : nil) {
+                Button(action.confirmationButtonTitle, role: action.isDestructive ? .destructive : nil) {
                     perform(action)
                 }
             } message: { action in
@@ -188,6 +200,11 @@ struct SettingsEditor: View {
         .foregroundStyle(AppPalette.background)
         .tint(AppPalette.background)
         .background(AppPalette.appBackground)
+    }
+
+    private func presentSaveNoticeAfterEditorCloses(_ notice: SaveResultNotice) {
+        saveNotice = notice
+        editorRequest = nil
     }
 
     private func appSettingsNavigationRow<Destination: View>(
@@ -619,6 +636,7 @@ struct SettingsEditor: View {
                 transactions: recurringExpenses,
                 payments: payments,
                 onEdit: editRecurringTransaction,
+                onSetEnabled: { pendingAction = SettingsListAction(kind: $1 ? .activate : .deactivate, transaction: $0) },
                 onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
             )
         } else {
@@ -627,6 +645,7 @@ struct SettingsEditor: View {
                 transactions: recurringIncome,
                 payments: payments,
                 onEdit: editRecurringTransaction,
+                onSetEnabled: { pendingAction = SettingsListAction(kind: $1 ? .activate : .deactivate, transaction: $0) },
                 onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
             )
         }
@@ -838,7 +857,11 @@ struct SettingsEditor: View {
             savingMovements: savingMovements.map { BackupSavingMovement(movement: $0) },
             spendAccounts: spendAccounts.map { BackupSpendAccount(account: $0) },
             accountMovements: accountMovements.map { BackupAccountMovement(movement: $0) },
-            auditLogEntries: auditLogEntries.map { BackupAuditLogEntry(entry: $0) }
+            auditLogEntries: auditLogEntries.map { BackupAuditLogEntry(entry: $0) },
+            plannings: plannings.map { BackupPlanning(planning: $0) },
+            planningItemTypes: planningItemTypes.map { BackupPlanningItemType(itemType: $0) },
+            planningItems: planningItems.map { BackupPlanningItem(item: $0) },
+            planningMovements: planningMovements.map { BackupPlanningMovement(movement: $0) }
         )
         return try encodedData(for: backup)
     }
@@ -854,9 +877,11 @@ struct SettingsEditor: View {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let backup = try decoder.decode(SpendWiseBackup.self, from: data)
-        guard backup.version == SpendWiseBackup.currentVersion else {
+        guard backup.version == SpendWiseBackup.currentVersion,
+              backup.structureIdentifier == SpendWiseBackup.currentStructureIdentifier else {
             throw BackupError.unsupportedVersion
         }
+        try backup.validateIntegrity()
         return backup
     }
 
@@ -868,6 +893,8 @@ struct SettingsEditor: View {
             return "As palavras-passe não coincidem."
         case BackupError.invalidBackup:
             return AppStrings.text(.importBackupFailureMessage)
+        case BackupError.unsupportedVersion:
+            return "Este backup pertence a uma versão com uma estrutura de dados diferente e não pode ser restaurado nesta versão da app."
         case BackupError.invalidPassword:
             return "Não foi possível desencriptar o backup. Confirme a palavra-passe."
         default:
@@ -889,6 +916,10 @@ struct SettingsEditor: View {
         accountMovements.forEach(modelContext.delete)
         spendAccounts.forEach(modelContext.delete)
         auditLogEntries.forEach(modelContext.delete)
+        planningMovements.forEach(modelContext.delete)
+        planningItems.forEach(modelContext.delete)
+        planningItemTypes.forEach(modelContext.delete)
+        plannings.forEach(modelContext.delete)
 
         let importedTransactions = backup.transactions.map(\.model)
         let importedPayments = backup.payments.map(\.model)
@@ -909,6 +940,10 @@ struct SettingsEditor: View {
         importedSpendAccounts.forEach(modelContext.insert)
         importedAccountMovements.forEach(modelContext.insert)
         importedAuditLogEntries.forEach(modelContext.insert)
+        backup.plannings.map(\.model).forEach(modelContext.insert)
+        backup.planningItemTypes.map(\.model).forEach(modelContext.insert)
+        backup.planningItems.map(\.model).forEach(modelContext.insert)
+        backup.planningMovements.map(\.model).forEach(modelContext.insert)
         BackupAccountMigration.normalizeImportedAccounts(
             modelContext: modelContext,
             transactions: importedTransactions,
@@ -928,6 +963,7 @@ struct SettingsEditor: View {
                 message: AppStrings.text(.importBackupSuccessMessage)
             )
         } catch {
+            modelContext.rollback()
             backupNotice = BackupNotice(
                 title: AppStrings.text(.importBackupFailureTitle),
                 message: error.localizedDescription
@@ -944,6 +980,10 @@ struct SettingsEditor: View {
             payments
                 .filter { $0.transactionID == action.transaction.id && $0.monthStart >= nextMonth }
                 .forEach(modelContext.delete)
+        case .deactivate:
+            action.transaction.recurrenceDisabledFromMonthStart = nextMonth
+        case .activate:
+            action.transaction.recurrenceDisabledFromMonthStart = nil
             paymentHistory
                 .filter { $0.transactionID == action.transaction.id && $0.monthStart >= nextMonth }
                 .forEach(modelContext.delete)
@@ -977,11 +1017,14 @@ struct BudgetSettingsView: View {
     @Query private var creditAccounts: [CreditAccount]
     @Query private var savingAccounts: [SavingAccount]
     @State private var editorRequest: TransactionEditorRequest?
+    @State private var saveNotice: SaveResultNotice?
     @State private var selectedList = 0
     @State private var pendingAction: SettingsListAction?
     @State private var helpNotice: BackupNotice?
     @State private var showsRecurringActions = false
-    @State private var showsRecurringBudgetBreakdown = false
+    @State private var isPreparingRecurringBudgetBreakdown = false
+    @State private var pendingRecurringBudgetBreakdownRequest: RecurringBudgetBreakdownRequest?
+    @State private var recurringBudgetBreakdownRequest: RecurringBudgetBreakdownRequest?
     private let showsListControls: Bool
 
     init(openingList: Int = 0, showsListControls: Bool = true) {
@@ -995,7 +1038,7 @@ struct BudgetSettingsView: View {
 
     private var recurringExpenses: [MoneyTransaction] {
         transactions
-            .filter { $0.kind == TransactionKind.expense.rawValue && $0.isRecurring && $0.isActiveForSettingsList }
+            .filter { $0.kind == TransactionKind.expense.rawValue && $0.isRecurring && $0.isVisibleInSettingsList }
             .sorted { first, second in
                 if first.day != second.day { return first.day < second.day }
                 return first.displayName.localizedCaseInsensitiveCompare(second.displayName) == .orderedAscending
@@ -1004,7 +1047,7 @@ struct BudgetSettingsView: View {
 
     private var recurringIncome: [MoneyTransaction] {
         transactions
-            .filter { $0.kind == TransactionKind.income.rawValue && $0.isRecurring && $0.isActiveForSettingsList }
+            .filter { $0.kind == TransactionKind.income.rawValue && $0.isRecurring && $0.isVisibleInSettingsList }
             .sorted { first, second in
                 if first.day != second.day { return first.day < second.day }
                 return first.title.localizedCaseInsensitiveCompare(second.title) == .orderedAscending
@@ -1080,10 +1123,39 @@ struct BudgetSettingsView: View {
         .navigationTitle(AppStrings.text(.budgetSettings))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editorRequest) { request in
-            TransactionEditor(request: request)
+            TransactionEditor(request: request, onSaved: presentSaveNoticeAfterEditorCloses)
         }
-        .sheet(isPresented: $showsRecurringBudgetBreakdown) {
-            RecurringBudgetBreakdownView(months: recurringBudgetBreakdownMonths)
+        .overlay {
+            if let saveNotice {
+                SaveResultNoticeOverlay(notice: saveNotice) {
+                    self.saveNotice = nil
+                }
+            }
+        }
+        .sheet(item: $recurringBudgetBreakdownRequest) { request in
+            RecurringBudgetBreakdownView(months: request.months)
+        }
+        .fullScreenCover(isPresented: $isPreparingRecurringBudgetBreakdown, onDismiss: {
+            recurringBudgetBreakdownRequest = pendingRecurringBudgetBreakdownRequest
+            pendingRecurringBudgetBreakdownRequest = nil
+        }) {
+            ZStack {
+                Color.black.opacity(0.24)
+                    .ignoresSafeArea()
+
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(AppStrings.text(.updatingAnalysis))
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(AppPalette.background)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
+                .background(AppPalette.surface, in: Capsule())
+                .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+            }
+            .presentationBackground(.clear)
+            .interactiveDismissDisabled()
         }
         .alert(
             pendingAction?.title ?? "",
@@ -1094,7 +1166,7 @@ struct BudgetSettingsView: View {
             presenting: pendingAction
         ) { action in
             Button(AppStrings.text(.cancel), role: .cancel) {}
-            Button(AppStrings.text(.continueAction), role: action.kind == .delete ? .destructive : nil) {
+            Button(action.confirmationButtonTitle, role: action.isDestructive ? .destructive : nil) {
                 perform(action)
             }
         } message: { action in
@@ -1108,6 +1180,11 @@ struct BudgetSettingsView: View {
         } message: {
             Text(helpNotice?.message ?? "")
         }
+    }
+
+    private func presentSaveNoticeAfterEditorCloses(_ notice: SaveResultNotice) {
+        saveNotice = notice
+        editorRequest = nil
     }
 
     private var recurringHeroName: String {
@@ -1143,7 +1220,7 @@ struct BudgetSettingsView: View {
                 }
 
                 Button {
-                    showsRecurringBudgetBreakdown = true
+                    prepareRecurringBudgetBreakdown()
                 } label: {
                     Image(systemName: "info.circle")
                         .font(.headline.weight(.semibold))
@@ -1201,13 +1278,26 @@ struct BudgetSettingsView: View {
     }
 
     private var recurringBudgetedTotal: Double {
-        recurringExpenses.filter { $0.recurrence == .monthly }.reduce(0) { total, transaction in
+        recurringExpenses.filter { $0.isRecurrenceEnabled && $0.recurrence == .monthly }.reduce(0) { total, transaction in
             total + transaction.scheduledAmount(in: Date().monthStart)
         }
     }
 
+    private func prepareRecurringBudgetBreakdown() {
+        guard !isPreparingRecurringBudgetBreakdown else { return }
+        isPreparingRecurringBudgetBreakdown = true
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            pendingRecurringBudgetBreakdownRequest = RecurringBudgetBreakdownRequest(
+                months: recurringBudgetBreakdownMonths
+            )
+            isPreparingRecurringBudgetBreakdown = false
+        }
+    }
+
     private var recurringIncomeTotal: Double {
-        recurringIncome.filter { $0.recurrence == .monthly }.reduce(0) { total, transaction in
+        recurringIncome.filter { $0.isRecurrenceEnabled && $0.recurrence == .monthly }.reduce(0) { total, transaction in
             total + transaction.scheduledAmount(in: Date().monthStart)
         }
     }
@@ -1256,6 +1346,7 @@ struct BudgetSettingsView: View {
                 transactions: recurringExpenses,
                 payments: payments,
                 onEdit: editRecurringTransaction,
+                onSetEnabled: { pendingAction = SettingsListAction(kind: $1 ? .activate : .deactivate, transaction: $0) },
                 onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
             )
         } else {
@@ -1264,6 +1355,7 @@ struct BudgetSettingsView: View {
                 transactions: recurringIncome,
                 payments: payments,
                 onEdit: editRecurringTransaction,
+                onSetEnabled: { pendingAction = SettingsListAction(kind: $1 ? .activate : .deactivate, transaction: $0) },
                 onDelete: { pendingAction = SettingsListAction(kind: .delete, transaction: $0) }
             )
         }
@@ -1474,6 +1566,10 @@ struct BudgetSettingsView: View {
             payments
                 .filter { $0.transactionID == action.transaction.id && $0.monthStart >= nextMonth }
                 .forEach(modelContext.delete)
+        case .deactivate:
+            action.transaction.recurrenceDisabledFromMonthStart = nextMonth
+        case .activate:
+            action.transaction.recurrenceDisabledFromMonthStart = nil
             paymentHistory
                 .filter { $0.transactionID == action.transaction.id && $0.monthStart >= nextMonth }
                 .forEach(modelContext.delete)
@@ -1501,6 +1597,11 @@ private struct RecurringBudgetMonthBreakdown: Identifiable {
     var balance: Double {
         income - totalExpenses
     }
+}
+
+private struct RecurringBudgetBreakdownRequest: Identifiable {
+    let id = UUID()
+    let months: [RecurringBudgetMonthBreakdown]
 }
 
 private struct RecurringBudgetBreakdownView: View {
@@ -1616,6 +1717,8 @@ private struct SettingsListAction: Identifiable {
     enum Kind {
         case edit
         case delete
+        case deactivate
+        case activate
     }
 
     let id = UUID()
@@ -1634,6 +1737,10 @@ private struct SettingsListAction: Identifiable {
             editsCurrentMonth ? AppStrings.text(.currentAndFutureEditTitle) : AppStrings.text(.futureEditTitle)
         case .delete:
             AppStrings.text(.futureDeleteTitle)
+        case .deactivate:
+            AppStrings.currentLanguage == .portuguese ? "Desativar recorrente?" : "Deactivate recurring item?"
+        case .activate:
+            AppStrings.currentLanguage == .portuguese ? "Ativar recorrente?" : "Activate recurring item?"
         }
     }
 
@@ -1643,7 +1750,28 @@ private struct SettingsListAction: Identifiable {
             editsCurrentMonth ? AppStrings.text(.currentAndFutureEditMessage) : AppStrings.text(.futureEditMessage)
         case .delete:
             AppStrings.text(.futureDeleteMessage)
+        case .deactivate:
+            AppStrings.currentLanguage == .portuguese
+                ? "Os planeamentos a partir do próximo mês deixarão de aparecer. O mês atual, o histórico e a configuração serão mantidos, para que possa voltar a ativar este recorrente mais tarde."
+                : "Plans from next month onward will no longer appear. The current month, history, and configuration will be kept so you can activate this recurring item again later."
+        case .activate:
+            AppStrings.currentLanguage == .portuguese
+                ? "Os planeamentos futuros voltarão a ser criados com base nesta configuração e na data de fim definida, caso exista."
+                : "Future plans will be created again from this configuration and its end date, if one is set."
         }
+    }
+
+    var confirmationButtonTitle: String {
+        switch kind {
+        case .activate, .deactivate:
+            return AppStrings.text(.ok)
+        case .edit, .delete:
+            return AppStrings.text(.continueAction)
+        }
+    }
+
+    var isDestructive: Bool {
+        kind == .delete || kind == .deactivate
     }
 }
 
@@ -1809,19 +1937,25 @@ private struct SpendWiseBackupDocument: FileDocument {
 }
 
 struct EncryptedSpendWiseBackup: Codable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
     private static let envelopeFormat = "spendwise.encrypted-backup"
     private static let keyInfo = Data("SpendWiseBackupEncryptionV1".utf8)
+    private static let passwordIterations = 100_000
 
     let format: String
     let version: Int
     let algorithm: String
+    let iterations: Int?
     let salt: String
     let sealedData: String
 
     init(backupData: Data, password: String) throws {
         let saltData = Self.randomData(byteCount: 32)
-        let key = Self.encryptionKey(password: password, salt: saltData)
+        let key = Self.passwordDerivedKey(
+            password: password,
+            salt: saltData,
+            iterations: Self.passwordIterations
+        )
         let sealedBox = try AES.GCM.seal(backupData, using: key)
 
         guard let combinedData = sealedBox.combined else {
@@ -1830,20 +1964,34 @@ struct EncryptedSpendWiseBackup: Codable, Sendable {
 
         format = Self.envelopeFormat
         version = Self.currentVersion
-        algorithm = "AES.GCM.HKDF.SHA256"
+        algorithm = "AES.GCM.PBKDF2.HMAC.SHA256"
+        iterations = Self.passwordIterations
         salt = saltData.base64EncodedString()
         sealedData = combinedData.base64EncodedString()
     }
 
     func decrypt(password: String) throws -> Data {
-        guard format == Self.envelopeFormat, version == Self.currentVersion,
+        guard format == Self.envelopeFormat, [1, Self.currentVersion].contains(version),
               let saltData = Data(base64Encoded: salt),
               let combinedData = Data(base64Encoded: sealedData) else {
             throw BackupError.invalidBackup
         }
 
         do {
-            let key = Self.encryptionKey(password: password, salt: saltData)
+            let key: SymmetricKey
+            switch version {
+            case 1 where algorithm == "AES.GCM.HKDF.SHA256":
+                key = Self.legacyEncryptionKey(password: password, salt: saltData)
+            case Self.currentVersion where algorithm == "AES.GCM.PBKDF2.HMAC.SHA256":
+                guard let iterations,
+                      iterations >= Self.passwordIterations,
+                      iterations <= 1_000_000 else {
+                    throw BackupError.invalidBackup
+                }
+                key = Self.passwordDerivedKey(password: password, salt: saltData, iterations: iterations)
+            default:
+                throw BackupError.invalidBackup
+            }
             let sealedBox = try AES.GCM.SealedBox(combined: combinedData)
             return try AES.GCM.open(sealedBox, using: key)
         } catch {
@@ -1851,7 +1999,7 @@ struct EncryptedSpendWiseBackup: Codable, Sendable {
         }
     }
 
-    private static func encryptionKey(password: String, salt: Data) -> SymmetricKey {
+    private static func legacyEncryptionKey(password: String, salt: Data) -> SymmetricKey {
         let passwordKey = SymmetricKey(data: Data(password.utf8))
         return HKDF<SHA256>.deriveKey(
             inputKeyMaterial: passwordKey,
@@ -1861,6 +2009,27 @@ struct EncryptedSpendWiseBackup: Codable, Sendable {
         )
     }
 
+    private static func passwordDerivedKey(password: String, salt: Data, iterations: Int) -> SymmetricKey {
+        let passwordKey = SymmetricKey(data: Data(password.utf8))
+        var blockIndex = UInt32(1).bigEndian
+        var initialInput = salt
+        withUnsafeBytes(of: &blockIndex) { initialInput.append(contentsOf: $0) }
+
+        var previous = Array(HMAC<SHA256>.authenticationCode(for: initialInput, using: passwordKey))
+        var derived = previous
+
+        if iterations > 1 {
+            for _ in 1..<iterations {
+                previous = Array(HMAC<SHA256>.authenticationCode(for: Data(previous), using: passwordKey))
+                for index in derived.indices {
+                    derived[index] ^= previous[index]
+                }
+            }
+        }
+
+        return SymmetricKey(data: Data(derived))
+    }
+
     private static func randomData(byteCount: Int) -> Data {
         var generator = SystemRandomNumberGenerator()
         return Data((0..<byteCount).map { _ in UInt8.random(in: .min ... .max, using: &generator) })
@@ -1868,7 +2037,8 @@ struct EncryptedSpendWiseBackup: Codable, Sendable {
 }
 
 struct SpendWiseBackup: Codable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 3
+    static let currentStructureIdentifier = "spendwise-multi-account-recurring-state-v3"
     static let empty = SpendWiseBackup(
         transactions: [],
         payments: [],
@@ -1880,10 +2050,15 @@ struct SpendWiseBackup: Codable, Sendable {
         savingMovements: [],
         spendAccounts: [],
         accountMovements: [],
-        auditLogEntries: []
+        auditLogEntries: [],
+        plannings: [],
+        planningItemTypes: [],
+        planningItems: [],
+        planningMovements: []
     )
 
     let version: Int
+    let structureIdentifier: String
     let createdAt: Date
     let transactions: [BackupTransaction]
     let payments: [BackupPayment]
@@ -1896,9 +2071,14 @@ struct SpendWiseBackup: Codable, Sendable {
     let spendAccounts: [BackupSpendAccount]
     let accountMovements: [BackupAccountMovement]
     let auditLogEntries: [BackupAuditLogEntry]
+    let plannings: [BackupPlanning]
+    let planningItemTypes: [BackupPlanningItemType]
+    let planningItems: [BackupPlanningItem]
+    let planningMovements: [BackupPlanningMovement]
 
     private enum CodingKeys: String, CodingKey {
         case version
+        case structureIdentifier
         case createdAt
         case transactions
         case payments
@@ -1911,6 +2091,10 @@ struct SpendWiseBackup: Codable, Sendable {
         case spendAccounts
         case accountMovements
         case auditLogEntries
+        case plannings
+        case planningItemTypes
+        case planningItems
+        case planningMovements
     }
 
     init(
@@ -1924,9 +2108,14 @@ struct SpendWiseBackup: Codable, Sendable {
         savingMovements: [BackupSavingMovement] = [],
         spendAccounts: [BackupSpendAccount] = [],
         accountMovements: [BackupAccountMovement] = [],
-        auditLogEntries: [BackupAuditLogEntry] = []
+        auditLogEntries: [BackupAuditLogEntry] = [],
+        plannings: [BackupPlanning] = [],
+        planningItemTypes: [BackupPlanningItemType] = [],
+        planningItems: [BackupPlanningItem] = [],
+        planningMovements: [BackupPlanningMovement] = []
     ) {
         version = Self.currentVersion
+        structureIdentifier = Self.currentStructureIdentifier
         createdAt = Date()
         self.transactions = transactions
         self.payments = payments
@@ -1939,11 +2128,16 @@ struct SpendWiseBackup: Codable, Sendable {
         self.spendAccounts = spendAccounts
         self.accountMovements = accountMovements
         self.auditLogEntries = auditLogEntries
+        self.plannings = plannings
+        self.planningItemTypes = planningItemTypes
+        self.planningItems = planningItems
+        self.planningMovements = planningMovements
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decode(Int.self, forKey: .version)
+        structureIdentifier = try container.decodeIfPresent(String.self, forKey: .structureIdentifier) ?? ""
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         transactions = try container.decode([BackupTransaction].self, forKey: .transactions)
         payments = try container.decode([BackupPayment].self, forKey: .payments)
@@ -1956,6 +2150,71 @@ struct SpendWiseBackup: Codable, Sendable {
         spendAccounts = try container.decodeIfPresent([BackupSpendAccount].self, forKey: .spendAccounts) ?? []
         accountMovements = try container.decodeIfPresent([BackupAccountMovement].self, forKey: .accountMovements) ?? []
         auditLogEntries = try container.decodeIfPresent([BackupAuditLogEntry].self, forKey: .auditLogEntries) ?? []
+        if structureIdentifier == Self.currentStructureIdentifier {
+            plannings = try container.decode([BackupPlanning].self, forKey: .plannings)
+            planningItemTypes = try container.decode([BackupPlanningItemType].self, forKey: .planningItemTypes)
+            planningItems = try container.decode([BackupPlanningItem].self, forKey: .planningItems)
+            planningMovements = try container.decode([BackupPlanningMovement].self, forKey: .planningMovements)
+        } else {
+            plannings = []
+            planningItemTypes = []
+            planningItems = []
+            planningMovements = []
+        }
+    }
+
+    func validateIntegrity() throws {
+        func hasUniqueIDs<T>(_ values: [T], id: (T) -> UUID) -> Bool {
+            Set(values.map(id)).count == values.count
+        }
+
+        guard hasUniqueIDs(transactions, id: \.id),
+              hasUniqueIDs(paymentHistory, id: \.id),
+              hasUniqueIDs(creditAccounts, id: \.id),
+              hasUniqueIDs(creditMovements, id: \.id),
+              hasUniqueIDs(savingAccounts, id: \.id),
+              hasUniqueIDs(savingMovements, id: \.id),
+              hasUniqueIDs(spendAccounts, id: \.id),
+              hasUniqueIDs(accountMovements, id: \.id),
+              hasUniqueIDs(auditLogEntries, id: \.id),
+              hasUniqueIDs(plannings, id: \.id),
+              hasUniqueIDs(planningItemTypes, id: \.id),
+              hasUniqueIDs(planningItems, id: \.id),
+              hasUniqueIDs(planningMovements, id: \.id) else {
+            throw BackupError.invalidBackup
+        }
+
+        let transactionIDs = Set(transactions.map(\.id))
+        let creditIDs = Set(creditAccounts.map(\.id))
+        let savingIDs = Set(savingAccounts.map(\.id))
+        let accountIDs = Set(spendAccounts.map(\.id))
+        let planningIDs = Set(plannings.map(\.id))
+        let planningItemTypeIDs = Set(planningItemTypes.map(\.id))
+        let planningItemIDs = Set(planningItems.map(\.id))
+
+        guard !spendAccounts.isEmpty,
+              spendAccounts.filter(\.isPrimary).count == 1,
+              payments.allSatisfy({ transactionIDs.contains($0.transactionID) }),
+              paymentHistory.allSatisfy({
+                  transactionIDs.contains($0.transactionID)
+                      && $0.accountID.map(accountIDs.contains) ?? true
+              }),
+              exclusions.allSatisfy({ transactionIDs.contains($0.transactionID) }),
+              creditMovements.allSatisfy({ creditIDs.contains($0.creditID) }),
+              savingMovements.allSatisfy({ savingIDs.contains($0.savingID) }),
+              accountMovements.allSatisfy({ accountIDs.contains($0.accountID) }),
+              transactions.allSatisfy({ $0.accountID.map(accountIDs.contains) ?? true }),
+              planningItemTypes.allSatisfy({ planningIDs.contains($0.planningId) }),
+              planningItems.allSatisfy({
+                  planningIDs.contains($0.planningId)
+                      && $0.itemTypeId.map(planningItemTypeIDs.contains) ?? true
+              }),
+              planningMovements.allSatisfy({
+                  planningIDs.contains($0.planningId)
+                      && planningItemIDs.contains($0.itemId)
+              }) else {
+            throw BackupError.invalidBackup
+        }
     }
 }
 
@@ -1974,6 +2233,7 @@ struct BackupTransaction: Codable, Sendable {
     let recurrenceType: String?
     let recurrenceMonth: Int
     let recurrenceEndMonthStart: Date?
+    let recurrenceDisabledFromMonthStart: Date?
     let budgetAllocationType: String?
     let budgetMonthStart: Date?
     let linkedCreditID: UUID?
@@ -1998,6 +2258,7 @@ struct BackupTransaction: Codable, Sendable {
         recurrenceType = transaction.recurrenceType
         recurrenceMonth = transaction.recurrenceMonth
         recurrenceEndMonthStart = transaction.recurrenceEndMonthStart
+        recurrenceDisabledFromMonthStart = transaction.recurrenceDisabledFromMonthStart
         budgetAllocationType = transaction.budgetAllocationType
         budgetMonthStart = transaction.budgetMonthStart
         linkedCreditID = transaction.linkedCreditID
@@ -2023,6 +2284,7 @@ struct BackupTransaction: Codable, Sendable {
             recurrenceType: recurrenceType,
             recurrenceMonth: recurrenceMonth,
             recurrenceEndMonthStart: recurrenceEndMonthStart,
+            recurrenceDisabledFromMonthStart: recurrenceDisabledFromMonthStart,
             budgetAllocationType: budgetAllocationType,
             budgetMonthStart: budgetMonthStart,
             linkedCreditID: linkedCreditID,
@@ -2386,6 +2648,168 @@ struct BackupAuditLogEntry: Codable, Sendable {
         )
         entry.id = id
         return entry
+    }
+}
+
+struct BackupPlanning: Codable, Sendable {
+    let id: UUID
+    let name: String
+    let type: String
+    let totalBudget: Double
+    let startDate: Date?
+    let endDate: Date?
+    let status: String
+    let createdAt: Date
+
+    init(planning: Planning) {
+        id = planning.id
+        name = planning.name
+        type = planning.type
+        totalBudget = planning.totalBudget
+        startDate = planning.startDate
+        endDate = planning.endDate
+        status = planning.status
+        createdAt = planning.createdAt
+    }
+
+    var model: Planning {
+        let planning = Planning(
+            name: name,
+            type: type,
+            totalBudget: totalBudget,
+            startDate: startDate,
+            endDate: endDate,
+            status: status,
+            createdAt: createdAt
+        )
+        planning.id = id
+        return planning
+    }
+}
+
+struct BackupPlanningItemType: Codable, Sendable {
+    let id: UUID
+    let name: String
+    let icon: String?
+    let colorIdentifier: String?
+    let planningId: UUID
+    let isCustom: Bool
+    let createdAt: Date
+
+    init(itemType: PlanningItemType) {
+        id = itemType.id
+        name = itemType.name
+        icon = itemType.icon
+        colorIdentifier = itemType.colorIdentifier
+        planningId = itemType.planningId
+        isCustom = itemType.isCustom
+        createdAt = itemType.createdAt
+    }
+
+    var model: PlanningItemType {
+        let itemType = PlanningItemType(
+            name: name,
+            icon: icon,
+            colorIdentifier: colorIdentifier,
+            planningId: planningId,
+            isCustom: isCustom,
+            createdAt: createdAt
+        )
+        itemType.id = id
+        return itemType
+    }
+}
+
+struct BackupPlanningItem: Codable, Sendable {
+    let id: UUID
+    let planningId: UUID
+    let itemTypeId: UUID?
+    let name: String
+    let details: String
+    let plannedAmount: Double
+    let icon: String?
+    let colorIdentifier: String?
+    let sortOrder: Double?
+    let createdAt: Date
+
+    init(item: PlanningItem) {
+        id = item.id
+        planningId = item.planningId
+        itemTypeId = item.itemTypeId
+        name = item.name
+        details = item.details
+        plannedAmount = item.plannedAmount
+        icon = item.icon
+        colorIdentifier = item.colorIdentifier
+        sortOrder = item.sortOrder
+        createdAt = item.createdAt
+    }
+
+    var model: PlanningItem {
+        let item = PlanningItem(
+            planningId: planningId,
+            itemTypeId: itemTypeId,
+            name: name,
+            details: details,
+            plannedAmount: plannedAmount,
+            icon: icon,
+            colorIdentifier: colorIdentifier,
+            sortOrder: sortOrder,
+            createdAt: createdAt
+        )
+        item.id = id
+        return item
+    }
+}
+
+struct BackupPlanningMovement: Codable, Sendable {
+    let id: UUID
+    let planningId: UUID
+    let itemId: UUID
+    let date: Date
+    let title: String
+    let amount: Double
+    let note: String
+    let affectModeRawValue: String
+    let linkedAccountID: UUID?
+    let linkedSavingID: UUID?
+    let linkedAccountMovementID: UUID?
+    let linkedSavingMovementID: UUID?
+    let createdAt: Date
+
+    init(movement: PlanningMovement) {
+        id = movement.id
+        planningId = movement.planningId
+        itemId = movement.itemId
+        date = movement.date
+        title = movement.title
+        amount = movement.amount
+        note = movement.note
+        affectModeRawValue = movement.affectModeRawValue
+        linkedAccountID = movement.linkedAccountID
+        linkedSavingID = movement.linkedSavingID
+        linkedAccountMovementID = movement.linkedAccountMovementID
+        linkedSavingMovementID = movement.linkedSavingMovementID
+        createdAt = movement.createdAt
+    }
+
+    var model: PlanningMovement {
+        let movement = PlanningMovement(
+            planningId: planningId,
+            itemId: itemId,
+            date: date,
+            title: title,
+            amount: amount,
+            note: note,
+            affectModeRawValue: affectModeRawValue,
+            linkedAccountID: linkedAccountID,
+            linkedSavingID: linkedSavingID,
+            linkedAccountMovementID: linkedAccountMovementID,
+            linkedSavingMovementID: linkedSavingMovementID,
+            createdAt: createdAt
+        )
+        movement.id = id
+        return movement
     }
 }
 

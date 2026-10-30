@@ -26,6 +26,11 @@ struct InitialSetupWizardView: View {
     @Query private var savingMovements: [SavingMovement]
     @Query private var spendAccounts: [SpendAccount]
     @Query private var accountMovements: [AccountMovement]
+    @Query private var auditLogEntries: [AuditLogEntry]
+    @Query private var plannings: [Planning]
+    @Query private var planningItemTypes: [PlanningItemType]
+    @Query private var planningItems: [PlanningItem]
+    @Query private var planningMovements: [PlanningMovement]
 
     let onFinish: () -> Void
 
@@ -1846,6 +1851,7 @@ struct InitialSetupWizardView: View {
             importPassword = ""
             importBackup(backup)
         } catch {
+            modelContext.rollback()
             backupNotice = BackupNotice(
                 title: AppStrings.text(.importBackupFailureTitle),
                 message: backupErrorMessage(error)
@@ -1864,6 +1870,11 @@ struct InitialSetupWizardView: View {
         savingAccounts.forEach(modelContext.delete)
         accountMovements.forEach(modelContext.delete)
         spendAccounts.forEach(modelContext.delete)
+        auditLogEntries.forEach(modelContext.delete)
+        planningMovements.forEach(modelContext.delete)
+        planningItems.forEach(modelContext.delete)
+        planningItemTypes.forEach(modelContext.delete)
+        plannings.forEach(modelContext.delete)
 
         let importedTransactions = backup.transactions.map(\.model)
         let importedPayments = backup.payments.map(\.model)
@@ -1871,6 +1882,7 @@ struct InitialSetupWizardView: View {
         let importedExclusions = backup.exclusions.map(\.model)
         let importedSpendAccounts = backup.spendAccounts.map(\.model)
         let importedAccountMovements = backup.accountMovements.map(\.model)
+        let importedAuditLogEntries = backup.auditLogEntries.map(\.model)
 
         importedTransactions.forEach(modelContext.insert)
         importedPayments.forEach(modelContext.insert)
@@ -1882,6 +1894,11 @@ struct InitialSetupWizardView: View {
         backup.savingMovements.map(\.model).forEach(modelContext.insert)
         importedSpendAccounts.forEach(modelContext.insert)
         importedAccountMovements.forEach(modelContext.insert)
+        importedAuditLogEntries.forEach(modelContext.insert)
+        backup.plannings.map(\.model).forEach(modelContext.insert)
+        backup.planningItemTypes.map(\.model).forEach(modelContext.insert)
+        backup.planningItems.map(\.model).forEach(modelContext.insert)
+        backup.planningMovements.map(\.model).forEach(modelContext.insert)
         BackupAccountMigration.normalizeImportedAccounts(
             modelContext: modelContext,
             transactions: importedTransactions,
@@ -1908,9 +1925,11 @@ struct InitialSetupWizardView: View {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let backup = try decoder.decode(SpendWiseBackup.self, from: data)
-        guard backup.version == SpendWiseBackup.currentVersion else {
+        guard backup.version == SpendWiseBackup.currentVersion,
+              backup.structureIdentifier == SpendWiseBackup.currentStructureIdentifier else {
             throw BackupError.unsupportedVersion
         }
+        try backup.validateIntegrity()
         return backup
     }
 
@@ -1920,8 +1939,10 @@ struct InitialSetupWizardView: View {
             return "Introduza a palavra-passe do backup."
         case BackupError.invalidPassword:
             return "Não foi possível desencriptar o backup. Confirme a palavra-passe."
-        case BackupError.invalidBackup, BackupError.unsupportedVersion:
+        case BackupError.invalidBackup:
             return AppStrings.text(.importBackupFailureMessage)
+        case BackupError.unsupportedVersion:
+            return "Este backup pertence a uma versão com uma estrutura de dados diferente e não pode ser restaurado nesta versão da app."
         default:
             return error.localizedDescription
         }

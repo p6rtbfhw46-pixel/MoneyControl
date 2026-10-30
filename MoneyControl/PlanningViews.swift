@@ -118,7 +118,7 @@ struct PlanningManagementView: View {
             planning.startDate = draft.startDate
             planning.endDate = draft.endDate
             planning.planningStatus = draft.status
-            saveNotice = .saved(String(format: AppStrings.text(.planningUpdatedMessage), draft.name))
+            SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.planningUpdatedMessage), draft.name)))
         } else {
             let planning = Planning(
                 name: draft.name,
@@ -130,7 +130,7 @@ struct PlanningManagementView: View {
             )
             modelContext.insert(planning)
             createSuggestedItemTypes(for: planning, type: draft.type)
-            saveNotice = .saved(String(format: AppStrings.text(.planningCreatedMessage), draft.name))
+            SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.planningCreatedMessage), draft.name)))
         }
     }
 
@@ -520,7 +520,7 @@ struct PlanningDetailView: View {
                 planning.startDate = draft.startDate
                 planning.endDate = draft.endDate
                 planning.planningStatus = draft.status
-                saveNotice = .saved(String(format: AppStrings.text(.planningUpdatedMessage), draft.name))
+                SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.planningUpdatedMessage), draft.name)))
             }
         }
         .sheet(item: $itemTypeEditorRequest) { request in
@@ -613,7 +613,7 @@ struct PlanningDetailView: View {
             itemType.name = draft.name
             itemType.icon = draft.icon
             itemType.colorIdentifier = draft.colorIdentifier
-            saveNotice = .saved(String(format: AppStrings.text(.planningItemTypeUpdatedMessage), draft.name))
+            SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.planningItemTypeUpdatedMessage), draft.name)))
         } else {
             modelContext.insert(PlanningItemType(
                 name: draft.name,
@@ -622,7 +622,7 @@ struct PlanningDetailView: View {
                 planningId: planning.id,
                 isCustom: true
             ))
-            saveNotice = .saved(String(format: AppStrings.text(.planningItemTypeCreatedMessage), draft.name))
+            SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.planningItemTypeCreatedMessage), draft.name)))
         }
     }
 
@@ -644,7 +644,7 @@ struct PlanningDetailView: View {
             item.plannedAmount = draft.plannedAmount
             item.icon = draft.icon
             item.colorIdentifier = draft.colorIdentifier
-            saveNotice = .saved(String(format: AppStrings.text(.planningItemUpdatedMessage), draft.name))
+            SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.planningItemUpdatedMessage), draft.name)))
         } else {
             let nextOrder = ((items.compactMap(\.sortOrder).max() ?? -1) + 1)
             modelContext.insert(PlanningItem(
@@ -657,7 +657,7 @@ struct PlanningDetailView: View {
                 colorIdentifier: draft.colorIdentifier,
                 sortOrder: nextOrder
             ))
-            saveNotice = .saved(String(format: AppStrings.text(.planningItemCreatedMessage), draft.name))
+            SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.planningItemCreatedMessage), draft.name)))
         }
     }
 
@@ -747,7 +747,7 @@ struct PlanningDetailView: View {
             savingAccounts: savingAccounts,
             savingMovements: savingMovements
         )
-        saveNotice = .saved(String(format: AppStrings.text(.planningMovementSavedMessage), draft.title))
+        SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.planningMovementSavedMessage), draft.title)))
     }
 }
 
@@ -1512,7 +1512,7 @@ struct PlanningItemDetailView: View {
             modelContext.insert(movement)
         }
 
-        saveNotice = .saved(String(format: AppStrings.text(.planningMovementSavedMessage), draft.title))
+        SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.planningMovementSavedMessage), draft.title)))
     }
 
     private func insertAccountAudit(for movement: AccountMovement) {

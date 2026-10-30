@@ -126,6 +126,7 @@ enum AppTextKey: String, CaseIterable {
     case futureDeleteMessage
     case continueAction
     case overdueExpensesTitle
+    case doNotShowAgainToday
     case overdueExpensesMessagePrefix
     case dueTodayExpensesMessagePrefix
     case previousMonthUnpaidExpensesMessagePrefix
@@ -135,6 +136,7 @@ enum AppTextKey: String, CaseIterable {
     case monthUnpaidHelp
     case monthRemainingHelp
     case monthRemainingHelpNote
+    case monthRemainingUnpaidBreakdown
     case pay
     case paid
     case notPaid
@@ -370,6 +372,9 @@ enum AppTextKey: String, CaseIterable {
     case budgetAllocationCurrentMonth
     case budgetAllocationNextMonth
     case budgetAllocationCustomMonth
+    case budgetAllocationCurrentMonthDescription
+    case budgetAllocationNextMonthDescription
+    case budgetAllocationCustomMonthDescription
     case reservedForBudgetSummary
     case reservedBalanceHelpTitle
     case reservedBalanceHelpMessage
@@ -439,6 +444,8 @@ enum AppTextKey: String, CaseIterable {
     case transferOutAccountTitle
     case flexible
     case closeBudgetWithConsumedValue
+    case closePlanningOnSave
+    case closePlanningOnSaveDescription
     case quickPayment
     case temporalEvolution
     case temporalEvolutionSubtitle
@@ -446,6 +453,7 @@ enum AppTextKey: String, CaseIterable {
     case temporalEvolutionNoData
     case temporalEvolutionLoading
     case loadChart
+    case updatingAnalysis
     case temporalEvolutionLoadingNote
     case maximum
     case expectedEndOfMonth
@@ -683,6 +691,7 @@ enum AppStrings {
             .futureDeleteMessage: "Esta ação só vai apagar os meses seguintes. Para apagar o mês corrente, apaga diretamente no mês.",
             .continueAction: "Continuar",
             .overdueExpensesTitle: "Despesas por pagar",
+            .doNotShowAgainToday: "Não mostrar novamente hoje",
             .overdueExpensesMessagePrefix: "Existem despesas no mês corrente que já deviam estar pagas:",
             .dueTodayExpensesMessagePrefix: "Existem despesas no dia de hoje por pagar:",
             .previousMonthUnpaidExpensesMessagePrefix: "Ficaram despesas por pagar no mês passado:",
@@ -692,6 +701,7 @@ enum AppStrings {
             .monthUnpaidHelp: "Mostra o total das despesas do mês apresentado que ainda não foram marcadas como pagas.",
             .monthRemainingHelp: "No mês atual, mostra quanto sobra depois de subtrair ao saldo total em contas as despesas do mês que ainda estão por pagar. Nos meses seguintes, parte do disponível do mês anterior, soma os rendimentos previstos desse mês e subtrai as despesas desse mês que ainda estão por pagar.",
             .monthRemainingHelpNote: "Este cartão é apresentado apenas no mês atual e nos dois meses seguintes. O saldo total em contas já inclui valores remanescentes de meses anteriores, por isso esses valores não são somados novamente.",
+            .monthRemainingUnpaidBreakdown: "%@ (Anterior) + %@ (Mês corrente) = %@",
             .pay: "Pagar",
             .paid: "Pago",
             .notPaid: "Por pagar",
@@ -924,9 +934,12 @@ enum AppStrings {
             .receivedDate: "Data de recebimento",
             .useInBudget: "Utilizar no orçamento",
             .budgetMonth: "Mês do orçamento",
-            .budgetAllocationCurrentMonth: "Mês em que é recebido",
+            .budgetAllocationCurrentMonth: "Mês em que entra no planeamento",
             .budgetAllocationNextMonth: "Mês seguinte",
             .budgetAllocationCustomMonth: "Selecionar manualmente",
+            .budgetAllocationCurrentMonthDescription: "No dia definido, este rendimento entra no saldo da conta e é considerado no planeamento deste mês.",
+            .budgetAllocationNextMonthDescription: "No dia definido, este rendimento entra no saldo da conta, mas fica reservado para o próximo mês. Não aumenta o «Disponível no mês» atual e não altera o «Ainda por pagar», que contabiliza apenas despesas.",
+            .budgetAllocationCustomMonthDescription: "No dia definido, este rendimento entra no saldo da conta, mas só é considerado no planeamento do mês escolhido.",
             .reservedForBudgetSummary: "%@ reservados para %@",
             .reservedBalanceHelpTitle: "Saldo disponível",
             .reservedBalanceHelpMessage: "Tem atualmente %@ na conta.\n\nDeste valor, %@ estão reservados para o orçamento de %@ e não são considerados no valor que pode gastar em %@.",
@@ -996,13 +1009,16 @@ enum AppStrings {
             .transferOutAccountTitle: "Esta conta → %@",
             .flexible: "Flexível",
             .closeBudgetWithConsumedValue: "Fechar com o valor usado",
-            .quickPayment: "Pagamento rápido",
+            .closePlanningOnSave: "Fechar com o valor utilizado",
+            .closePlanningOnSaveDescription: "Ao guardar, o valor planeado será ajustado ao total já utilizado, incluindo o valor agora introduzido, e o planeamento ficará concluído.",
+            .quickPayment: "Ações rápidas",
             .temporalEvolution: "Evolução temporal",
             .temporalEvolutionSubtitle: "30 dias visíveis, com histórico e previsão",
             .temporalEvolutionUnavailable: "Esta secção está temporariamente indisponível.",
             .temporalEvolutionNoData: "Ainda não existem dados suficientes para apresentar a evolução.",
             .temporalEvolutionLoading: "A preparar evolução temporal...",
             .loadChart: "Carregar gráfico",
+            .updatingAnalysis: "A atualizar análise…",
             .temporalEvolutionLoadingNote: "A página continua disponível enquanto os dados são preparados.",
             .maximum: "Máximo",
             .expectedEndOfMonth: "Previsto fim mês",
@@ -1150,6 +1166,7 @@ enum AppStrings {
             .futureDeleteMessage: "This action will only delete following months. To delete the current month, delete it directly in that month.",
             .continueAction: "Continue",
             .overdueExpensesTitle: "Expenses to pay",
+            .doNotShowAgainToday: "Do not show again today",
             .overdueExpensesMessagePrefix: "There are expenses in the current month that should already be paid:",
             .dueTodayExpensesMessagePrefix: "There are expenses due today that are still unpaid:",
             .previousMonthUnpaidExpensesMessagePrefix: "There are unpaid expenses from last month:",
@@ -1159,6 +1176,7 @@ enum AppStrings {
             .monthUnpaidHelp: "Shows the total expenses in the displayed month that have not been marked as paid.",
             .monthRemainingHelp: "For the current month, it shows what is left after subtracting the month's unpaid expenses from the total balance across accounts. For following months, it starts from the previous month's available amount, adds the income expected for that month, and subtracts that month's unpaid expenses.",
             .monthRemainingHelpNote: "This card is only shown for the current month and the following two months. The total balance across accounts already includes remaining amounts from previous months, so those amounts are not added again.",
+            .monthRemainingUnpaidBreakdown: "%@ (Previous) + %@ (Current month) = %@",
             .pay: "Pay",
             .paid: "Paid",
             .notPaid: "To pay",
@@ -1391,9 +1409,12 @@ enum AppStrings {
             .receivedDate: "Received date",
             .useInBudget: "Use in budget",
             .budgetMonth: "Budget month",
-            .budgetAllocationCurrentMonth: "Month received",
+            .budgetAllocationCurrentMonth: "Month included in planning",
             .budgetAllocationNextMonth: "Next month",
             .budgetAllocationCustomMonth: "Select manually",
+            .budgetAllocationCurrentMonthDescription: "On the configured day, this income enters the account balance and is included in this month's planning.",
+            .budgetAllocationNextMonthDescription: "On the configured day, this income enters the account balance but remains reserved for next month. It does not increase the current “Available this month” amount or change “Left to pay”, which only counts expenses.",
+            .budgetAllocationCustomMonthDescription: "On the configured day, this income enters the account balance but is only included in the selected month's planning.",
             .reservedForBudgetSummary: "%@ reserved for %@",
             .reservedBalanceHelpTitle: "Available balance",
             .reservedBalanceHelpMessage: "You currently have %@ in the account.\n\nOf this amount, %@ is reserved for the %@ budget and is not considered in the amount you can spend in %@.",
@@ -1463,13 +1484,16 @@ enum AppStrings {
             .transferOutAccountTitle: "This account → %@",
             .flexible: "Flexible",
             .closeBudgetWithConsumedValue: "Close with used value",
-            .quickPayment: "Quick payment",
+            .closePlanningOnSave: "Close with the amount used",
+            .closePlanningOnSaveDescription: "When saved, the planned amount will be adjusted to the total already used, including the amount entered now, and the planning will be completed.",
+            .quickPayment: "Quick actions",
             .temporalEvolution: "Timeline evolution",
             .temporalEvolutionSubtitle: "30 visible days, with history and forecast",
             .temporalEvolutionUnavailable: "This section is temporarily unavailable.",
             .temporalEvolutionNoData: "There is not enough data yet to show the evolution.",
             .temporalEvolutionLoading: "Preparing timeline evolution...",
             .loadChart: "Load chart",
+            .updatingAnalysis: "Updating analysis…",
             .temporalEvolutionLoadingNote: "The page remains available while the data is being prepared.",
             .maximum: "Maximum",
             .expectedEndOfMonth: "Expected end of month",

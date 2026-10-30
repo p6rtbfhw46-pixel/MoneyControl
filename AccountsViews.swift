@@ -16,6 +16,7 @@ struct AccountsSettingsView: View {
     @State private var showsQuickActions = false
     @State private var showsIncomeEditor = false
     @State private var selectedAccount: SpendAccount?
+    @State private var saveNotice: SaveResultNotice?
 
     private var orderedAccounts: [SpendAccount] {
         accounts.sorted { first, second in
@@ -115,8 +116,23 @@ struct AccountsSettingsView: View {
             AccountTransferEditorView()
         }
         .sheet(isPresented: $showsIncomeEditor) {
-            TransactionEditor(request: TransactionEditorRequest(mode: .income, month: Date().monthStart))
+            TransactionEditor(
+                request: TransactionEditorRequest(mode: .income, month: Date().monthStart),
+                onSaved: presentSaveNoticeAfterEditorCloses
+            )
         }
+        .overlay {
+            if let saveNotice {
+                SaveResultNoticeOverlay(notice: saveNotice) {
+                    self.saveNotice = nil
+                }
+            }
+        }
+    }
+
+    private func presentSaveNoticeAfterEditorCloses(_ notice: SaveResultNotice) {
+        saveNotice = notice
+        showsIncomeEditor = false
     }
 
     private var accountsFloatingAddButton: some View {
@@ -692,10 +708,11 @@ private struct AccountEditorView: View {
             accountID: target.id
         )
 
-        saveNotice = .saved(String(
+        SaveResultNoticeCenter.shared.show(.saved(String(
             format: AppStrings.text(isNewAccount ? .accountCreatedMessage : .accountUpdatedMessage),
             target.displayName
-        ))
+        )))
+        dismiss()
     }
 }
 
@@ -854,7 +871,8 @@ private struct AccountTransferEditorView: View {
             accountID: fromAccountID,
             relatedAccountID: toAccountID
         ))
-        saveNotice = .saved(String(format: AppStrings.text(.accountTransferCreatedMessage), amount.currencyText))
+        SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.accountTransferCreatedMessage), amount.currencyText)))
+        dismiss()
     }
 }
 
@@ -929,10 +947,11 @@ private struct AccountBalanceAdjustmentView: View {
             balanceAfter: totalBalance + difference,
             accountID: account.id
         ))
-        saveNotice = .saved(String(
+        SaveResultNoticeCenter.shared.show(.saved(String(
             format: AppStrings.text(.accountBalanceAdjustedMessage),
             account.displayName,
             newBalance.currencyText
-        ))
+        )))
+        dismiss()
     }
 }

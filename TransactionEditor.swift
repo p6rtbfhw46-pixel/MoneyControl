@@ -65,6 +65,7 @@ struct TransactionEditor: View {
     @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
 
     let request: TransactionEditorRequest
+    let onSaved: (SaveResultNotice) -> Void
 
     @State private var title = ""
     @State private var selectedIncomeType: TransactionIncomeType = .salary
@@ -103,7 +104,14 @@ struct TransactionEditor: View {
     @State private var showsRecurrenceSettings = false
     @State private var showsInlineDayPicker = false
     @State private var isClassificationSectionExpanded = true
-    @State private var saveNotice: SaveResultNotice?
+
+    init(
+        request: TransactionEditorRequest,
+        onSaved: @escaping (SaveResultNotice) -> Void = { _ in }
+    ) {
+        self.request = request
+        self.onSaved = onSaved
+    }
 
     private var mode: TransactionEditorMode { request.mode }
     private var editedTransaction: MoneyTransaction? { request.transaction }
@@ -316,6 +324,9 @@ struct TransactionEditor: View {
     private var currentMonthDay: Int {
         min(Calendar.current.component(.day, from: Date()), request.month.daysInMonth)
     }
+    private var isRequestMonthCurrent: Bool {
+        Calendar.current.isDate(request.month, equalTo: Date(), toGranularity: .month)
+    }
     private var selectedExpenseMonthStart: Date {
         usesExpenseDayCardPicker ? request.month.monthStart : (canMoveEditedExpenseDate ? selectedTransactionDate.monthStart : request.month.monthStart)
     }
@@ -467,7 +478,7 @@ struct TransactionEditor: View {
                     }
 
                     selectorCard(
-                        title: "Hoje",
+                        title: isRequestMonthCurrent ? "Hoje" : nil,
                         systemImage: "calendar",
                         isSelected: hasSelectedDay && day == currentMonthDay,
                         iconText: "\(currentMonthDay)"
@@ -616,7 +627,7 @@ struct TransactionEditor: View {
     }
 
     private func selectorCard(
-        title: String,
+        title: String?,
         systemImage: String,
         isSelected: Bool,
         fixedWidth: Bool = true,
@@ -650,13 +661,15 @@ struct TransactionEditor: View {
                     }
                 }
 
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(isSelected ? AppPalette.positive : AppPalette.background)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.75)
-                    .frame(maxWidth: .infinity)
+                if let title {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(isSelected ? AppPalette.positive : AppPalette.background)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .minimumScaleFactor(0.75)
+                        .frame(maxWidth: .infinity)
+                }
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 6)
@@ -1286,31 +1299,28 @@ struct TransactionEditor: View {
                         }
                 }
             }
-            .alert("Editar apenas este mês", isPresented: $showsSingleMonthRecurringEditInfo) {
-                Button(AppStrings.text(.ok)) {
-                    hasConfirmedSingleMonthRecurringEditInfo = true
-                    save()
-                }
-            } message: {
-                Text(singleMonthRecurringEditMessage)
+            .confirmationNotice(
+                isPresented: $showsSingleMonthRecurringEditInfo,
+                title: "Editar apenas este mês",
+                message: singleMonthRecurringEditMessage
+            ) {
+                hasConfirmedSingleMonthRecurringEditInfo = true
+                save()
             }
-            .alert("Fechar orçamento?", isPresented: $showsCloseBudgetConfirmation) {
-                Button(AppStrings.text(.cancel), role: .cancel) {}
-                Button(AppStrings.text(.ok)) {
-                    closeBudgetWithConsumedValue()
-                }
-            } message: {
-                Text(closeBudgetConfirmationMessage)
-            }
-            .alert(AppStrings.text(.valueBelowPaidTitle), isPresented: $showsValueBelowPaidConfirmation) {
-                Button(AppStrings.text(.cancel), role: .cancel) {}
-                Button(AppStrings.text(.ok)) {
-                    hasConfirmedValueBelowPaid = true
-                    amountValue = paidAmountForEditedMonth
-                    save()
-                }
-            } message: {
-                Text(AppStrings.text(.valueBelowPaidMessage))
+            .confirmationNotice(
+                isPresented: $showsCloseBudgetConfirmation,
+                title: "Fechar orçamento?",
+                message: closeBudgetConfirmationMessage,
+                onConfirm: closeBudgetWithConsumedValue
+            )
+            .confirmationNotice(
+                isPresented: $showsValueBelowPaidConfirmation,
+                title: AppStrings.text(.valueBelowPaidTitle),
+                message: AppStrings.text(.valueBelowPaidMessage)
+            ) {
+                hasConfirmedValueBelowPaid = true
+                amountValue = paidAmountForEditedMonth
+                save()
             }
             .alert(AppStrings.text(.valueAbovePaidTitle), isPresented: $showsValueAbovePaidConfirmation) {
                 Button(AppStrings.text(.no)) {
@@ -1323,15 +1333,6 @@ struct TransactionEditor: View {
                 }
             } message: {
                 Text(AppStrings.text(.valueAbovePaidMessage))
-            }
-            .alert(item: $saveNotice) { notice in
-                Alert(
-                    title: Text(notice.title),
-                    message: Text(notice.message),
-                    dismissButton: .default(Text(AppStrings.text(.ok))) {
-                        dismiss()
-                    }
-                )
             }
             .onAppear(perform: loadInitialValues)
             .id(selectedCurrencyCode)
@@ -1365,17 +1366,22 @@ struct TransactionEditor: View {
     }
 
     private var dateFieldTitle: String {
-        isIncomeMode ? AppStrings.text(.receivedDate) : AppStrings.text(.day)
+        guard !isIncomeMode else { return AppStrings.text(.receivedDate) }
+
+        let selectedMonth = mode == .periodicExpense ? pickerMonth : request.month
+        let monthNumber = Calendar.current.component(.month, from: selectedMonth)
+        let monthName = Date.monthName(forMonthNumber: monthNumber)
+        return "\(AppStrings.text(.day)) - \(monthName)"
     }
 
     private var budgetAllocationDescription: String {
         switch budgetAllocation {
         case .currentMonth:
-            return "Este rendimento fica disponível para planear o orçamento deste mês."
+            AppStrings.text(.budgetAllocationCurrentMonthDescription)
         case .nextMonth:
-            return "Este rendimento fica disponível para planear o orçamento do próximo mês."
+            AppStrings.text(.budgetAllocationNextMonthDescription)
         case .custom:
-            return "Este rendimento fica disponível no mês escolhido."
+            AppStrings.text(.budgetAllocationCustomMonthDescription)
         }
     }
 
@@ -1562,7 +1568,14 @@ struct TransactionEditor: View {
             )
         }
 
-        saveNotice = .saved(saveSuccessMessage)
+        do {
+            try modelContext.save()
+            let notice = SaveResultNotice.saved(saveSuccessMessage)
+            onSaved(notice)
+            dismiss()
+        } catch {
+            validationMessage = error.localizedDescription
+        }
     }
 
     private var saveSuccessMessage: String {
@@ -1805,10 +1818,14 @@ struct TransactionEditor: View {
 
     private func syncIncomeAccountMovementIfNeeded(_ transaction: MoneyTransaction, value: Double) {
         guard transaction.kind == TransactionKind.income.rawValue,
-              transaction.recurrence == nil,
               let accountID = transaction.accountID
         else {
             deleteIncomeAccountMovementIfNeeded(for: transaction)
+            return
+        }
+
+        if transaction.isRecurring {
+            syncDueRecurringIncomeAccountMovements(for: transaction, accountID: accountID)
             return
         }
 
@@ -1834,6 +1851,40 @@ struct TransactionEditor: View {
                 note: note
             ))
         }
+    }
+
+    private func syncDueRecurringIncomeAccountMovements(for transaction: MoneyTransaction, accountID: UUID) {
+        guard let account = spendAccounts.first(where: { $0.id == accountID }) else { return }
+
+        let now = Date()
+        let calendar = Calendar.current
+        let calculator = MoneyCalculationService(
+            transactions: [transaction],
+            payments: [],
+            exclusions: exclusions
+        )
+        var existingOccurrenceKeys = Set(
+            accountMovements
+                .filter { $0.transactionID == transaction.id && $0.kind == .income }
+                .map { calendar.startOfDay(for: $0.date) }
+        )
+
+        calculator
+            .recurringIncomeOccurrencesDue(after: account.createdAt, through: now)
+            .forEach { occurrence in
+                let occurrenceDate = calendar.startOfDay(for: occurrence.receivedDate)
+                guard !existingOccurrenceKeys.contains(occurrenceDate) else { return }
+
+                modelContext.insert(AccountMovement(
+                    accountID: accountID,
+                    transactionID: transaction.id,
+                    date: occurrence.receivedDate,
+                    type: AccountMovementKind.income.rawValue,
+                    amount: occurrence.amount,
+                    note: transaction.displayName
+                ))
+                existingOccurrenceKeys.insert(occurrenceDate)
+            }
     }
 
     private func accountMovementDate(on date: Date, preservingTimeFrom sourceDate: Date) -> Date {

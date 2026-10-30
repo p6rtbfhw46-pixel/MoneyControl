@@ -144,6 +144,7 @@ enum CreditTextKey {
     case addMovement
     case editMovement
     case movementType
+    case movementUsageFilter
     case movementNote
     case movementDate
     case increaseDebt
@@ -216,6 +217,7 @@ enum CreditStrings {
             .addMovement: "Adicionar movimento",
             .editMovement: "Editar movimento",
             .movementType: "Tipo de movimento",
+            .movementUsageFilter: "Onde foi utilizado este crédito",
             .movementNote: "Descrição",
             .movementDate: "Data",
             .increaseDebt: "Aumentar dívida",
@@ -281,6 +283,7 @@ enum CreditStrings {
             .addMovement: "Add movement",
             .editMovement: "Edit movement",
             .movementType: "Movement type",
+            .movementUsageFilter: "Where this credit was used",
             .movementNote: "Description",
             .movementDate: "Date",
             .increaseDebt: "Increase debt",

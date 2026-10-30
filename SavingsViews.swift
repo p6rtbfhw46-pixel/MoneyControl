@@ -529,10 +529,11 @@ private struct SavingEditor: View {
             note: trimmedDetails.isEmpty ? nil : trimmedDetails
         )
 
-        saveNotice = .saved(String(
+        SaveResultNoticeCenter.shared.show(.saved(String(
             format: AppStrings.text(isNewSaving ? .savingCreatedMessage : .savingUpdatedMessage),
             saving.displayName
-        ))
+        )))
+        dismiss()
     }
 
     private func updatePurposeSelection(for value: String) {
@@ -654,6 +655,7 @@ struct SavingDetailView: View {
                 SavingMovementEditor(request: request)
             }
         }
+        .saveResultToastPresenter()
     }
 
     private var savingsHeader: some View {
@@ -1095,7 +1097,8 @@ private struct SavingMovementEditor: View {
             transactionID: movement.linkedIncomeTransactionID,
             note: trimmedNote.isEmpty ? request.saving.displayName : trimmedNote
         )
-        saveNotice = .saved(String(format: AppStrings.text(.savingMovementSavedMessage), kind.title))
+        SaveResultNoticeCenter.shared.show(.saved(String(format: AppStrings.text(.savingMovementSavedMessage), kind.title)))
+        dismiss()
     }
 
     private func auditNetEffect(for movement: SavingMovement?) -> Double {

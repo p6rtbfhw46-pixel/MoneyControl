@@ -10,6 +10,12 @@ struct TransactionOccurrence {
     let month: Date
 }
 
+struct IncomeAccountOccurrence {
+    let transaction: MoneyTransaction
+    let receivedDate: Date
+    let amount: Double
+}
+
 struct ReservedIncomeSummary: Equatable {
     let budgetMonth: Date
     let amount: Double
@@ -152,7 +158,16 @@ struct MoneyCalculationService {
         let occurrences = accountOccurrencesUntilToday(now: now)
         let income = occurrences
             .filter { $0.transaction.kind == TransactionKind.income.rawValue }
-            .reduce(0) { $0 + $1.transaction.amount }
+            .reduce(0) { total, occurrence in
+                let maxDay = calendar.isDate(occurrence.month, equalTo: now.monthStart, toGranularity: .month)
+                    ? calendar.component(.day, from: now)
+                    : occurrence.month.daysInMonth
+                return total + receivedIncomeAmount(
+                    for: occurrence.transaction,
+                    in: occurrence.month,
+                    throughDay: maxDay
+                )
+            }
         let paidExpenses = occurrences
             .filter { $0.transaction.kind == TransactionKind.expense.rawValue }
             .reduce(0) { $0 + paidAmount(for: $1.transaction, in: $1.month) }
@@ -177,6 +192,11 @@ struct MoneyCalculationService {
             return visibleTransactions(in: month)
                 .filter { transaction in
                     if transaction.kind == TransactionKind.income.rawValue {
+                        if transaction.recurrence == .weekly {
+                            return transaction
+                                .occurrenceDays(in: month, exclusions: exclusions)
+                                .contains { $0 <= maxDay }
+                        }
                         return transaction.effectiveDay(in: month) <= maxDay
                     }
 
@@ -249,7 +269,9 @@ struct MoneyCalculationService {
 
     func incomeTotal(in month: Date) -> Double {
         incomeOccurrences(budgetedIn: month)
-            .reduce(0) { $0 + $1.scheduledAmount(in: month) }
+            .reduce(0) { total, transaction in
+                total + scheduledAmount(for: transaction, in: month)
+            }
     }
 
     func incomeOccurrences(budgetedIn budgetMonth: Date) -> [MoneyTransaction] {
@@ -269,6 +291,35 @@ struct MoneyCalculationService {
             }
     }
 
+    func recurringIncomeOccurrencesDue(after startDate: Date, through now: Date) -> [IncomeAccountOccurrence] {
+        guard startDate < now else { return [] }
+
+        return transactions
+            .filter { $0.kind == TransactionKind.income.rawValue && $0.isRecurring }
+            .flatMap { transaction -> [IncomeAccountOccurrence] in
+                let firstMonth = max(transaction.monthStart.monthStart, startDate.monthStart)
+                guard firstMonth <= now.monthStart else { return [] }
+
+                return Self.months(from: firstMonth, through: now.monthStart)
+                    .filter { transaction.occurs(in: $0, exclusions: exclusions) }
+                    .flatMap { month in
+                        transaction.occurrenceDays(in: month, exclusions: exclusions)
+                            .map { occurrenceDay in
+                                IncomeAccountOccurrence(
+                                    transaction: transaction,
+                                    receivedDate: month.date(day: occurrenceDay),
+                                    amount: transaction.scheduledAmount(
+                                        in: month,
+                                        occurrenceDay: transaction.recurrence == .weekly ? occurrenceDay : nil
+                                    )
+                                )
+                            }
+                    }
+                    .filter { $0.receivedDate > startDate && $0.receivedDate <= now }
+            }
+            .sorted { $0.receivedDate < $1.receivedDate }
+    }
+
     func reservedIncomeForFutureBudgets(until now: Date) -> [ReservedIncomeSummary] {
         let currentMonth = now.monthStart
         let receivedIncome = accountOccurrencesUntilToday(now: now)
@@ -277,12 +328,35 @@ struct MoneyCalculationService {
 
         let totals = receivedIncome.reduce(into: [Date: Double]()) { result, occurrence in
             let budgetMonth = occurrence.transaction.budgetMonth(forReceivedMonth: occurrence.month)
-            result[budgetMonth, default: 0] += occurrence.transaction.amount
+            let maxDay = calendar.isDate(occurrence.month, equalTo: currentMonth, toGranularity: .month)
+                ? calendar.component(.day, from: now)
+                : occurrence.month.daysInMonth
+            result[budgetMonth, default: 0] += receivedIncomeAmount(
+                for: occurrence.transaction,
+                in: occurrence.month,
+                throughDay: maxDay
+            )
         }
 
         return totals
             .map { ReservedIncomeSummary(budgetMonth: $0.key, amount: $0.value) }
             .sorted { $0.budgetMonth < $1.budgetMonth }
+    }
+
+    private func receivedIncomeAmount(
+        for transaction: MoneyTransaction,
+        in month: Date,
+        throughDay maxDay: Int
+    ) -> Double {
+        transaction
+            .occurrenceDays(in: month, exclusions: exclusions)
+            .filter { $0 <= maxDay }
+            .reduce(0) { total, occurrenceDay in
+                total + transaction.scheduledAmount(
+                    in: month,
+                    occurrenceDay: transaction.recurrence == .weekly ? occurrenceDay : nil
+                )
+            }
     }
 
     private func firstBudgetRelevantMonth(through month: Date) -> Date? {

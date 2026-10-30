@@ -1117,11 +1117,24 @@ extension MoneyTransaction {
 
     var isActiveForSettingsList: Bool {
         guard isRecurring else { return false }
+        return isRecurrenceEnabled && isVisibleInSettingsList
+    }
+
+    var isVisibleInSettingsList: Bool {
+        guard isRecurring else { return false }
         return recurrenceEndMonthStart.map { $0 > Date().monthStart.nextMonthStart } ?? true
+    }
+
+    var isRecurrenceEnabled: Bool {
+        recurrenceDisabledFromMonthStart == nil
     }
 
     func occurs(in month: Date, exclusions: [RecurrenceExclusion]) -> Bool {
         let monthStart = month.monthStart
+
+        if recurrenceDisabledFromMonthStart.map({ monthStart >= $0.monthStart }) == true {
+            return false
+        }
 
         if recurrenceEndMonthStart.map({ monthStart >= $0.monthStart }) == true {
             return false
@@ -1343,6 +1356,7 @@ enum AppPreferences {
     static let appLockBiometricsEnabledKey = "appLockBiometricsEnabled"
     static let notificationsEnabledKey = "notificationsEnabled"
     static let launchPaymentReminderEnabledKey = "launchPaymentReminderEnabled"
+    static let overdueExpenseNoticeSuppressedAtKey = "overdueExpenseNoticeSuppressedAt"
 
     static var deviceCurrencyCode: String {
         Locale.autoupdatingCurrent.currency?.identifier ?? "EUR"
