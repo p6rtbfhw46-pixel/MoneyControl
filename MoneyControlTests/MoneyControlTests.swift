@@ -270,6 +270,28 @@ struct MoneyControlTests {
         #expect(service.isPaid(expense, in: month))
     }
 
+    @Test func partialPaymentsReduceUnpaidAndAccountBalanceWithoutClosingExpense() {
+        let month = Date.monthStart(month: 8, year: 2026)
+        let income = makeIncome(title: "Salário", day: 1, month: month, amount: 1_000)
+        let expense = makeExpense(title: "Renda", day: 5, month: month, amount: 500)
+        let service = MoneyCalculationService(
+            transactions: [income, expense],
+            payments: [
+                ExpensePayment(transactionID: expense.id, monthStart: month, amountPaid: 120),
+                ExpensePayment(transactionID: expense.id, monthStart: month, amountPaid: 80)
+            ],
+            exclusions: []
+        )
+
+        let monthSummary = service.monthSummary(in: month)
+        let accountSummary = service.accountSummary(until: month.date(day: 31))
+
+        #expect(service.paidAmount(for: expense, in: month) == 200)
+        #expect(!service.isPaid(expense, in: month))
+        #expect(monthSummary.unpaidExpenses == 300)
+        #expect(accountSummary.availableBalance == 800)
+    }
+
     @Test func nonWeeklyPaymentsSavedWithOccurrenceDayStillCountForMonth() {
         let month = Date.monthStart(month: 8, year: 2026)
         let expense = makeExpense(title: "Renda", day: 5, month: month, amount: 500, recurrenceType: .monthly)
