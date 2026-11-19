@@ -1357,6 +1357,8 @@ enum AppPreferences {
     static let notificationsEnabledKey = "notificationsEnabled"
     static let launchPaymentReminderEnabledKey = "launchPaymentReminderEnabled"
     static let overdueExpenseNoticeSuppressedAtKey = "overdueExpenseNoticeSuppressedAt"
+    static let showsCurrentAccountBalanceCardKey = "showsCurrentAccountBalanceCard"
+    static let showsCurrentAccountPlanningCardsKey = "showsCurrentAccountPlanningCards"
 
     static var deviceCurrencyCode: String {
         Locale.autoupdatingCurrent.currency?.identifier ?? "EUR"

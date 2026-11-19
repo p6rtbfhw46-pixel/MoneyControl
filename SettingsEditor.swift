@@ -13,10 +13,13 @@ struct SettingsEditor: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage("hasCompletedInitialSetup") private var hasCompletedInitialSetup = false
     @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
+    @AppStorage(AppColorPalette.storageKey) private var selectedColorPalette = AppColorPalette.original.rawValue
     @AppStorage(AppPreferences.appLockEnabledKey) private var appLockEnabled = false
     @AppStorage(AppPreferences.appLockBiometricsEnabledKey) private var appLockBiometricsEnabled = false
     @AppStorage(AppPreferences.notificationsEnabledKey) private var notificationsEnabled = true
     @AppStorage(AppPreferences.launchPaymentReminderEnabledKey) private var launchPaymentReminderEnabled = true
+    @AppStorage(AppPreferences.showsCurrentAccountBalanceCardKey) private var showsCurrentAccountBalanceCard = true
+    @AppStorage(AppPreferences.showsCurrentAccountPlanningCardsKey) private var showsCurrentAccountPlanningCards = true
     @Query private var transactions: [MoneyTransaction]
     @Query private var payments: [ExpensePayment]
     @Query private var paymentHistory: [PaymentHistoryEntry]
@@ -286,6 +289,101 @@ struct SettingsEditor: View {
                 .tint(AppPalette.primary)
 
                 Text("Mostra um aviso no início ao abrir a app quando existir algo a pagar.")
+                    .font(.caption)
+                    .foregroundStyle(AppPalette.mutedText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .listRowBackground(AppPalette.surface)
+
+            Section {
+                Toggle(isOn: $showsCurrentAccountBalanceCard) {
+                    Label(
+                        AppStrings.currentLanguage == .portuguese
+                            ? "Mostrar saldo disponível"
+                            : "Show available balance",
+                        systemImage: "creditcard"
+                    )
+                    .font(.headline.bold())
+                    .foregroundStyle(AppPalette.background)
+                }
+                .tint(AppPalette.primary)
+
+                Text(
+                    AppStrings.currentLanguage == .portuguese
+                        ? "O cartão apresenta o saldo disponível nas contas. Desative esta opção para ocultá-lo da Conta Corrente."
+                        : "This card shows the balance available in your accounts. Turn this option off to hide it from the Current Account."
+                )
+                .font(.caption)
+                .foregroundStyle(AppPalette.mutedText)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Toggle(isOn: $showsCurrentAccountPlanningCards) {
+                    Label(
+                        AppStrings.currentLanguage == .portuguese
+                            ? "Mostrar cartões do mês"
+                            : "Show monthly cards",
+                        systemImage: "rectangle.grid.2x2"
+                    )
+                    .font(.headline.bold())
+                    .foregroundStyle(AppPalette.background)
+                }
+                .tint(AppPalette.primary)
+
+                Text(
+                    AppStrings.currentLanguage == .portuguese
+                        ? "Ainda por Pagar apresenta as despesas pendentes. Disponível no mês mostra quanto poderá ficar disponível depois das receitas e despesas previstas. Desative esta opção para ocultar os dois cartões."
+                        : "Unpaid shows pending expenses. Available this month shows what may remain after expected income and expenses. Turn this option off to hide both cards."
+                )
+                .font(.caption)
+                .foregroundStyle(AppPalette.mutedText)
+                .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text(
+                    AppStrings.currentLanguage == .portuguese
+                        ? "Conta Corrente"
+                        : "Current Account"
+                )
+            }
+            .listRowBackground(AppPalette.surface)
+
+            Section(AppStrings.text(.appearance)) {
+                Text(AppStrings.text(.colorPalette))
+                    .font(.headline.bold())
+                    .foregroundStyle(AppPalette.background)
+
+                ForEach(AppColorPalette.allCases) { palette in
+                    Button {
+                        selectedColorPalette = palette.rawValue
+                    } label: {
+                        HStack(spacing: 12) {
+                            HStack(spacing: 0) {
+                                ForEach(palette.previewColors.indices, id: \.self) { index in
+                                    palette.previewColors[index]
+                                        .frame(width: 22, height: 34)
+                                }
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            Text(palette.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(AppPalette.background)
+
+                            Spacer()
+
+                            Image(systemName: selectedColorPalette == palette.rawValue ? "checkmark.circle.fill" : "circle")
+                                .font(.title3)
+                                .foregroundStyle(
+                                    selectedColorPalette == palette.rawValue
+                                        ? AppPalette.primary
+                                        : AppPalette.secondaryText
+                                )
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text(AppStrings.text(.colorPaletteHelp))
                     .font(.caption)
                     .foregroundStyle(AppPalette.mutedText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1008,6 +1106,86 @@ struct SettingsEditor: View {
     }
 }
 
+private struct RecurringSaveProgressCurtain: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.32)
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(AppPalette.background)
+
+                Text("A atualizar recorrentes…")
+                    .font(.headline)
+                    .foregroundStyle(AppPalette.background)
+
+                Text("A aplicar a alteração aos planeamentos futuros.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppPalette.mutedText)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 18))
+            .shadow(color: .black.opacity(0.2), radius: 18, y: 8)
+            .padding(.horizontal, 32)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isModal)
+        .zIndex(4000)
+    }
+}
+
+@MainActor
+@Observable
+private final class RecurringSavePresentation {
+    var isProcessing = false
+    var notice: SaveResultNotice?
+    private var pendingNotice: SaveResultNotice?
+
+    func begin(with notice: SaveResultNotice) {
+        pendingNotice = notice
+        isProcessing = true
+    }
+
+    func finish() {
+        notice = pendingNotice
+        pendingNotice = nil
+        isProcessing = false
+
+        guard let notice else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(10))
+            guard self.notice?.id == notice.id else { return }
+            self.notice = nil
+        }
+    }
+
+    func dismissNotice() {
+        notice = nil
+    }
+}
+
+private struct RecurringSavePresentationOverlay: View {
+    let presentation: RecurringSavePresentation
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            if presentation.isProcessing {
+                RecurringSaveProgressCurtain()
+            } else if let notice = presentation.notice {
+                SaveResultToast(notice: notice, onDismiss: presentation.dismissNotice)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
 struct BudgetSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var transactions: [MoneyTransaction]
@@ -1017,7 +1195,7 @@ struct BudgetSettingsView: View {
     @Query private var creditAccounts: [CreditAccount]
     @Query private var savingAccounts: [SavingAccount]
     @State private var editorRequest: TransactionEditorRequest?
-    @State private var saveNotice: SaveResultNotice?
+    @State private var savePresentation = RecurringSavePresentation()
     @State private var selectedList = 0
     @State private var pendingAction: SettingsListAction?
     @State private var helpNotice: BackupNotice?
@@ -1126,11 +1304,7 @@ struct BudgetSettingsView: View {
             TransactionEditor(request: request, onSaved: presentSaveNoticeAfterEditorCloses)
         }
         .overlay {
-            if let saveNotice {
-                SaveResultNoticeOverlay(notice: saveNotice) {
-                    self.saveNotice = nil
-                }
-            }
+            RecurringSavePresentationOverlay(presentation: savePresentation)
         }
         .sheet(item: $recurringBudgetBreakdownRequest) { request in
             RecurringBudgetBreakdownView(months: request.months)
@@ -1183,8 +1357,16 @@ struct BudgetSettingsView: View {
     }
 
     private func presentSaveNoticeAfterEditorCloses(_ notice: SaveResultNotice) {
-        saveNotice = notice
-        editorRequest = nil
+        savePresentation.begin(with: notice)
+
+        Task { @MainActor in
+            // Keep the progress curtain mounted while SwiftData publishes the
+            // recurring changes and the settings list rebuilds its projections.
+            try? await Task.sleep(for: .milliseconds(80))
+            editorRequest = nil
+            try? await Task.sleep(for: .milliseconds(120))
+            savePresentation.finish()
+        }
     }
 
     private var recurringHeroName: String {
@@ -2037,8 +2219,8 @@ struct EncryptedSpendWiseBackup: Codable, Sendable {
 }
 
 struct SpendWiseBackup: Codable, Sendable {
-    static let currentVersion = 3
-    static let currentStructureIdentifier = "spendwise-multi-account-recurring-state-v3"
+    static let currentVersion = 4
+    static let currentStructureIdentifier = "spendwise-custom-transaction-icons-v4"
     static let empty = SpendWiseBackup(
         transactions: [],
         payments: [],
@@ -2242,6 +2424,9 @@ struct BackupTransaction: Codable, Sendable {
     let linkedSavingMovementID: UUID?
     let autoMarkPaidOnDay: Bool?
     let accountID: UUID?
+    let customIconBrandName: String?
+    let customIconBrandDomain: String?
+    let customIconURL: String?
 
     init(transaction: MoneyTransaction) {
         id = transaction.id
@@ -2267,6 +2452,9 @@ struct BackupTransaction: Codable, Sendable {
         linkedSavingMovementID = transaction.linkedSavingMovementID
         autoMarkPaidOnDay = transaction.autoMarkPaidOnDay
         accountID = transaction.accountID
+        customIconBrandName = transaction.customIconBrandName
+        customIconBrandDomain = transaction.customIconBrandDomain
+        customIconURL = transaction.customIconURL
     }
 
     var model: MoneyTransaction {
@@ -2292,7 +2480,10 @@ struct BackupTransaction: Codable, Sendable {
             linkedSavingID: linkedSavingID,
             linkedSavingMovementID: linkedSavingMovementID,
             autoMarkPaidOnDay: autoMarkPaidOnDay ?? false,
-            accountID: accountID
+            accountID: accountID,
+            customIconBrandName: customIconBrandName,
+            customIconBrandDomain: customIconBrandDomain,
+            customIconURL: customIconURL
         )
         transaction.id = id
         return transaction

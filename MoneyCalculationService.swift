@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SwiftData
 
 struct TransactionOccurrence {
     let transaction: MoneyTransaction
@@ -16,12 +17,12 @@ struct IncomeAccountOccurrence {
     let amount: Double
 }
 
-struct ReservedIncomeSummary: Equatable {
+struct ReservedIncomeSummary: Equatable, Sendable {
     let budgetMonth: Date
     let amount: Double
 }
 
-struct AccountSummary: Equatable {
+struct AccountSummary: Equatable, Sendable {
     let availableBalance: Double
     let incomeUntilToday: Double
     let paidExpensesUntilToday: Double
@@ -32,7 +33,7 @@ struct AccountSummary: Equatable {
     }
 }
 
-struct MonthBudgetSummary: Equatable {
+struct MonthBudgetSummary: Equatable, Sendable {
     let income: Double
     let expenses: Double
     let unpaidExpenses: Double
@@ -63,6 +64,203 @@ struct MonthlyBalancePoint: Identifiable, Equatable {
     var id: Date { month }
     var balance: Double { income - expenses }
     var monthLabel: String { month.formatted(.dateTime.month(.abbreviated)) }
+}
+
+
+struct MoneyCalculationBackgroundResult: Sendable {
+    let accountSummary: AccountSummary
+    let monthSummaries: [Date: MonthBudgetSummary]
+}
+
+
+@ModelActor
+actor MoneyCalculationWorker {
+    func calculate(now: Date, months: [Date]) throws -> MoneyCalculationBackgroundResult {
+        let transactions = try modelContext.fetch(FetchDescriptor<MoneyTransaction>())
+        let payments = try modelContext.fetch(FetchDescriptor<ExpensePayment>())
+        let exclusions = try modelContext.fetch(FetchDescriptor<RecurrenceExclusion>())
+        let service = MoneyCalculationService(
+            transactions: transactions,
+            payments: payments,
+            exclusions: exclusions
+        )
+        let calendar = Calendar.current
+        let normalizedMonths = Set(months.map {
+            calendar.date(from: calendar.dateComponents([.year, .month], from: $0)) ?? $0
+        })
+        let summaries = Dictionary(uniqueKeysWithValues: normalizedMonths.map { month in
+            (month, service.monthSummary(in: month))
+        })
+        return MoneyCalculationBackgroundResult(
+            accountSummary: service.accountSummary(until: now),
+            monthSummaries: summaries
+        )
+    }
+}
+
+struct MoneyCalculationSnapshot: Sendable {
+    private struct TransactionValue: Sendable {
+        let id: UUID
+        let title: String
+        let day: Int
+        let monthStart: Date
+        let amount: Double
+        let kind: String
+        let repeatsEveryMonth: Bool
+        let isPaid: Bool
+        let expenseCategory: String?
+        let expenseName: String?
+        let incomeDescription: String?
+        let recurrenceType: String?
+        let recurrenceMonth: Int
+        let recurrenceEndMonthStart: Date?
+        let recurrenceDisabledFromMonthStart: Date?
+        let budgetAllocationType: String?
+        let budgetMonthStart: Date?
+        let linkedCreditID: UUID?
+        let linkedCreditMovementID: UUID?
+        let linkedSavingID: UUID?
+        let linkedSavingMovementID: UUID?
+        let autoMarkPaidOnDay: Bool
+        let accountID: UUID?
+        let customIconBrandName: String?
+        let customIconBrandDomain: String?
+        let customIconURL: String?
+
+        init(_ transaction: MoneyTransaction) {
+            id = transaction.id
+            title = transaction.title
+            day = transaction.day
+            monthStart = transaction.monthStart
+            amount = transaction.amount
+            kind = transaction.kind
+            repeatsEveryMonth = transaction.repeatsEveryMonth
+            isPaid = transaction.isPaid
+            expenseCategory = transaction.expenseCategory
+            expenseName = transaction.expenseName
+            incomeDescription = transaction.incomeDescription
+            recurrenceType = transaction.recurrenceType
+            recurrenceMonth = transaction.recurrenceMonth
+            recurrenceEndMonthStart = transaction.recurrenceEndMonthStart
+            recurrenceDisabledFromMonthStart = transaction.recurrenceDisabledFromMonthStart
+            budgetAllocationType = transaction.budgetAllocationType
+            budgetMonthStart = transaction.budgetMonthStart
+            linkedCreditID = transaction.linkedCreditID
+            linkedCreditMovementID = transaction.linkedCreditMovementID
+            linkedSavingID = transaction.linkedSavingID
+            linkedSavingMovementID = transaction.linkedSavingMovementID
+            autoMarkPaidOnDay = transaction.autoMarkPaidOnDay
+            accountID = transaction.accountID
+            customIconBrandName = transaction.customIconBrandName
+            customIconBrandDomain = transaction.customIconBrandDomain
+            customIconURL = transaction.customIconURL
+        }
+
+        func makeModel() -> MoneyTransaction {
+            let transaction = MoneyTransaction(
+                title: title,
+                day: day,
+                monthStart: monthStart,
+                amount: amount,
+                kind: kind,
+                repeatsEveryMonth: repeatsEveryMonth,
+                isPaid: isPaid,
+                expenseCategory: expenseCategory,
+                expenseName: expenseName,
+                incomeDescription: incomeDescription,
+                recurrenceType: recurrenceType,
+                recurrenceMonth: recurrenceMonth,
+                recurrenceEndMonthStart: recurrenceEndMonthStart,
+                recurrenceDisabledFromMonthStart: recurrenceDisabledFromMonthStart,
+                budgetAllocationType: budgetAllocationType,
+                budgetMonthStart: budgetMonthStart,
+                linkedCreditID: linkedCreditID,
+                linkedCreditMovementID: linkedCreditMovementID,
+                linkedSavingID: linkedSavingID,
+                linkedSavingMovementID: linkedSavingMovementID,
+                autoMarkPaidOnDay: autoMarkPaidOnDay,
+                accountID: accountID,
+                customIconBrandName: customIconBrandName,
+                customIconBrandDomain: customIconBrandDomain,
+                customIconURL: customIconURL
+            )
+            transaction.id = id
+            return transaction
+        }
+    }
+
+    private struct PaymentValue: Sendable {
+        let transactionID: UUID
+        let monthStart: Date
+        let amountPaid: Double?
+        let occurrenceDay: Int?
+
+        init(_ payment: ExpensePayment) {
+            transactionID = payment.transactionID
+            monthStart = payment.monthStart
+            amountPaid = payment.amountPaid
+            occurrenceDay = payment.occurrenceDay
+        }
+
+        func makeModel() -> ExpensePayment {
+            ExpensePayment(
+                transactionID: transactionID,
+                monthStart: monthStart,
+                amountPaid: amountPaid,
+                occurrenceDay: occurrenceDay
+            )
+        }
+    }
+
+    private struct ExclusionValue: Sendable {
+        let transactionID: UUID
+        let monthStart: Date
+        let occurrenceDay: Int?
+
+        init(_ exclusion: RecurrenceExclusion) {
+            transactionID = exclusion.transactionID
+            monthStart = exclusion.monthStart
+            occurrenceDay = exclusion.occurrenceDay
+        }
+
+        func makeModel() -> RecurrenceExclusion {
+            RecurrenceExclusion(
+                transactionID: transactionID,
+                monthStart: monthStart,
+                occurrenceDay: occurrenceDay
+            )
+        }
+    }
+
+    private let transactions: [TransactionValue]
+    private let payments: [PaymentValue]
+    private let exclusions: [ExclusionValue]
+
+    init(
+        transactions: [MoneyTransaction],
+        payments: [ExpensePayment],
+        exclusions: [RecurrenceExclusion]
+    ) {
+        self.transactions = transactions.map(TransactionValue.init)
+        self.payments = payments.map(PaymentValue.init)
+        self.exclusions = exclusions.map(ExclusionValue.init)
+    }
+
+    @concurrent
+    func calculate(now: Date, months: [Date]) async -> MoneyCalculationBackgroundResult {
+        let service = MoneyCalculationService(
+            transactions: transactions.map { $0.makeModel() },
+            payments: payments.map { $0.makeModel() },
+            exclusions: exclusions.map { $0.makeModel() }
+        )
+        let summaries = Dictionary(uniqueKeysWithValues: Set(months.map(\.monthStart)).map { month in
+            (month, service.monthSummary(in: month))
+        })
+        return MoneyCalculationBackgroundResult(
+            accountSummary: service.accountSummary(until: now),
+            monthSummaries: summaries
+        )
+    }
 }
 
 struct MoneyCalculationService {
@@ -406,16 +604,6 @@ struct MoneyCalculationService {
             let summary = monthSummary(in: month)
             let expenses = paidOnly ? paidExpenseTotal(in: month) : summary.expenses
             return MonthlyBalancePoint(month: month, income: summary.income, expenses: expenses)
-        }
-    }
-
-    func yearSavingsPoints(in months: [Date]) -> [MonthlyBalancePoint] {
-        months.map { month in
-            MonthlyBalancePoint(
-                month: month,
-                income: 0,
-                expenses: expenseAmount(in: month, matching: ["poup", "saving"], paidOnly: false)
-            )
         }
     }
 

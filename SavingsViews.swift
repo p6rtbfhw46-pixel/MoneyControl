@@ -951,6 +951,7 @@ private struct SavingMovementEditor: View {
     @State private var amount = 0.0
     @State private var date = Date()
     @State private var transferToIncome = false
+    @State private var selectedAccountID: UUID?
     @State private var validationMessage: String?
     @State private var saveNotice: SaveResultNotice?
 
@@ -965,6 +966,12 @@ private struct SavingMovementEditor: View {
 
     private var primarySpendAccountID: UUID? {
         spendAccounts.first(where: \.isPrimary)?.id ?? spendAccounts.first?.id
+    }
+
+    private var orderedSpendAccounts: [SpendAccount] {
+        spendAccounts.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
     }
 
     private var auditBalance: Double {
@@ -1003,6 +1010,10 @@ private struct SavingMovementEditor: View {
                                 title: SavingsStrings.text(.transferToIncome),
                                 message: SavingsStrings.text(.transferToIncomeHelp)
                             )
+                        }
+
+                        if transferToIncome {
+                            accountSelectionStrip
                         }
                     }
 
@@ -1047,12 +1058,67 @@ private struct SavingMovementEditor: View {
     }
 
     private func loadInitialValues() {
+        selectedAccountID = primarySpendAccountID
         guard let movement = request.movement else { return }
         kind = movement.kind == .adjustment ? .deposit : movement.kind
         note = movement.note
         amount = abs(movement.amount)
         date = movement.date
         transferToIncome = movement.linkedIncomeTransactionID != nil
+        if let linkedIncome = linkedIncomeTransaction(for: movement) {
+            selectedAccountID = linkedIncome.accountID ?? primarySpendAccountID
+        }
+    }
+
+    private var accountSelectionStrip: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(AppStrings.text(.account))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppPalette.background)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(orderedSpendAccounts) { account in
+                        accountSelectionButton(account)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private func accountSelectionButton(_ account: SpendAccount) -> some View {
+        let isSelected = (selectedAccountID ?? primarySpendAccountID) == account.id
+        let balance = account.balance(with: accountMovements)
+
+        return Button {
+            selectedAccountID = account.id
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: account.accountIcon.systemName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isSelected ? AppPalette.surface : account.tint)
+                    .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(balance.currencyText)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(isSelected ? AppPalette.surface : AppPalette.background)
+            .frame(width: 174, height: 72, alignment: .leading)
+            .padding(.horizontal, 12)
+            .background(isSelected ? AppPalette.background : AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(isSelected ? AppPalette.background : AppPalette.separator, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func save() {
@@ -1153,6 +1219,7 @@ private struct SavingMovementEditor: View {
         transaction.repeatsEveryMonth = false
         transaction.isPaid = true
         transaction.expenseCategory = nil
+        transaction.accountID = selectedAccountID ?? primarySpendAccountID
         transaction.expenseName = nil
         transaction.linkedSavingID = request.saving.id
         transaction.linkedSavingMovementID = movement.id

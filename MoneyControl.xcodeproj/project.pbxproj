@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		787C4E7A30462B8F008F162D /* AccountsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 787C4E7930462B8F008F162D /* AccountsViews.swift */; };
+		78A03BE5309B4C65005BC4BE /* BrandIconPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78A03BE4309B4C65005BC4BE /* BrandIconPicker.swift */; };
 		78DB10F8301BFDD4009F36E8 /* AppStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10F7301BFDD3009F36E8 /* AppStrings.swift */; };
 		78DB10FA301BFDFC009F36E8 /* MoneyDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10F9301BFDFC009F36E8 /* MoneyDomain.swift */; };
 		78DB10FC301BFE1E009F36E8 /* MoneyComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DB10FB301BFE1E009F36E8 /* MoneyComponents.swift */; };
@@ -46,6 +47,7 @@
 		780E64F1301A9003002BC6D1 /* MoneyControlTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoneyControlTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		780E64FB301A9003002BC6D1 /* MoneyControlUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoneyControlUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		787C4E7930462B8F008F162D /* AccountsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsViews.swift; sourceTree = "<group>"; };
+		78A03BE4309B4C65005BC4BE /* BrandIconPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandIconPicker.swift; sourceTree = "<group>"; };
 		78DB10F7301BFDD3009F36E8 /* AppStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStrings.swift; sourceTree = "<group>"; };
 		78DB10F9301BFDFC009F36E8 /* MoneyDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyDomain.swift; sourceTree = "<group>"; };
 		78DB10FB301BFE1E009F36E8 /* MoneyComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyComponents.swift; sourceTree = "<group>"; };
@@ -140,6 +142,7 @@
 				78DB11113033459F009F36E8 /* SavingsViews.swift */,
 				78F8C9F0303CCBDB00F0F7C3 /* AppLockView.swift */,
 				787C4E7930462B8F008F162D /* AccountsViews.swift */,
+				78A03BE4309B4C65005BC4BE /* BrandIconPicker.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -311,6 +314,7 @@
 				78DB110E302D1EAB009F36E8 /* MoneyCalculationService.swift in Sources */,
 				78DB1106301E3E8A009F36E8 /* InitialSetupWizardView.swift in Sources */,
 				78DB10F8301BFDD4009F36E8 /* AppStrings.swift in Sources */,
+				78A03BE5309B4C65005BC4BE /* BrandIconPicker.swift in Sources */,
 				78DB1100301BFE5D009F36E8 /* TransactionEditor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -466,7 +470,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = Z97S7B69YV;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -498,7 +502,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.skyIsTheLimit.MoneyControl;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -522,7 +526,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = Z97S7B69YV;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -554,7 +558,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.skyIsTheLimit.MoneyControl;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

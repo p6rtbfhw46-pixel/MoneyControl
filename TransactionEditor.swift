@@ -50,6 +50,40 @@ private enum TransactionIncomeType: CaseIterable, Identifiable {
     }
 }
 
+private struct SavingProgressCurtain: View {
+    let updatesRecurringPlanning: Bool
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.32)
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(AppPalette.background)
+
+                Text("A guardar…")
+                    .font(.headline)
+                    .foregroundStyle(AppPalette.background)
+
+                Text(updatesRecurringPlanning ? "A atualizar os planeamentos recorrentes." : "A concluir a gravação.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppPalette.mutedText)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 18))
+            .shadow(color: .black.opacity(0.2), radius: 18, y: 8)
+            .padding(.horizontal, 32)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isModal)
+        .zIndex(4000)
+    }
+}
+
 struct TransactionEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -104,6 +138,10 @@ struct TransactionEditor: View {
     @State private var showsRecurrenceSettings = false
     @State private var showsInlineDayPicker = false
     @State private var isClassificationSectionExpanded = true
+    @State private var customIconBrandName: String?
+    @State private var customIconBrandDomain: String?
+    @State private var customIconURL: String?
+    @State private var isSaving = false
 
     init(
         request: TransactionEditorRequest,
@@ -846,6 +884,20 @@ struct TransactionEditor: View {
             classificationSection
             recurrenceSections
         }
+        BrandIconPickerSection(
+            selectedBrandName: $customIconBrandName,
+            selectedBrandDomain: $customIconBrandDomain,
+            selectedBrandIconURL: $customIconURL,
+            suggestedSearchText: brandIconSearchSuggestion
+        )
+    }
+
+    private var brandIconSearchSuggestion: String {
+        let trimmedIncomeDescription = incomeDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isIncomeMode, !trimmedIncomeDescription.isEmpty {
+            return trimmedIncomeDescription
+        }
+        return title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     @ViewBuilder
@@ -1334,6 +1386,13 @@ struct TransactionEditor: View {
             } message: {
                 Text(AppStrings.text(.valueAbovePaidMessage))
             }
+            .overlay {
+                if isSaving {
+                    SavingProgressCurtain(
+                        updatesRecurringPlanning: editedTransaction?.isRecurring == true || mode == .monthlyExpense || mode == .periodicExpense || mode == .salary
+                    )
+                }
+            }
             .onAppear(perform: loadInitialValues)
             .id(selectedCurrencyCode)
         }
@@ -1468,6 +1527,9 @@ struct TransactionEditor: View {
         selectedCreditID = transaction.linkedCreditID
         selectedSavingID = transaction.linkedSavingID
         selectedAccountID = transaction.accountID ?? defaultSpendAccountID
+        customIconBrandName = transaction.customIconBrandName
+        customIconBrandDomain = transaction.customIconBrandDomain
+        customIconURL = transaction.customIconURL
         recurrenceMonth = transaction.recurrenceMonth > 0 ? transaction.recurrenceMonth : Calendar.current.component(.month, from: transaction.monthStart)
         budgetAllocation = mode == .salary && transaction.budgetAllocation == .custom ? .currentMonth : transaction.budgetAllocation
         let budgetMonth = transaction.budgetMonth(forReceivedMonth: initialMonth)
@@ -1542,7 +1604,9 @@ struct TransactionEditor: View {
                 return
             }
 
-            saveExpense(value: max(parsedValue, paidAmountForEditedMonth), category: expenseCategory, title: trimmedTitle)
+            performSave {
+                saveExpense(value: max(parsedValue, paidAmountForEditedMonth), category: expenseCategory, title: trimmedTitle)
+            }
         } else {
             let rawTitle = isIncomeMode ? resolvedIncomeTitle : title
             let trimmedTitle = rawTitle.trimmingCharacters(in: .whitespaces)
@@ -1561,20 +1625,35 @@ struct TransactionEditor: View {
                 return
             }
 
-            saveIncome(
-                value: parsedValue,
-                title: trimmedTitle,
-                description: incomeDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-            )
+            performSave {
+                saveIncome(
+                    value: parsedValue,
+                    title: trimmedTitle,
+                    description: incomeDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
         }
+    }
 
-        do {
-            try modelContext.save()
-            let notice = SaveResultNotice.saved(saveSuccessMessage)
-            onSaved(notice)
-            dismiss()
-        } catch {
-            validationMessage = error.localizedDescription
+    private func performSave(_ update: @escaping @MainActor () -> Void) {
+        guard !isSaving else { return }
+        isSaving = true
+
+        Task { @MainActor in
+            // Give SwiftUI one render pass so the progress curtain is visible
+            // before recurring schedules are regenerated synchronously.
+            try? await Task.sleep(for: .milliseconds(60))
+            update()
+
+            do {
+                try modelContext.save()
+                let notice = SaveResultNotice.saved(saveSuccessMessage)
+                onSaved(notice)
+                dismiss()
+            } catch {
+                isSaving = false
+                validationMessage = error.localizedDescription
+            }
         }
     }
 
@@ -1591,6 +1670,7 @@ struct TransactionEditor: View {
         let isNewTransaction = editedTransaction == nil || request.editScope != .normal
         let transaction = targetTransaction()
         let originalMonthStart = transaction.monthStart.monthStart
+        let originalAccountID = transaction.accountID
         transaction.title = title
         transaction.day = mode == .monthlyExpense && selectedRecurrenceType == .weekly
             ? selectedIncomeWeekday
@@ -1601,6 +1681,9 @@ struct TransactionEditor: View {
         transaction.expenseName = expenseName
         transaction.accountID = resolvedSpendAccountID
         transaction.autoMarkPaidOnDay = shouldShowAutoMarkPaidToggle && autoMarkPaidOnDay
+        transaction.customIconBrandName = customIconBrandName
+        transaction.customIconBrandDomain = customIconBrandDomain
+        transaction.customIconURL = customIconURL
 
         if request.editScope == .singleMonth {
             transaction.repeatsEveryMonth = false
@@ -1638,6 +1721,10 @@ struct TransactionEditor: View {
             originalMonthStart: originalMonthStart,
             fullyPaidAmountAfterTransfer: hasConfirmedValueAbovePaid ? value : nil
         )
+        syncEditedExpensePaymentAccountIfNeeded(
+            transaction,
+            originalAccountID: originalAccountID
+        )
         markAsFullyPaidIfNeeded(transaction, value: value)
         keepEditedPaidExpenseFullyPaidIfNeeded(transaction, value: value)
         syncLinkedCreditPaymentIfNeeded(transaction, value: value)
@@ -1667,6 +1754,9 @@ struct TransactionEditor: View {
         transaction.expenseName = nil
         transaction.accountID = resolvedSpendAccountID
         transaction.autoMarkPaidOnDay = false
+        transaction.customIconBrandName = customIconBrandName
+        transaction.customIconBrandDomain = customIconBrandDomain
+        transaction.customIconURL = customIconURL
 
         if mode == .salary && request.editScope != .singleMonth {
             transaction.repeatsEveryMonth = selectedRecurrenceType == .monthly
@@ -1685,6 +1775,10 @@ struct TransactionEditor: View {
             ? selectedIncomeReceivedMonthStart
             : recurrenceActivationDate
         transaction.budgetMonthStart = transaction.budgetMonth(forReceivedMonth: transaction.monthStart)
+        if !transaction.isRecurring {
+            let receivedDay = Calendar.current.startOfDay(for: transaction.receivedDate(in: transaction.monthStart))
+            transaction.autoMarkPaidOnDay = receivedDay > Calendar.current.startOfDay(for: Date())
+        }
         finishSaving(transaction)
         syncIncomeAccountMovementIfNeeded(transaction, value: value)
         let balanceDelta = transaction.recurrence == nil ? value - previousMovementAmount : 0
@@ -1851,6 +1945,7 @@ struct TransactionEditor: View {
                 note: note
             ))
         }
+        transaction.autoMarkPaidOnDay = false
     }
 
     private func syncDueRecurringIncomeAccountMovements(for transaction: MoneyTransaction, accountID: UUID) {
@@ -1915,6 +2010,30 @@ struct TransactionEditor: View {
             amount: -amount,
             note: historyEntry.note ?? transaction.displayName
         ))
+    }
+
+    private func syncEditedExpensePaymentAccountIfNeeded(
+        _ transaction: MoneyTransaction,
+        originalAccountID: UUID?
+    ) {
+        guard request.editScope == .normal,
+              editedTransaction != nil,
+              let accountID = transaction.accountID,
+              originalAccountID != accountID
+        else { return }
+
+        let editedMonth = transaction.monthStart.monthStart
+        let entries = paymentHistory.filter {
+            $0.transactionID == transaction.id
+                && Calendar.current.isDate($0.monthStart, equalTo: editedMonth, toGranularity: .month)
+        }
+
+        entries.forEach { entry in
+            entry.accountID = accountID
+            accountMovements
+                .filter { $0.paymentHistoryID == entry.id && $0.kind == .expensePayment }
+                .forEach { $0.accountID = accountID }
+        }
     }
 
     private func syncLinkedCreditPaymentIfNeeded(_ transaction: MoneyTransaction, value: Double) {
@@ -2076,7 +2195,7 @@ struct TransactionEditor: View {
         }
 
         history.forEach { entry in
-            let accountID = entry.accountID ?? transaction.accountID ?? resolvedSpendAccountID
+            let accountID = transaction.accountID ?? entry.accountID ?? resolvedSpendAccountID
             transaction.accountID = accountID
             let newEntry = PaymentHistoryEntry(
                 transactionID: transaction.id,

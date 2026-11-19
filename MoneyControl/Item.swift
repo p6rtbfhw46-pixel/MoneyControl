@@ -33,6 +33,9 @@ final class MoneyTransaction {
     var linkedSavingMovementID: UUID?
     var autoMarkPaidOnDay: Bool = false
     var accountID: UUID?
+    var customIconBrandName: String?
+    var customIconBrandDomain: String?
+    var customIconURL: String?
 
     init(
         title: String,
@@ -56,7 +59,10 @@ final class MoneyTransaction {
         linkedSavingID: UUID? = nil,
         linkedSavingMovementID: UUID? = nil,
         autoMarkPaidOnDay: Bool = false,
-        accountID: UUID? = nil
+        accountID: UUID? = nil,
+        customIconBrandName: String? = nil,
+        customIconBrandDomain: String? = nil,
+        customIconURL: String? = nil
     ) {
         self.id = UUID()
         self.title = title
@@ -81,6 +87,9 @@ final class MoneyTransaction {
         self.linkedSavingMovementID = linkedSavingMovementID
         self.autoMarkPaidOnDay = autoMarkPaidOnDay
         self.accountID = accountID
+        self.customIconBrandName = customIconBrandName
+        self.customIconBrandDomain = customIconBrandDomain
+        self.customIconURL = customIconURL
     }
 }
 

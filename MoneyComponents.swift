@@ -330,12 +330,23 @@ struct ExpenseTypeHorizontalPicker: View {
     }
 }
 
+struct IncomeReceiptKey: Hashable {
+    let transactionID: UUID
+    let receivedDay: Date
+
+    init(transactionID: UUID, date: Date) {
+        self.transactionID = transactionID
+        self.receivedDay = Calendar.current.startOfDay(for: date)
+    }
+}
+
 struct MonthPage: View {
     let month: Date
     let transactions: [MoneyTransaction]
     let payments: [ExpensePayment]
     let paymentHistory: [PaymentHistoryEntry]
     let exclusions: [RecurrenceExclusion]
+    let receivedIncomeKeys: Set<IncomeReceiptKey>
     var paymentFilter: CurrentAccountPaymentFilter = .all
     var incomeFilter: CurrentAccountIncomeFilter = .all
     var sortOrder: CurrentAccountSortOrder = .currentPaymentStatusOrder
@@ -349,7 +360,7 @@ struct MonthPage: View {
 
     @State private var expandedTransactionID: String?
     @State private var isFlexibleSectionCollapsed = false
-    @State private var previousScrollDragY: CGFloat = 0
+    @State private var cachedRenderData: MonthTransactionRenderData?
 
     private struct MonthTransactionOccurrence: Identifiable {
         let transaction: MoneyTransaction
@@ -411,10 +422,31 @@ struct MonthPage: View {
     }
 
     var body: some View {
-        let renderData = transactionRenderData
+        Group {
+            if let cachedRenderData {
+                monthContent(renderData: cachedRenderData)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(AppPalette.appBackground)
+            }
+        }
+        .task(id: renderDataSignature) {
+            if cachedRenderData == nil {
+                try? await Task.sleep(for: .milliseconds(75))
+            } else {
+                await Task.yield()
+            }
+
+            guard !Task.isCancelled else { return }
+            cachedRenderData = transactionRenderData
+        }
+    }
+
+    private func monthContent(renderData: MonthTransactionRenderData) -> some View {
         let sections = renderData.sections
 
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             if sections.ordered.isEmpty {
                 ContentUnavailableView(
                     emptyStateTitle,
@@ -466,21 +498,86 @@ struct MonthPage: View {
                 .scrollContentBackground(.hidden)
                 .background(AppPalette.appBackground)
                 .simultaneousGesture(
-                    DragGesture(minimumDistance: 8)
+                    DragGesture(minimumDistance: 12)
                         .onChanged { value in
-                            let delta = value.translation.height - previousScrollDragY
-                            guard abs(delta) > 2 else { return }
-                            previousScrollDragY = value.translation.height
-                            onScrollDirectionChanged(delta < 0)
-                        }
-                        .onEnded { _ in
-                            previousScrollDragY = 0
+                            guard abs(value.translation.height) > 12 else { return }
+                            onScrollDirectionChanged(value.translation.height < 0)
                         }
                 )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppPalette.appBackground)
+    }
+
+    private var renderDataSignature: Int {
+        var hasher = Hasher()
+        hasher.combine(month.monthStart)
+        hasher.combine(paymentFilter.rawValue)
+        hasher.combine(incomeFilter.rawValue)
+        hasher.combine(sortOrder.rawValue)
+        hasher.combine(hasActiveFilters)
+
+        transactions.forEach { transaction in
+            hasher.combine(transaction.id)
+            hasher.combine(transaction.title)
+            hasher.combine(transaction.day)
+            hasher.combine(transaction.monthStart)
+            hasher.combine(transaction.amount)
+            hasher.combine(transaction.kind)
+            hasher.combine(transaction.repeatsEveryMonth)
+            hasher.combine(transaction.isPaid)
+            hasher.combine(transaction.expenseCategory)
+            hasher.combine(transaction.expenseName)
+            hasher.combine(transaction.incomeDescription)
+            hasher.combine(transaction.recurrenceType)
+            hasher.combine(transaction.recurrenceMonth)
+            hasher.combine(transaction.recurrenceEndMonthStart)
+            hasher.combine(transaction.recurrenceDisabledFromMonthStart)
+            hasher.combine(transaction.linkedCreditID)
+            hasher.combine(transaction.linkedSavingID)
+            hasher.combine(transaction.accountID)
+            hasher.combine(transaction.customIconBrandName)
+            hasher.combine(transaction.customIconBrandDomain)
+            hasher.combine(transaction.customIconURL)
+        }
+
+        payments.forEach { payment in
+            hasher.combine(payment.transactionID)
+            hasher.combine(payment.monthStart)
+            hasher.combine(payment.amountPaid)
+            hasher.combine(payment.occurrenceDay)
+        }
+
+        paymentHistory.forEach { entry in
+            hasher.combine(entry.id)
+            hasher.combine(entry.transactionID)
+            hasher.combine(entry.monthStart)
+        }
+
+        exclusions.forEach { exclusion in
+            hasher.combine(exclusion.transactionID)
+            hasher.combine(exclusion.monthStart)
+            hasher.combine(exclusion.occurrenceDay)
+        }
+
+        receivedIncomeKeys.forEach { key in
+            hasher.combine(key)
+        }
+
+        creditAccounts.forEach { account in
+            hasher.combine(account.id)
+            hasher.combine(account.name)
+            hasher.combine(account.status)
+        }
+
+        savingAccounts.forEach { account in
+            hasher.combine(account.id)
+            hasher.combine(account.name)
+            hasher.combine(account.status)
+        }
+
+        return hasher.finalize()
     }
 
     private var transactionRenderData: MonthTransactionRenderData {
@@ -653,8 +750,7 @@ struct MonthPage: View {
         }
 
         if occurrence.transaction.kind == TransactionKind.income.rawValue, incomeFilter != .all {
-            let receivedDate = month.monthStart.date(day: occurrence.day)
-            let isReceived = Calendar.current.startOfDay(for: receivedDate) <= Calendar.current.startOfDay(for: Date())
+            let isReceived = incomeWasReceived(occurrence)
 
             switch incomeFilter {
             case .all:
@@ -675,26 +771,20 @@ struct MonthPage: View {
     ) -> Int {
         let transaction = occurrence.transaction
         if transaction.kind == TransactionKind.income.rawValue {
-            return incomeDayHasPassed(occurrence) ? 2 : 0
+            return incomeWasReceived(occurrence) ? 2 : 0
         }
 
         let occurrenceDay = paymentOccurrenceDay(for: occurrence)
         return amountPaid(for: occurrence, paymentsByKey: paymentsByKey) >= occurrence.transaction.scheduledAmount(in: month, occurrenceDay: occurrenceDay) ? 1 : 0
     }
 
-    private func incomeDayHasPassed(_ occurrence: MonthTransactionOccurrence) -> Bool {
-        let calendar = Calendar.current
-        let currentMonth = Date().monthStart
-
-        if month.monthStart < currentMonth {
-            return true
-        }
-
-        if month.monthStart > currentMonth {
-            return false
-        }
-
-        return occurrence.day < calendar.component(.day, from: Date())
+    private func incomeWasReceived(_ occurrence: MonthTransactionOccurrence) -> Bool {
+        receivedIncomeKeys.contains(
+            IncomeReceiptKey(
+                transactionID: occurrence.transaction.id,
+                date: month.monthStart.date(day: occurrence.day)
+            )
+        )
     }
 
     private func todaySection(occurrences: [MonthTransactionOccurrence], renderData: MonthTransactionRenderData) -> some View {
@@ -757,7 +847,7 @@ struct MonthPage: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(AppPalette.separator, lineWidth: 1)
         }
-        .shadow(color: AppPalette.background.opacity(0.08), radius: 14, y: 8)
+        .shadow(color: AppPalette.background.opacity(0.04), radius: 3, y: 1)
     }
 
     private func transactionGroupCard(
@@ -786,7 +876,7 @@ struct MonthPage: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(AppPalette.separator, lineWidth: 1)
         }
-        .shadow(color: AppPalette.background.opacity(0.08), radius: 14, y: 8)
+        .shadow(color: AppPalette.background.opacity(0.04), radius: 3, y: 1)
     }
 
     private func transactionCard(
@@ -803,6 +893,7 @@ struct MonthPage: View {
             month: month,
             displayDay: occurrence.day,
             amountPaid: paidAmount,
+            incomeWasReceived: incomeWasReceived(occurrence),
             hasPaymentHistory: hasPaymentHistory(for: transaction, paymentHistoryIDs: renderData.paymentHistoryIDs),
             creditAccounts: creditAccounts,
             savingAccounts: savingAccounts,
@@ -1057,6 +1148,7 @@ struct TransactionCard: View {
     let month: Date
     var displayDay: Int? = nil
     let amountPaid: Double
+    var incomeWasReceived = false
     let hasPaymentHistory: Bool
     let creditAccounts: [CreditAccount]
     let savingAccounts: [SavingAccount]
@@ -1371,6 +1463,10 @@ struct TransactionCard: View {
                             Text(paymentStatusText)
                                 .font(.caption.bold())
                                 .foregroundStyle(isFullyPaid ? AppPalette.positive : AppPalette.mutedText)
+                        } else {
+                            Text(AppStrings.text(incomeWasReceived ? .received : .pendingReceipt))
+                                .font(.caption.bold())
+                                .foregroundStyle(incomeWasReceived ? AppPalette.positive : AppPalette.mutedText)
                         }
                     }
 
@@ -1449,7 +1545,7 @@ struct TransactionCard: View {
         }
         .background(AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: AppPalette.background.opacity(0.08), radius: 14, y: 8)
+        .shadow(color: AppPalette.background.opacity(0.04), radius: 3, y: 1)
         .alert(deleteConfirmationTitle, isPresented: $showsDeleteConfirmation) {
             Button(AppStrings.text(.cancel), role: .cancel) {}
             Button(AppStrings.text(.delete), role: .destructive) {
@@ -1594,8 +1690,10 @@ struct TransactionCard: View {
             iconColor = AppPalette.positive
         }
 
-        return SpendWiseIcon(
-            systemName: iconName,
+        return TransactionBrandIconView(
+            brandIconURL: transaction.customIconURL,
+            brandDomain: transaction.customIconBrandDomain,
+            fallbackSystemName: iconName,
             color: iconColor,
             background: iconBackground,
             size: 44
@@ -1950,8 +2048,10 @@ struct SettingsTransactionCard: View {
             iconColor = AppPalette.positive
         }
 
-        return SpendWiseIcon(
-            systemName: iconName,
+        return TransactionBrandIconView(
+            brandIconURL: transaction.customIconURL,
+            brandDomain: transaction.customIconBrandDomain,
+            fallbackSystemName: iconName,
             color: iconColor,
             background: iconBackground,
             size: 44
@@ -2042,6 +2142,9 @@ struct PaymentAmountPicker: View {
     @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
 
     let title: String
+    let freeTextTitle: String?
+    let brandIconURL: String?
+    let brandDomain: String?
     let totalAmount: Double
     let initialAmount: Double
     let paymentDate: Date
@@ -2050,6 +2153,7 @@ struct PaymentAmountPicker: View {
     let accounts: [SpendAccount]
     let accountMovements: [AccountMovement]
     let transactionAccountID: UUID?
+    @Binding var isProcessing: Bool
     let onConfirm: (Double, String?, UUID?) -> Void
     let onConfirmAndCloseBudgetWithConsumedValue: (Double, String?, UUID?, Double) -> Void
     let onCloseBudgetWithConsumedValue: (Double) -> Void
@@ -2066,7 +2170,6 @@ struct PaymentAmountPicker: View {
     @State private var showsCloseBudgetConfirmation = false
     @State private var showsFuturePaymentConfirmation = false
     @State private var hasConfirmedFuturePayment = false
-    @State private var pendingHistoryDelete: PaymentHistoryEntry?
     @State private var deletedHistoryEntryIDs: Set<UUID> = []
 
     private var remainingAmount: Double {
@@ -2139,16 +2242,12 @@ struct PaymentAmountPicker: View {
         return min(max(paidAmountInSheet / totalAmount, 0), 1)
     }
 
-    private var isShowingDeleteHistoryConfirmation: Binding<Bool> {
-        Binding(
-            get: { pendingHistoryDelete != nil },
-            set: { isPresented in
-                if !isPresented {
-                    pendingHistoryDelete = nil
-                }
-            }
-        )
+    private var displayedFreeTextTitle: String? {
+        guard let freeTextTitle else { return nil }
+        let trimmedTitle = freeTextTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? nil : trimmedTitle
     }
+
 
     var body: some View {
         NavigationStack {
@@ -2207,16 +2306,6 @@ struct PaymentAmountPicker: View {
                     Button(AppStrings.text(.save), action: confirmPayment)
                 }
             }
-            .alert(AppStrings.text(.deletePaymentHistoryTitle), isPresented: isShowingDeleteHistoryConfirmation) {
-                Button(AppStrings.text(.cancel), role: .cancel) {}
-                Button(AppStrings.text(.delete), role: .destructive) {
-                    if let pendingHistoryDelete {
-                        deleteHistoryEntry(pendingHistoryDelete)
-                    }
-                }
-            } message: {
-                Text(AppStrings.text(.deletePaymentHistoryMessage))
-            }
             .confirmationNotice(
                 isPresented: $showsCloseBudgetConfirmation,
                 title: "Fechar orçamento?",
@@ -2244,24 +2333,50 @@ struct PaymentAmountPicker: View {
                 selectedAmount = 0
                 selectedAccountID = selectedAccountID ?? defaultAccountID
             }
+            .overlay {
+                if isProcessing {
+                    ZStack {
+                        Color.black.opacity(0.16)
+                            .ignoresSafeArea()
+
+                        ProgressView(AppStrings.currentLanguage == .portuguese ? "A atualizar pagamento…" : "Updating payment…")
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 18)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                            .shadow(radius: 12)
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .allowsHitTesting(!isProcessing)
             .id(selectedCurrencyCode)
         }
     }
 
     private var paymentSummaryCard: some View {
         HStack(spacing: 14) {
-            Image(systemName: ExpenseTypeIcon.name(for: title))
-                .font(.title.weight(.semibold))
-                .foregroundStyle(AppPalette.primary)
-                .frame(width: 76, height: 76)
-                .background(AppPalette.primary.opacity(0.10), in: Circle())
+            TransactionBrandIconView(
+                brandIconURL: brandIconURL,
+                brandDomain: brandDomain,
+                fallbackSystemName: ExpenseTypeIcon.name(for: title),
+                color: AppPalette.primary,
+                background: AppPalette.primary.opacity(0.10),
+                size: 76
+            )
 
             VStack(alignment: .leading, spacing: 9) {
-                Text(title)
+                Text(displayedFreeTextTitle ?? title)
                     .font(.title3.weight(.bold))
                     .foregroundStyle(AppPalette.background)
                     .lineLimit(2)
                     .minimumScaleFactor(0.75)
+
+                if displayedFreeTextTitle != nil {
+                    Text(title)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(AppPalette.mutedText)
+                        .lineLimit(1)
+                }
 
                 Text("\(AppStrings.text(.paid)): \(paidAmountInSheet.currencyText) \(AppStrings.text(.ofAmount)) \(totalAmount.currencyText)")
                     .font(.subheadline)
@@ -2470,7 +2585,7 @@ struct PaymentAmountPicker: View {
 
                 ForEach(visibleHistory) { entry in
                     PaymentHistoryRow(entry: entry, accounts: accounts) {
-                        pendingHistoryDelete = entry
+                        deleteHistoryEntry(entry)
                     }
                 }
             }
@@ -2480,10 +2595,18 @@ struct PaymentAmountPicker: View {
     }
 
     private func deleteHistoryEntry(_ entry: PaymentHistoryEntry) {
-        deletedHistoryEntryIDs.insert(entry.id)
-        paidAmountInSheet = max(paidAmountInSheet - entry.amount, 0)
-        selectedAmount = 0
-        onDeleteHistoryEntry(entry)
+        guard !isProcessing else { return }
+        isProcessing = true
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            deletedHistoryEntryIDs.insert(entry.id)
+            paidAmountInSheet = max(paidAmountInSheet - entry.amount, 0)
+            selectedAmount = 0
+            onDeleteHistoryEntry(entry)
+            await Task.yield()
+            isProcessing = false
+        }
     }
 }
 
@@ -2491,6 +2614,8 @@ private struct PaymentHistoryRow: View {
     let entry: PaymentHistoryEntry
     let accounts: [SpendAccount]
     let onDelete: () -> Void
+
+    @State private var showsDeleteConfirmation = false
 
     private var accountName: String? {
         guard let accountID = entry.accountID else { return nil }
@@ -2524,7 +2649,9 @@ private struct PaymentHistoryRow: View {
 
             Spacer()
 
-            Button(role: .destructive, action: onDelete) {
+            Button(role: .destructive) {
+                showsDeleteConfirmation = true
+            } label: {
                 Image(systemName: "trash")
                     .font(.caption.bold())
                     .foregroundStyle(.white)
@@ -2534,6 +2661,12 @@ private struct PaymentHistoryRow: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
+        .alert(AppStrings.text(.deletePaymentHistoryTitle), isPresented: $showsDeleteConfirmation) {
+            Button(AppStrings.text(.cancel), role: .cancel) {}
+            Button(AppStrings.text(.delete), role: .destructive, action: onDelete)
+        } message: {
+            Text(AppStrings.text(.deletePaymentHistoryMessage))
+        }
     }
 }
 
@@ -2883,6 +3016,55 @@ struct SummaryTile: View {
     }
 }
 
+private enum RecurringListSectionKind: Int, CaseIterable, Identifiable {
+    case weekly
+    case monthly
+    case quarterly
+    case semiannual
+    case annual
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .weekly:
+            RecurrenceType.weekly.title
+        case .monthly:
+            RecurrenceType.monthly.title
+        case .quarterly:
+            RecurrenceType.quarterly.title
+        case .semiannual:
+            RecurrenceType.semiannual.title
+        case .annual:
+            RecurrenceType.annual.title
+        }
+    }
+
+    func contains(_ transaction: MoneyTransaction) -> Bool {
+        switch transaction.recurrence {
+        case .weekly:
+            return self == .weekly
+        case .monthly:
+            return self == .monthly
+        case .quarterly:
+            return self == .quarterly
+        case .semiannual:
+            return self == .semiannual
+        case .annual, .yearlyMonth:
+            return self == .annual
+        case nil:
+            return false
+        }
+    }
+}
+
+private struct RecurringListSection: Identifiable {
+    let kind: RecurringListSectionKind
+    let transactions: [MoneyTransaction]
+
+    var id: RecurringListSectionKind.ID { kind.id }
+}
+
 struct RecurringList: View {
     let emptyTitle: String
     let transactions: [MoneyTransaction]
@@ -2893,6 +3075,22 @@ struct RecurringList: View {
 
     @State private var expandedTransactionID: UUID?
 
+    private var sections: [RecurringListSection] {
+        RecurringListSectionKind.allCases.compactMap { kind in
+            let sectionTransactions = transactions
+                .filter(kind.contains)
+                .sorted { first, second in
+                    if first.day != second.day {
+                        return first.day < second.day
+                    }
+                    return first.displayName.localizedCaseInsensitiveCompare(second.displayName) == .orderedAscending
+                }
+
+            guard !sectionTransactions.isEmpty else { return nil }
+            return RecurringListSection(kind: kind, transactions: sectionTransactions)
+        }
+    }
+
     var body: some View {
         if transactions.isEmpty {
             ContentUnavailableView(emptyTitle, systemImage: "list.bullet.rectangle")
@@ -2900,18 +3098,27 @@ struct RecurringList: View {
                 .frame(maxWidth: .infinity, minHeight: 180)
         } else {
             ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(transactions, id: \.id) { transaction in
-                        SettingsTransactionCard(
-                            transaction: transaction,
-                            isExpanded: expandedTransactionID == transaction.id,
-                            onExpansionChange: { isExpanded in
-                                expandedTransactionID = isExpanded ? transaction.id : nil
-                            },
-                            onEdit: { onEdit(transaction) },
-                            onSetEnabled: { onSetEnabled(transaction, $0) },
-                            onDelete: { onDelete(transaction) }
-                        )
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    ForEach(sections) { section in
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(section.kind.title)
+                                .font(.headline)
+                                .foregroundStyle(AppPalette.background)
+                                .padding(.horizontal, 2)
+
+                            ForEach(section.transactions, id: \.id) { transaction in
+                                SettingsTransactionCard(
+                                    transaction: transaction,
+                                    isExpanded: expandedTransactionID == transaction.id,
+                                    onExpansionChange: { isExpanded in
+                                        expandedTransactionID = isExpanded ? transaction.id : nil
+                                    },
+                                    onEdit: { onEdit(transaction) },
+                                    onSetEnabled: { onSetEnabled(transaction, $0) },
+                                    onDelete: { onDelete(transaction) }
+                                )
+                            }
+                        }
                     }
                 }
                 .padding(.vertical, 4)

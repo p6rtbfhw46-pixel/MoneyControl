@@ -137,8 +137,16 @@ enum AppTextKey: String, CaseIterable {
     case monthRemainingHelp
     case monthRemainingHelpNote
     case monthRemainingUnpaidBreakdown
+    case monthRemainingCalculationTitle
+    case calculationBase
+    case calculationExpectedIncome
+    case calculationUnpaidExpenses
+    case calculationResult
+    case monthRemainingCalculationExplanation
     case pay
     case paid
+    case received
+    case pendingReceipt
     case notPaid
     case canStillSpend
     case unusedExpense
@@ -186,6 +194,15 @@ enum AppTextKey: String, CaseIterable {
     case applicationSection
     case preferences
     case preferencesSubtitle
+    case appearance
+    case colorPalette
+    case colorPaletteHelp
+    case paletteOriginal
+    case paletteOcean
+    case paletteForest
+    case paletteSunset
+    case paletteLavender
+    case paletteImpact
     case dataPrivacy
     case dataPrivacySubtitle
     case aboutSpendWise
@@ -297,6 +314,58 @@ enum AppTextKey: String, CaseIterable {
     case paidInsights
     case creditAnalysis
     case savingsAnalysis
+    case savingsPotentialTitle
+    case savingsPotentialSubtitle
+    case savingsPotentialDetailsAccessibility
+    case savingsPotentialAverageRemaining
+    case savingsPotentialSimulationSummary
+    case savingsPotentialNoRecurringData
+    case savingsPotentialSavePercentage
+    case savingsPotentialYearEnd
+    case savingsPotentialCalculationTitle
+    case savingsPotentialSimulationDetails
+    case savingsPotentialFinalCalculation
+    case savingsPotentialTotalIncome
+    case savingsPotentialTotalExpenses
+    case savingsPotentialAnnualRemaining
+    case savingsPotentialAverageMonthlyRemaining
+    case savingsPotentialTwentyFivePercent
+    case savingsPotentialFiftyPercent
+    case savingsPotentialRecurringIncome
+    case savingsPotentialSpecificIncome
+    case savingsPotentialRecurringExpenses
+    case savingsPotentialSpecificExpenses
+    case savingsPotentialRemaining
+    case savingsPotentialDone
+    case annualSimulationCreditTitle
+    case annualSimulationSavingsTitle
+    case annualSimulationSubtitle
+    case annualSimulationDetailsAccessibility
+    case annualSimulationNoPositiveRemaining
+    case annualSimulationCurrentDebt
+    case annualSimulationProjectedDebt
+    case annualSimulationCurrentSaved
+    case annualSimulationProjectedSaved
+    case annualSimulationTotal
+    case annualSimulationAnnualAllocation
+    case annualSimulationCalculationTitle
+    case annualSimulationExplanation
+    case annualSimulationInterestNote
+    case annualSimulationMonthlyIncome
+    case annualSimulationMonthlyExpenses
+    case annualSimulationMonthlyRemaining
+    case annualSimulationMonthlyAvailable
+    case annualSimulationMonthsTitle
+    case annualSimulationRestoreMonths
+    case annualSimulationMonthIncluded
+    case annualSimulationMonthExcluded
+    case annualSimulationExcludedCalculation
+    case annualSimulationPayoffEstimate
+    case annualSimulationPayoffUnavailable
+    case annualSimulationAlreadyPaid
+    case annualSimulationPlannedCreditPayments
+    case annualSimulationAdditionalCreditPayment
+    case annualSimulationCreditPaymentsExplanation
     case noInsights
     case restaurantsIncreasedInsight
     case groceriesDecreasedInsight
@@ -347,12 +416,14 @@ enum AppTextKey: String, CaseIterable {
     case applyFiltersToSummaryCards
     case applyFiltersToSummaryCardsDescription
     case all
+    case allMonths
     case paidPlural
     case unpaidPlural
     case categories
     case expenseTypeFilter
     case freeTextFilter
     case searchPlaceholder
+    case clearSearch
     case expenseDueTomorrowTitle
     case expenseDueTomorrowBody
     case expenseDueTomorrowBodyWithType
@@ -699,11 +770,19 @@ enum AppStrings {
             .overdueExpenseDueDay: "devia ter sido paga no dia",
             .balanceThisMonthHelp: "Mostra o saldo disponível até ao dia de hoje. Soma todos os vencimentos e receitas recebidos até hoje e subtrai apenas as despesas até hoje que já foram marcadas como pagas.",
             .monthUnpaidHelp: "Mostra o total das despesas do mês apresentado que ainda não foram marcadas como pagas.",
-            .monthRemainingHelp: "No mês atual, mostra quanto sobra depois de subtrair ao saldo total em contas as despesas do mês que ainda estão por pagar. Nos meses seguintes, parte do disponível do mês anterior, soma os rendimentos previstos desse mês e subtrai as despesas desse mês que ainda estão por pagar.",
+            .monthRemainingHelp: "No mês atual, soma ao saldo total em contas as receitas previstas deste mês que ainda não foram recebidas e pertencem ao planeamento deste mês, e subtrai as despesas que ainda estão por pagar. Nos meses seguintes, parte do disponível do mês anterior, soma os rendimentos previstos desse mês e subtrai as despesas desse mês que ainda estão por pagar.",
             .monthRemainingHelpNote: "Este cartão é apresentado apenas no mês atual e nos dois meses seguintes. O saldo total em contas já inclui valores remanescentes de meses anteriores, por isso esses valores não são somados novamente.",
             .monthRemainingUnpaidBreakdown: "%@ (Anterior) + %@ (Mês corrente) = %@",
+            .monthRemainingCalculationTitle: "Cálculo do disponível",
+            .calculationBase: "Disponível antes dos movimentos do mês",
+            .calculationExpectedIncome: "Receitas previstas por receber",
+            .calculationUnpaidExpenses: "Despesas ainda por pagar",
+            .calculationResult: "Disponível no fim do mês",
+            .monthRemainingCalculationExplanation: "O resultado soma as receitas previstas que pertencem ao planeamento deste mês e subtrai as despesas ainda por pagar. Receitas já recebidas estão incluídas no saldo e não são somadas novamente.",
             .pay: "Pagar",
             .paid: "Pago",
+            .received: "Recebido",
+            .pendingReceipt: "Por receber",
             .notPaid: "Por pagar",
             .canStillSpend: "Ainda pode gastar",
             .unusedExpense: "Por utilizar",
@@ -751,6 +830,15 @@ enum AppStrings {
             .applicationSection: "Aplicação",
             .preferences: "Preferências",
             .preferencesSubtitle: "Moeda, idioma, tema e mais",
+            .appearance: "Aspeto da aplicação",
+            .colorPalette: "Paleta de cores",
+            .colorPaletteHelp: "Escolha a paleta visual da aplicação. A alteração é imediata e não afeta os seus dados.",
+            .paletteOriginal: "Original",
+            .paletteOcean: "Oceano",
+            .paletteForest: "Floresta",
+            .paletteSunset: "Pôr do sol",
+            .paletteLavender: "Lavanda",
+            .paletteImpact: "Impacto",
             .dataPrivacy: "Dados e privacidade",
             .dataPrivacySubtitle: "Exportar, importar e segurança",
             .aboutSpendWise: "Sobre a SpendWise",
@@ -862,6 +950,58 @@ enum AppStrings {
             .paidInsights: "Análises de pagamentos",
             .creditAnalysis: "Análise de Créditos",
             .savingsAnalysis: "Análise de Poupanças",
+            .savingsPotentialTitle: "Potencial de Poupanças",
+            .savingsPotentialSubtitle: "Média mensal de janeiro a dezembro",
+            .savingsPotentialDetailsAccessibility: "Ver detalhes do cálculo",
+            .savingsPotentialAverageRemaining: "Remanescente médio",
+            .savingsPotentialSimulationSummary: "Simulação dos planeamentos recorrentes ativos segundo a respetiva periodicidade.",
+            .savingsPotentialNoRecurringData: "Ainda não existem rendimentos ou despesas recorrentes para calcular o potencial de poupança.",
+            .savingsPotentialSavePercentage: "Se poupar %@%%",
+            .savingsPotentialYearEnd: "no fim do ano",
+            .savingsPotentialCalculationTitle: "Cálculo do potencial",
+            .savingsPotentialSimulationDetails: "Esta simulação utiliza apenas os rendimentos e despesas da área de Recorrentes, aplicando cada planeamento segundo a sua periodicidade: semanal, mensal, trimestral, semestral ou anual. Pagamentos, valores realizados e movimentos não recorrentes não são utilizados.",
+            .savingsPotentialFinalCalculation: "Cálculo final",
+            .savingsPotentialTotalIncome: "Total de rendimentos",
+            .savingsPotentialTotalExpenses: "− Total de despesas",
+            .savingsPotentialAnnualRemaining: "= Remanescente anual",
+            .savingsPotentialAverageMonthlyRemaining: "Remanescente médio mensal",
+            .savingsPotentialTwentyFivePercent: "25% durante 12 meses",
+            .savingsPotentialFiftyPercent: "50% durante 12 meses",
+            .savingsPotentialRecurringIncome: "Rendimentos recorrentes simulados",
+            .savingsPotentialSpecificIncome: "+ Rendimentos únicos neste mês",
+            .savingsPotentialRecurringExpenses: "Despesas recorrentes simuladas",
+            .savingsPotentialSpecificExpenses: "+ Despesas únicas neste mês",
+            .savingsPotentialRemaining: "= Remanescente",
+            .savingsPotentialDone: "Concluído",
+            .annualSimulationCreditTitle: "Simulação de amortização",
+            .annualSimulationSavingsTitle: "Simulação de reforço",
+            .annualSimulationSubtitle: "Aplicar %d%% do remanescente positivo durante 12 meses",
+            .annualSimulationDetailsAccessibility: "Ver detalhes da simulação",
+            .annualSimulationNoPositiveRemaining: "Não existe remanescente positivo disponível nesta simulação.",
+            .annualSimulationCurrentDebt: "Dívida atual",
+            .annualSimulationProjectedDebt: "Dívida após 1 ano",
+            .annualSimulationCurrentSaved: "Poupança atual",
+            .annualSimulationProjectedSaved: "Poupança após 1 ano",
+            .annualSimulationTotal: "Total geral",
+            .annualSimulationAnnualAllocation: "Valor aplicado durante o ano",
+            .annualSimulationCalculationTitle: "Cálculo da simulação",
+            .annualSimulationExplanation: "Em cada mês, a simulação calcula os rendimentos recorrentes menos as despesas recorrentes. Quando o resultado é positivo, aplica a percentagem escolhida. Resultados negativos ou nulos contribuem com 0 €.",
+            .annualSimulationInterestNote: "Esta simulação não inclui juros, taxas, comissões, rendimentos das poupanças nem movimentos futuros. Esses valores devem ser registados pelo utilizador.",
+            .annualSimulationMonthlyIncome: "Rendimentos recorrentes",
+            .annualSimulationMonthlyExpenses: "Despesas recorrentes",
+            .annualSimulationMonthlyRemaining: "Remanescente positivo",
+            .annualSimulationMonthlyAvailable: "Valor aplicado",
+            .annualSimulationMonthsTitle: "Meses considerados",
+            .annualSimulationRestoreMonths: "Incluir todos",
+            .annualSimulationMonthIncluded: "%@ incluído na simulação",
+            .annualSimulationMonthExcluded: "%@ excluído da simulação",
+            .annualSimulationExcludedCalculation: "Não considerado no cálculo",
+            .annualSimulationPayoffEstimate: "Com estes valores, poderá ficar totalmente pago em cerca de %@.",
+            .annualSimulationPayoffUnavailable: "Sem valor disponível, não é possível estimar o prazo de pagamento.",
+            .annualSimulationAlreadyPaid: "Este crédito já se encontra totalmente pago.",
+            .annualSimulationPlannedCreditPayments: "Pagamentos recorrentes planeados",
+            .annualSimulationAdditionalCreditPayment: "Pagamento adicional simulado",
+            .annualSimulationCreditPaymentsExplanation: "Nos créditos, a dívida projetada desconta primeiro os pagamentos recorrentes ligados a cada crédito e depois aplica o valor adicional da percentagem escolhida. O pagamento recorrente já está incluído nas despesas, por isso não aumenta o remanescente nem é contado duas vezes.",
             .noInsights: "Ainda não existem pagamentos suficientes em meses anteriores para criar comparações.",
             .restaurantsIncreasedInsight: "💡 Este mês gastou %@ mais em Restaurantes do que no mês passado.",
             .groceriesDecreasedInsight: "🛒 As compras de supermercado diminuíram %@.",
@@ -912,12 +1052,14 @@ enum AppStrings {
             .applyFiltersToSummaryCards: "Aplicar filtros aos cartões do resumo",
             .applyFiltersToSummaryCardsDescription: "Quando ativo, os cartões Ainda por Pagar e Disponível no mês também respeitam os filtros da Conta Corrente.",
             .all: "Todos",
+            .allMonths: "Todos os meses",
             .paidPlural: "Pagas",
             .unpaidPlural: "Por pagar",
             .categories: "Categorias",
             .expenseTypeFilter: "Tipo de despesa",
             .freeTextFilter: "Texto livre",
             .searchPlaceholder: "Procurar texto",
+            .clearSearch: "Limpar pesquisa",
             .expenseDueTomorrowTitle: "Despesa vence amanhã",
             .expenseDueTomorrowBody: "%@ vence amanhã. Dia %d.",
             .expenseDueTomorrowBodyWithType: "%@ vence amanhã. Dia %d. Tipo: %@.",
@@ -1174,11 +1316,19 @@ enum AppStrings {
             .overdueExpenseDueDay: "should have been paid on day",
             .balanceThisMonthHelp: "Shows the available balance up to today. It sums all salaries and income received up to today and subtracts only expenses up to today that have been marked as paid.",
             .monthUnpaidHelp: "Shows the total expenses in the displayed month that have not been marked as paid.",
-            .monthRemainingHelp: "For the current month, it shows what is left after subtracting the month's unpaid expenses from the total balance across accounts. For following months, it starts from the previous month's available amount, adds the income expected for that month, and subtracts that month's unpaid expenses.",
+            .monthRemainingHelp: "For the current month, it adds this month's expected income that has not yet been received and belongs to this month's plan to the total account balance, then subtracts unpaid expenses. For following months, it starts from the previous month's available amount, adds the income expected for that month, and subtracts that month's unpaid expenses.",
             .monthRemainingHelpNote: "This card is only shown for the current month and the following two months. The total balance across accounts already includes remaining amounts from previous months, so those amounts are not added again.",
             .monthRemainingUnpaidBreakdown: "%@ (Previous) + %@ (Current month) = %@",
+            .monthRemainingCalculationTitle: "Available amount calculation",
+            .calculationBase: "Available before this month's movements",
+            .calculationExpectedIncome: "Expected income still to receive",
+            .calculationUnpaidExpenses: "Expenses still to pay",
+            .calculationResult: "Available at the end of the month",
+            .monthRemainingCalculationExplanation: "The result adds expected income assigned to this month's plan and subtracts expenses still to pay. Income already received is included in the balance and is not added again.",
             .pay: "Pay",
             .paid: "Paid",
+            .received: "Received",
+            .pendingReceipt: "Pending",
             .notPaid: "To pay",
             .canStillSpend: "Can still spend",
             .unusedExpense: "To use",
@@ -1226,6 +1376,15 @@ enum AppStrings {
             .applicationSection: "Application",
             .preferences: "Preferences",
             .preferencesSubtitle: "Currency, language, theme and more",
+            .appearance: "App appearance",
+            .colorPalette: "Color palette",
+            .colorPaletteHelp: "Choose the app's visual palette. The change is immediate and does not affect your data.",
+            .paletteOriginal: "Original",
+            .paletteOcean: "Ocean",
+            .paletteForest: "Forest",
+            .paletteSunset: "Sunset",
+            .paletteLavender: "Lavender",
+            .paletteImpact: "Impact",
             .dataPrivacy: "Data and privacy",
             .dataPrivacySubtitle: "Export, import and security",
             .aboutSpendWise: "About SpendWise",
@@ -1337,6 +1496,58 @@ enum AppStrings {
             .paidInsights: "Payment insights",
             .creditAnalysis: "Credit Analysis",
             .savingsAnalysis: "Savings Analysis",
+            .savingsPotentialTitle: "Savings Potential",
+            .savingsPotentialSubtitle: "January to December monthly average",
+            .savingsPotentialDetailsAccessibility: "View calculation details",
+            .savingsPotentialAverageRemaining: "Average remaining",
+            .savingsPotentialSimulationSummary: "Simulation of active recurring plans according to their frequency.",
+            .savingsPotentialNoRecurringData: "There is no recurring income or expenses yet to calculate savings potential.",
+            .savingsPotentialSavePercentage: "Saving %@%%",
+            .savingsPotentialYearEnd: "by year-end",
+            .savingsPotentialCalculationTitle: "Potential calculation",
+            .savingsPotentialSimulationDetails: "This simulation uses only income and expenses from Recurring, applying each plan according to its frequency: weekly, monthly, quarterly, semiannual, or annual. Payments, actual amounts, and non-recurring movements are not used.",
+            .savingsPotentialFinalCalculation: "Final calculation",
+            .savingsPotentialTotalIncome: "Total income",
+            .savingsPotentialTotalExpenses: "− Total expenses",
+            .savingsPotentialAnnualRemaining: "= Annual remaining",
+            .savingsPotentialAverageMonthlyRemaining: "Average monthly remaining",
+            .savingsPotentialTwentyFivePercent: "25% for 12 months",
+            .savingsPotentialFiftyPercent: "50% for 12 months",
+            .savingsPotentialRecurringIncome: "Simulated recurring income",
+            .savingsPotentialSpecificIncome: "+ One-off income this month",
+            .savingsPotentialRecurringExpenses: "Simulated recurring expenses",
+            .savingsPotentialSpecificExpenses: "+ One-off expenses this month",
+            .savingsPotentialRemaining: "= Remaining",
+            .savingsPotentialDone: "Done",
+            .annualSimulationCreditTitle: "Payoff simulation",
+            .annualSimulationSavingsTitle: "Savings contribution simulation",
+            .annualSimulationSubtitle: "Apply %d%% of the positive remainder for 12 months",
+            .annualSimulationDetailsAccessibility: "View simulation details",
+            .annualSimulationNoPositiveRemaining: "There is no positive remainder available in this simulation.",
+            .annualSimulationCurrentDebt: "Current debt",
+            .annualSimulationProjectedDebt: "Debt after 1 year",
+            .annualSimulationCurrentSaved: "Current savings",
+            .annualSimulationProjectedSaved: "Savings after 1 year",
+            .annualSimulationTotal: "Overall total",
+            .annualSimulationAnnualAllocation: "Amount applied during the year",
+            .annualSimulationCalculationTitle: "Simulation calculation",
+            .annualSimulationExplanation: "Each month, the simulation subtracts recurring expenses from recurring income. When the result is positive, it applies the selected percentage. Negative or zero results contribute €0.",
+            .annualSimulationInterestNote: "This simulation does not include interest, rates, fees, savings returns, or future movements. These values must be entered by the user.",
+            .annualSimulationMonthlyIncome: "Recurring income",
+            .annualSimulationMonthlyExpenses: "Recurring expenses",
+            .annualSimulationMonthlyRemaining: "Positive remainder",
+            .annualSimulationMonthlyAvailable: "Amount applied",
+            .annualSimulationMonthsTitle: "Months included",
+            .annualSimulationRestoreMonths: "Include all",
+            .annualSimulationMonthIncluded: "%@ included in the simulation",
+            .annualSimulationMonthExcluded: "%@ excluded from the simulation",
+            .annualSimulationExcludedCalculation: "Not included in the calculation",
+            .annualSimulationPayoffEstimate: "With these amounts, it could be fully paid in approximately %@.",
+            .annualSimulationPayoffUnavailable: "Without an available amount, the payoff time cannot be estimated.",
+            .annualSimulationAlreadyPaid: "This credit is already fully paid.",
+            .annualSimulationPlannedCreditPayments: "Planned recurring payments",
+            .annualSimulationAdditionalCreditPayment: "Simulated additional payment",
+            .annualSimulationCreditPaymentsExplanation: "For credits, the projected debt first deducts recurring payments linked to each credit, then applies the additional amount from the selected percentage. The recurring payment is already included in expenses, so it does not increase the remainder or get counted twice.",
             .noInsights: "There are not enough payments in previous months yet to create comparisons.",
             .restaurantsIncreasedInsight: "💡 This month you spent %@ more on Restaurants than last month.",
             .groceriesDecreasedInsight: "🛒 Supermarket spending decreased %@.",
@@ -1387,12 +1598,14 @@ enum AppStrings {
             .applyFiltersToSummaryCards: "Apply filters to summary cards",
             .applyFiltersToSummaryCardsDescription: "When enabled, the Left to pay and Still available this month cards also follow the Current Account filters.",
             .all: "All",
+            .allMonths: "All months",
             .paidPlural: "Paid",
             .unpaidPlural: "Unpaid",
             .categories: "Categories",
             .expenseTypeFilter: "Expense type",
             .freeTextFilter: "Free text",
             .searchPlaceholder: "Search text",
+            .clearSearch: "Clear search",
             .expenseDueTomorrowTitle: "Expense due tomorrow",
             .expenseDueTomorrowBody: "%@ is due tomorrow. Day %d.",
             .expenseDueTomorrowBodyWithType: "%@ is due tomorrow. Day %d. Type: %@.",

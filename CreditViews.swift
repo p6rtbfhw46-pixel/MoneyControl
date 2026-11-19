@@ -767,7 +767,7 @@ struct CreditDetailView: View {
 
             movementFilterPicker(title: AppStrings.text(.month)) {
                 Picker(AppStrings.text(.month), selection: $selectedMovementMonth) {
-                    Text(AppStrings.text(.all)).tag(Optional<Int>.none)
+                    Text(AppStrings.text(.allMonths)).tag(Optional<Int>.none)
                     ForEach(1...12, id: \.self) { month in
                         Text(Date.monthName(forMonthNumber: month)).tag(Optional(month))
                     }

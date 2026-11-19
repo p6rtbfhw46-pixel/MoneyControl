@@ -11,12 +11,75 @@ private func planningText(_ portuguese: String, _ english: String) -> String {
     AppStrings.currentLanguage == .portuguese ? portuguese : english
 }
 
+private func planningMovementNote(for draft: PlanningMovementDraft) -> String {
+    let planningName = draft.planning?.name ?? planningText("Planeamento", "Planning")
+    var lines = [
+        planningText("Planeamento: \(planningName)", "Planning: \(planningName)"),
+        planningText("Item: \(draft.item.name)", "Item: \(draft.item.name)"),
+        planningText("Movimento: \(draft.title)", "Movement: \(draft.title)")
+    ]
+    if !draft.item.details.isEmpty {
+        lines.append(planningText("Detalhes: \(draft.item.details)", "Details: \(draft.item.details)"))
+    }
+    if !draft.note.isEmpty {
+        lines.append(planningText("Nota: \(draft.note)", "Note: \(draft.note)"))
+    }
+    return lines.joined(separator: "\n")
+}
+
+private func createCurrentAccountEntry(
+    for draft: PlanningMovementDraft,
+    accountID: UUID,
+    accountMovement: AccountMovement,
+    modelContext: ModelContext
+) {
+    let planningName = draft.planning?.name ?? planningText("Planeamento", "Planning")
+    var itemTexts = [draft.title]
+    if !draft.note.isEmpty {
+        itemTexts.append(draft.note)
+    }
+
+    let transaction = MoneyTransaction(
+        title: itemTexts.joined(separator: " · "),
+        day: Calendar.current.component(.day, from: draft.date),
+        monthStart: draft.date.monthStart,
+        amount: abs(draft.amount),
+        kind: TransactionKind.expense.rawValue,
+        repeatsEveryMonth: false,
+        isPaid: true,
+        expenseCategory: ExpenseCategory.wants.rawValue,
+        expenseName: planningName,
+        accountID: accountID
+    )
+    let payment = ExpensePayment(
+        transactionID: transaction.id,
+        monthStart: draft.date.monthStart,
+        amountPaid: abs(draft.amount)
+    )
+    let historyEntry = PaymentHistoryEntry(
+        transactionID: transaction.id,
+        monthStart: draft.date.monthStart,
+        amount: abs(draft.amount),
+        paidAt: draft.date,
+        note: planningMovementNote(for: draft),
+        accountID: accountID
+    )
+
+    accountMovement.transactionID = transaction.id
+    accountMovement.paymentHistoryID = historyEntry.id
+    modelContext.insert(transaction)
+    modelContext.insert(payment)
+    modelContext.insert(historyEntry)
+}
+
 struct PlanningManagementView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var plannings: [Planning]
     @Query private var itemTypes: [PlanningItemType]
     @Query private var planningItems: [PlanningItem]
     @Query private var planningMovements: [PlanningMovement]
+    @Query private var accountMovements: [AccountMovement]
+    @Query private var savingMovements: [SavingMovement]
 
     @State private var editorRequest: PlanningEditorRequest?
     @State private var planningToDelete: Planning?
@@ -104,8 +167,8 @@ struct PlanningManagementView: View {
             }
         } message: {
             Text(planningText(
-                "Isto elimina apenas este planeamento, os seus itens e movimentos internos. Movimentos reais já criados em contas ou poupanças não são apagados automaticamente.",
-                "This only deletes this planning, its items and internal movements. Real movements already created in accounts or savings are not deleted automatically."
+                "Isto elimina o planeamento, os seus itens e os movimentos associados nas contas ou poupanças.",
+                "This deletes the planning, its items, and the associated account or savings movements."
             ))
         }
     }
@@ -164,9 +227,21 @@ struct PlanningManagementView: View {
             modelContext.delete(item)
         }
         for movement in planningMovements where movement.planningId == planning.id {
+            deleteLinkedRealMovement(for: movement)
             modelContext.delete(movement)
         }
         modelContext.delete(planning)
+    }
+
+    private func deleteLinkedRealMovement(for movement: PlanningMovement) {
+        if let id = movement.linkedAccountMovementID,
+           let linkedMovement = accountMovements.first(where: { $0.id == id }) {
+            modelContext.delete(linkedMovement)
+        }
+        if let id = movement.linkedSavingMovementID,
+           let linkedMovement = savingMovements.first(where: { $0.id == id }) {
+            modelContext.delete(linkedMovement)
+        }
     }
 }
 
@@ -568,8 +643,8 @@ struct PlanningDetailView: View {
             }
         } message: {
             Text(planningText(
-                "Isto elimina apenas este planeamento, os seus itens e movimentos internos. Movimentos reais já criados em contas ou poupanças não são apagados automaticamente.",
-                "This only deletes this planning, its items and internal movements. Real movements already created in accounts or savings are not deleted automatically."
+                "Isto elimina o planeamento, os seus itens e os movimentos associados nas contas ou poupanças.",
+                "This deletes the planning, its items, and the associated account or savings movements."
             ))
         }
         .alert(planningText("Eliminar tipo de item?", "Delete item type?"), isPresented: $showsDeleteItemTypeConfirmation) {
@@ -600,8 +675,8 @@ struct PlanningDetailView: View {
             }
         } message: {
             Text(planningText(
-                "Isto elimina o item e os movimentos internos associados. Movimentos reais já criados em contas ou poupanças não são apagados automaticamente.",
-                "This deletes the item and its internal movements. Real movements already created in accounts or savings are not deleted automatically."
+                "Isto elimina o item e os movimentos associados nas contas ou poupanças.",
+                "This deletes the item and its associated account or savings movements."
             ))
         }
         .onAppear(perform: ensureItemsForItemTypes)
@@ -663,6 +738,7 @@ struct PlanningDetailView: View {
 
     private func deleteItem(_ item: PlanningItem) {
         for movement in movements where movement.itemId == item.id {
+            deleteLinkedRealMovement(for: movement)
             modelContext.delete(movement)
         }
         if let itemTypeId = item.itemTypeId,
@@ -680,10 +756,22 @@ struct PlanningDetailView: View {
             modelContext.delete(item)
         }
         for movement in movements {
+            deleteLinkedRealMovement(for: movement)
             modelContext.delete(movement)
         }
         modelContext.delete(planning)
         dismiss()
+    }
+
+    private func deleteLinkedRealMovement(for movement: PlanningMovement) {
+        if let id = movement.linkedAccountMovementID,
+           let linkedMovement = accountMovements.first(where: { $0.id == id }) {
+            modelContext.delete(linkedMovement)
+        }
+        if let id = movement.linkedSavingMovementID,
+           let linkedMovement = savingMovements.first(where: { $0.id == id }) {
+            modelContext.delete(linkedMovement)
+        }
     }
 
     private func ensureItemsForItemTypes() {
@@ -1440,19 +1528,32 @@ struct PlanningItemDetailView: View {
             }
             Button(AppStrings.text(.delete), role: .destructive) {
                 if let movementToDelete {
+                    deleteLinkedRealMovement(for: movementToDelete)
                     modelContext.delete(movementToDelete)
                 }
                 movementToDelete = nil
             }
         } message: {
             Text(planningText(
-                "Remove apenas o movimento dentro do planeamento. Se já foi criado um movimento real numa conta ou poupança, esse movimento real mantém-se.",
-                "This only removes the movement inside this planning. If a real account or savings movement was already created, that real movement remains."
+                "Remove o movimento do planeamento e o movimento associado da conta ou poupança.",
+                "Removes the planning movement and its associated account or savings movement."
             ))
         }
     }
 
+    private func deleteLinkedRealMovement(for movement: PlanningMovement) {
+        if let accountMovementID = movement.linkedAccountMovementID,
+           let accountMovement = accountMovements.first(where: { $0.id == accountMovementID }) {
+            modelContext.delete(accountMovement)
+        }
+        if let savingMovementID = movement.linkedSavingMovementID,
+           let savingMovement = savingMovements.first(where: { $0.id == savingMovementID }) {
+            modelContext.delete(savingMovement)
+        }
+    }
+
     private func saveMovement(_ draft: PlanningMovementDraft) {
+        let isNewMovement = draft.movement == nil
         let movement = draft.movement ?? PlanningMovement(
             planningId: item.planningId,
             itemId: item.id,
@@ -1470,6 +1571,7 @@ struct PlanningItemDetailView: View {
         movement.title = draft.title
         movement.amount = draft.amount
         movement.note = draft.note
+        let realMovementNote = planningMovementNote(for: draft)
 
         if wasPlanningOnly {
             movement.affectModeRawValue = draft.affectMode.rawValue
@@ -1481,34 +1583,50 @@ struct PlanningItemDetailView: View {
         case .planningOnly:
             break
         case .account:
-            if wasPlanningOnly, let accountID = draft.accountID {
+            if (isNewMovement || wasPlanningOnly), let accountID = draft.accountID {
                 let realMovement = AccountMovement(
                     accountID: accountID,
                     date: draft.date,
                     type: AccountMovementKind.expensePayment.rawValue,
                     amount: -abs(draft.amount),
-                    note: draft.title
+                    note: realMovementNote
                 )
                 modelContext.insert(realMovement)
                 movement.linkedAccountMovementID = realMovement.id
+                createCurrentAccountEntry(
+                    for: draft,
+                    accountID: accountID,
+                    accountMovement: realMovement,
+                    modelContext: modelContext
+                )
                 insertAccountAudit(for: realMovement)
+            } else if let movementID = movement.linkedAccountMovementID,
+                      let realMovement = accountMovements.first(where: { $0.id == movementID }) {
+                realMovement.date = draft.date
+                realMovement.amount = -abs(draft.amount)
+                realMovement.note = realMovementNote
             }
         case .saving:
-            if wasPlanningOnly, let savingID = draft.savingID {
+            if (isNewMovement || wasPlanningOnly), let savingID = draft.savingID {
                 let realMovement = SavingMovement(
                     savingID: savingID,
                     date: draft.date,
                     type: SavingMovementKind.withdrawal.rawValue,
                     amount: abs(draft.amount),
-                    note: draft.title
+                    note: realMovementNote
                 )
                 modelContext.insert(realMovement)
                 movement.linkedSavingMovementID = realMovement.id
                 insertSavingAudit(for: realMovement)
+            } else if let movementID = movement.linkedSavingMovementID,
+                      let realMovement = savingMovements.first(where: { $0.id == movementID }) {
+                realMovement.date = draft.date
+                realMovement.amount = abs(draft.amount)
+                realMovement.note = realMovementNote
             }
         }
 
-        if draft.movement == nil {
+        if isNewMovement {
             modelContext.insert(movement)
         }
 
@@ -1733,6 +1851,13 @@ private struct PlanningMovementRow: View {
                     .font(.headline)
                     .foregroundStyle(AppPalette.background)
                     .lineLimit(2)
+
+                if !movement.note.isEmpty {
+                    Text(movement.note)
+                        .font(.caption)
+                        .foregroundStyle(AppPalette.mutedText)
+                        .lineLimit(2)
+                }
 
                 Text(sourceText)
                     .font(.caption.bold())
@@ -2630,6 +2755,7 @@ enum PlanningMovementWriter {
             linkedAccountID: draft.accountID,
             linkedSavingID: draft.savingID
         )
+        let realMovementNote = planningMovementNote(for: draft)
 
         switch draft.affectMode {
         case .planningOnly:
@@ -2641,10 +2767,16 @@ enum PlanningMovementWriter {
                     date: draft.date,
                     type: AccountMovementKind.expensePayment.rawValue,
                     amount: -abs(draft.amount),
-                    note: draft.title
+                    note: realMovementNote
                 )
                 modelContext.insert(realMovement)
                 movement.linkedAccountMovementID = realMovement.id
+                createCurrentAccountEntry(
+                    for: draft,
+                    accountID: accountID,
+                    accountMovement: realMovement,
+                    modelContext: modelContext
+                )
 
                 let balanceBefore = spendAccounts.first { $0.id == accountID }?.balance(with: accountMovements) ?? 0
                 modelContext.insert(AuditLogEntry(
@@ -2663,7 +2795,7 @@ enum PlanningMovementWriter {
                     date: draft.date,
                     type: SavingMovementKind.withdrawal.rawValue,
                     amount: abs(draft.amount),
-                    note: draft.title
+                    note: realMovementNote
                 )
                 modelContext.insert(realMovement)
                 movement.linkedSavingMovementID = realMovement.id
