@@ -1778,6 +1778,9 @@ struct ContentView: View {
                 accounts: spendAccounts,
                 accountMovements: accountMovements,
                 transactionAccountID: request.transaction.accountID,
+                savingDestinationName: request.transaction.linkedSavingID.flatMap { savingID in
+                    savingAccounts.first(where: { $0.id == savingID })?.displayName
+                },
                 isProcessing: $isProcessingPaymentChange,
                 onConfirm: { amount, note, accountID in
                     performPaymentChange {

@@ -2165,6 +2165,7 @@ struct PaymentAmountPicker: View {
     let accounts: [SpendAccount]
     let accountMovements: [AccountMovement]
     let transactionAccountID: UUID?
+    let savingDestinationName: String?
     @Binding var isProcessing: Bool
     let onConfirm: (Double, String?, UUID?) -> Void
     let onConfirmAndCloseBudgetWithConsumedValue: (Double, String?, UUID?, Double) -> Void
@@ -2260,6 +2261,12 @@ struct PaymentAmountPicker: View {
         return trimmedTitle.isEmpty ? nil : trimmedTitle
     }
 
+    private func savingDestinationLabel(for name: String) -> String {
+        if AppStrings.currentLanguage == .portuguese {
+            return "Destino da poupança: \(name)"
+        }
+        return "Saving destination: \(name)"
+    }
 
     var body: some View {
         NavigationStack {
@@ -2388,6 +2395,18 @@ struct PaymentAmountPicker: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(AppPalette.mutedText)
                         .lineLimit(1)
+                }
+
+                if let savingDestinationName {
+                    Label {
+                        Text(savingDestinationLabel(for: savingDestinationName))
+                    } icon: {
+                        Image(systemName: "banknote.fill")
+                            .foregroundStyle(AppPalette.savings)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppPalette.background)
+                    .accessibilityIdentifier("payment.savingDestination")
                 }
 
                 Text("\(AppStrings.text(.paid)): \(paidAmountInSheet.currencyText) \(AppStrings.text(.ofAmount)) \(totalAmount.currencyText)")

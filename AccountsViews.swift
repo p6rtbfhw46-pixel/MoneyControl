@@ -16,7 +16,6 @@ struct AccountsSettingsView: View {
     @State private var showsQuickActions = false
     @State private var showsIncomeEditor = false
     @State private var selectedAccount: SpendAccount?
-    @State private var saveNotice: SaveResultNotice?
 
     private var orderedAccounts: [SpendAccount] {
         accounts.sorted { first, second in
@@ -121,17 +120,10 @@ struct AccountsSettingsView: View {
                 onSaved: presentSaveNoticeAfterEditorCloses
             )
         }
-        .overlay {
-            if let saveNotice {
-                SaveResultNoticeOverlay(notice: saveNotice) {
-                    self.saveNotice = nil
-                }
-            }
-        }
     }
 
     private func presentSaveNoticeAfterEditorCloses(_ notice: SaveResultNotice) {
-        saveNotice = notice
+        SaveResultNoticeCenter.shared.show(notice)
         showsIncomeEditor = false
     }
 
