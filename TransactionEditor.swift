@@ -1022,7 +1022,6 @@ struct TransactionEditor: View {
                     }
 
                     linkedCreditPicker
-                    linkedSavingPicker
                 }
             }
             .listRowBackground(AppPalette.surface)
@@ -1224,6 +1223,7 @@ struct TransactionEditor: View {
         }
 
         linkedSpendAccountPicker
+        linkedSavingPicker
 
         if shouldShowBudgetAllocation {
             budgetAllocationCardPicker
