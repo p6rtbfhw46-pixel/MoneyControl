@@ -1051,19 +1051,25 @@ struct TransactionEditor: View {
     @ViewBuilder
     private var linkedSavingPicker: some View {
         if shouldShowSavingPicker {
-            HStack(spacing: 10) {
-                Picker(SavingsStrings.text(.saving), selection: normalizedSelectedSavingID) {
-                    Text(SavingsStrings.text(.selectSaving)).tag(nil as UUID?)
-                    ForEach(activeSavingAccounts) { saving in
-                        Text(saving.displayName).tag(saving.id as UUID?)
-                    }
-                }
-                .tint(AppPalette.background)
+            VStack(alignment: .leading, spacing: 10) {
+                sectionLabel(SavingsStrings.text(.saving), systemImage: "banknote.fill")
 
-                HelpIconButton(
-                    title: AppStrings.text(.linkedTrackingOptionalHelpTitle),
-                    message: AppStrings.text(.linkedTrackingOptionalHelpMessage)
-                )
+                HStack(spacing: 10) {
+                    Picker(SavingsStrings.text(.saving), selection: normalizedSelectedSavingID) {
+                        Text(SavingsStrings.text(.selectSaving)).tag(nil as UUID?)
+                        ForEach(activeSavingAccounts) { saving in
+                            Text(saving.displayName).tag(saving.id as UUID?)
+                        }
+                    }
+                    .labelsHidden()
+                    .tint(AppPalette.background)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HelpIconButton(
+                        title: AppStrings.text(.linkedTrackingOptionalHelpTitle),
+                        message: AppStrings.text(.linkedTrackingOptionalHelpMessage)
+                    )
+                }
             }
         }
     }
