@@ -150,7 +150,12 @@ enum ReceiptParser {
 
             for amount in amounts where amount > 0 && amount < 100_000 {
                 let candidateScore = score + Int(min(amount, 999) / 100)
-                if bestCandidate == nil || candidateScore > bestCandidate!.score || (candidateScore == bestCandidate!.score && amount > bestCandidate!.amount) {
+                if let currentCandidate = bestCandidate {
+                    if candidateScore > currentCandidate.score ||
+                        (candidateScore == currentCandidate.score && amount > currentCandidate.amount) {
+                        bestCandidate = (amount, candidateScore)
+                    }
+                } else {
                     bestCandidate = (amount, candidateScore)
                 }
             }
