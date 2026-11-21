@@ -5,6 +5,35 @@
 
 import SwiftUI
 
+enum AppAppearanceMode: String, CaseIterable, Identifiable {
+    static let storageKey = "selectedAppearanceMode"
+
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    var title: String {
+        switch (self, AppStrings.currentLanguage) {
+        case (.system, .portuguese): "Automático"
+        case (.system, .english): "Automatic"
+        case (.light, .portuguese): "Claro"
+        case (.light, .english): "Light"
+        case (.dark, .portuguese): "Escuro"
+        case (.dark, .english): "Dark"
+        }
+    }
+}
+
 enum AppColorPalette: String, CaseIterable, Identifiable {
     static let storageKey = "selectedColorPalette"
 
@@ -75,10 +104,10 @@ enum AppPalette {
     static var primary: Color { current.primary }
     static var secondary: Color { current.secondary }
     static var accent: Color { current.accent }
-    static var background: Color { current.background }
-    static var surface: Color { current.surface }
-    static var appBackground: Color { current.appBackground }
-    static var separator: Color { current.separator }
+    static var background: Color { adaptive(light: current.background, dark: .label) }
+    static var surface: Color { adaptive(light: current.surface, dark: .secondarySystemBackground) }
+    static var appBackground: Color { adaptive(light: current.appBackground, dark: .systemBackground) }
+    static var separator: Color { adaptive(light: current.separator, dark: .separator) }
     static var darkBlue: Color { current.darkBlue }
     static var mediumBlue: Color { current.mediumBlue }
     static var mediumGreen: Color { current.mediumGreen }
@@ -86,14 +115,20 @@ enum AppPalette {
     static var paleOrange: Color { current.paleOrange }
     static var warning: Color { current.warning }
     static var purple: Color { current.purple }
-    static var bodyText: Color { current.bodyText }
-    static var secondaryText: Color { current.secondaryText }
+    static var bodyText: Color { adaptive(light: current.bodyText, dark: .secondaryLabel) }
+    static var secondaryText: Color { adaptive(light: current.secondaryText, dark: .tertiaryLabel) }
     static var income: Color { current.income }
     static var savings: Color { current.savings }
 
     static var destructive: Color { primary }
     static var positive: Color { income }
     static var mutedText: Color { bodyText }
+
+    private static func adaptive(light: Color, dark: UIColor) -> Color {
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? dark : UIColor(light)
+        })
+    }
 
     private static var current: Colors {
         colors(for: AppColorPalette.current)

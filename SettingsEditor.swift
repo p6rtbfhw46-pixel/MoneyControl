@@ -14,6 +14,7 @@ struct SettingsEditor: View {
     @AppStorage("hasCompletedInitialSetup") private var hasCompletedInitialSetup = false
     @AppStorage(AppPreferences.selectedCurrencyCodeKey) private var selectedCurrencyCode = ""
     @AppStorage(AppColorPalette.storageKey) private var selectedColorPalette = AppColorPalette.original.rawValue
+    @AppStorage(AppAppearanceMode.storageKey) private var selectedAppearanceMode = AppAppearanceMode.light.rawValue
     @AppStorage(AppPreferences.appLockEnabledKey) private var appLockEnabled = false
     @AppStorage(AppPreferences.appLockBiometricsEnabledKey) private var appLockBiometricsEnabled = false
     @AppStorage(AppPreferences.notificationsEnabledKey) private var notificationsEnabled = true
@@ -347,6 +348,27 @@ struct SettingsEditor: View {
             .listRowBackground(AppPalette.surface)
 
             Section(AppStrings.text(.appearance)) {
+                Picker(
+                    AppStrings.currentLanguage == .portuguese ? "Tema" : "Theme",
+                    selection: $selectedAppearanceMode
+                ) {
+                    ForEach(AppAppearanceMode.allCases) { appearance in
+                        Text(appearance.title).tag(appearance.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(
+                    AppStrings.currentLanguage == .portuguese
+                        ? "Automático acompanha o tema definido no dispositivo."
+                        : "Automatic follows the theme selected on the device."
+                )
+                .font(.caption)
+                .foregroundStyle(AppPalette.mutedText)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Divider()
+
                 Text(AppStrings.text(.colorPalette))
                     .font(.headline.bold())
                     .foregroundStyle(AppPalette.background)
