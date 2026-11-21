@@ -956,6 +956,19 @@ private struct SavingMovementEditor: View {
         return request.saving.balance(with: movementsWithoutCurrent)
     }
 
+    private var currentSavingBalance: Double {
+        request.saving.balance(with: allMovements.filter { $0.savingID == request.saving.id })
+    }
+
+    private var savingBalanceDifference: Double {
+        let previousEffect = request.movement?.balanceEffect ?? 0
+        return kind.balanceEffect(for: amount) - previousEffect
+    }
+
+    private var resultingSavingBalance: Double {
+        currentSavingBalance + savingBalanceDifference
+    }
+
     private var primarySpendAccountID: UUID? {
         spendAccounts.first(where: \.isPrimary)?.id ?? spendAccounts.first?.id
     }
@@ -1022,6 +1035,11 @@ private struct SavingMovementEditor: View {
                     MoneyAmountPicker(title: AppStrings.text(.value), amount: $amount, maximumAmount: 1_000_000, onConfirm: save)
                 }
                 .listRowBackground(AppPalette.surface)
+
+                Section {
+                    savingBalancePreview
+                }
+                .listRowBackground(AppPalette.surface)
             }
             .scrollContentBackground(.hidden)
             .background(AppPalette.appBackground)
@@ -1039,6 +1057,54 @@ private struct SavingMovementEditor: View {
             .onAppear(perform: loadInitialValues)
             .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
+    }
+
+    private var savingBalancePreview: some View {
+        VStack(spacing: 12) {
+            balancePreviewRow(
+                title: savingsMovementText("Total atual da poupança", "Current saving total"),
+                value: currentSavingBalance.currencyText,
+                color: AppPalette.background
+            )
+
+            Divider()
+
+            balancePreviewRow(
+                title: savingsMovementText("Diferença", "Difference"),
+                value: signedCurrencyText(savingBalanceDifference),
+                color: savingBalanceDifference < 0 ? AppPalette.warning : AppPalette.mediumGreen
+            )
+
+            Divider()
+
+            balancePreviewRow(
+                title: savingsMovementText("Total após o movimento", "Total after movement"),
+                value: resultingSavingBalance.currencyText,
+                color: AppPalette.savings
+            )
+        }
+        .accessibilityIdentifier("savingMovement.balancePreview")
+    }
+
+    private func balancePreviewRow(title: String, value: String, color: Color) -> some View {
+        HStack {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppPalette.mutedText)
+            Spacer()
+            Text(value)
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(color)
+        }
+    }
+
+    private func signedCurrencyText(_ value: Double) -> String {
+        let sign = value < 0 ? "−" : "+"
+        return "\(sign) \(abs(value).currencyText)"
+    }
+
+    private func savingsMovementText(_ portuguese: String, _ english: String) -> String {
+        AppStrings.currentLanguage == .portuguese ? portuguese : english
     }
 
     private func loadInitialValues() {
