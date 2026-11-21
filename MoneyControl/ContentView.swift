@@ -1759,6 +1759,7 @@ struct ContentView: View {
                 phoneNavigation
             }
         }
+        .accessibilityIdentifier("app.main")
         .sheet(item: $editorRequest) { request in
             TransactionEditor(request: request, onSaved: showSaveToast)
         }
