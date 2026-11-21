@@ -1421,7 +1421,24 @@ struct TransactionEditor: View {
     }
 
     private var requiresExplicitDaySelection: Bool {
-        mode.needsExpenseClassification && (mode == .monthlyExpense || mode == .periodicExpense)
+        guard mode.needsExpenseClassification else { return false }
+        if mode == .monthlyExpense || mode == .periodicExpense {
+            return true
+        }
+        return editedTransaction == nil && !isRequestMonthCurrent
+    }
+
+    private var explicitDayValidationMessage: String {
+        let month = request.month.formatted(
+            .dateTime
+                .locale(Locale(identifier: AppStrings.currentLocaleIdentifier))
+                .month(.wide)
+                .year()
+        )
+        if AppStrings.currentLanguage == .portuguese {
+            return "Selecione o dia do agendamento para \(month)."
+        }
+        return "Select the schedule day for \(month)."
     }
 
     private var dateFieldTitle: String {
@@ -1478,7 +1495,7 @@ struct TransactionEditor: View {
             recurrenceMonth = Calendar.current.component(.month, from: request.month)
             if requiresExplicitDaySelection {
                 day = currentMonthDay
-                hasSelectedDay = true
+                hasSelectedDay = isRequestMonthCurrent
             } else {
                 day = min(Calendar.current.component(.day, from: Date()), request.month.daysInMonth)
                 hasSelectedDay = true
@@ -1571,7 +1588,7 @@ struct TransactionEditor: View {
             }
 
             guard !requiresExplicitDaySelection || hasSelectedDay else {
-                showValidation(AppStrings.text(.fillDay))
+                showValidation(explicitDayValidationMessage)
                 return
             }
 
