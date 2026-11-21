@@ -174,6 +174,27 @@ struct MoneyControlTests {
         #expect(occurrences.first?.receivedDate == september.date(day: 20))
     }
 
+    @Test func annualIncomeDueOnAccountCreationDayIsReceived() {
+        let november = Date.monthStart(month: 11, year: 2026)
+        let annualIncome = makeIncome(
+            title: "Receita anual",
+            day: 20,
+            month: Date.monthStart(month: 11, year: 2024),
+            amount: 1_000,
+            recurrenceType: .annual
+        )
+        let service = MoneyCalculationService(transactions: [annualIncome], payments: [], exclusions: [])
+
+        let occurrences = service.recurringIncomeOccurrencesDue(
+            onOrAfter: november.date(day: 20),
+            through: november.date(day: 20)
+        )
+
+        #expect(occurrences.count == 1)
+        #expect(occurrences.first?.receivedDate == november.date(day: 20))
+        #expect(occurrences.first?.amount == 1_000)
+    }
+
     @Test func weeklyIncomePlanningHonorsActivationDateAndExcludedOccurrences() {
         let october = Date.monthStart(month: 10, year: 2026)
         let income = makeIncome(
@@ -557,6 +578,34 @@ struct MoneyControlTests {
 
         UserDefaults.standard.removeObject(forKey: key)
         #expect(!AppPreferences.selectedCurrencyCode.isEmpty)
+    }
+
+    @Test func receiptParserExtractsMerchantTotalDateAndCategory() {
+        let result = ReceiptParser.parse(lines: [
+            "CONTINENTE MODELO",
+            "NIF 123456789",
+            "TOTAL 23,45 EUR",
+            "19/11/2026",
+        ])
+
+        #expect(result.title == "CONTINENTE MODELO")
+        #expect(result.amount == 23.45)
+        #expect(result.category == .needs)
+        #expect(Calendar.current.component(.day, from: result.date ?? .distantPast) == 19)
+        #expect(Calendar.current.component(.month, from: result.date ?? .distantPast) == 11)
+        #expect(Calendar.current.component(.year, from: result.date ?? .distantPast) == 2026)
+    }
+
+    @Test func receiptParserReadsAmountFollowingStandaloneTotal() {
+        let result = ReceiptParser.parse(lines: [
+            "CAFÉ CENTRAL",
+            "TOTAL",
+            "8,90",
+            "Troco 1,10",
+        ])
+
+        #expect(result.amount == 8.90)
+        #expect(result.category == .wants)
     }
 
     private func makeIncome(

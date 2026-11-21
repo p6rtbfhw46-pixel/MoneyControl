@@ -148,13 +148,7 @@ struct PlanningManagementView: View {
                 savePlanning(draft)
             }
         }
-        .alert(item: $saveNotice) { notice in
-            Alert(
-                title: Text(notice.title),
-                message: Text(notice.message),
-                dismissButton: .default(Text(AppStrings.text(.ok)))
-            )
-        }
+        .saveResultAlert($saveNotice)
         .alert(planningText("Eliminar planeamento?", "Delete planning?"), isPresented: $showsDeleteConfirmation) {
             Button(AppStrings.text(.cancel), role: .cancel) {
                 planningToDelete = nil
@@ -629,13 +623,7 @@ struct PlanningDetailView: View {
                 movementConfirmation = nil
             }
         }
-        .alert(item: $saveNotice) { notice in
-            Alert(
-                title: Text(notice.title),
-                message: Text(notice.message),
-                dismissButton: .default(Text(AppStrings.text(.ok)))
-            )
-        }
+        .saveResultAlert($saveNotice)
         .alert(planningText("Eliminar planeamento?", "Delete planning?"), isPresented: $showsDeletePlanningConfirmation) {
             Button(AppStrings.text(.cancel), role: .cancel) {}
             Button(AppStrings.text(.delete), role: .destructive) {
@@ -1515,13 +1503,7 @@ struct PlanningItemDetailView: View {
                 movementConfirmation = nil
             }
         }
-        .alert(item: $saveNotice) { notice in
-            Alert(
-                title: Text(notice.title),
-                message: Text(notice.message),
-                dismissButton: .default(Text(AppStrings.text(.ok)))
-            )
-        }
+        .saveResultAlert($saveNotice)
         .alert(planningText("Eliminar movimento?", "Delete movement?"), isPresented: $showsDeleteMovementConfirmation) {
             Button(AppStrings.text(.cancel), role: .cancel) {
                 movementToDelete = nil

@@ -364,15 +364,7 @@ private struct SavingEditor: View {
             } message: {
                 Text(SavingsStrings.text(.deleteSavingMessage))
             }
-            .alert(item: $saveNotice) { notice in
-                Alert(
-                    title: Text(notice.title),
-                    message: Text(notice.message),
-                    dismissButton: .default(Text(AppStrings.text(.ok))) {
-                        dismiss()
-                    }
-                )
-            }
+            .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
     }
 
@@ -1045,15 +1037,7 @@ private struct SavingMovementEditor: View {
                 }
             }
             .onAppear(perform: loadInitialValues)
-            .alert(item: $saveNotice) { notice in
-                Alert(
-                    title: Text(notice.title),
-                    message: Text(notice.message),
-                    dismissButton: .default(Text(AppStrings.text(.ok))) {
-                        dismiss()
-                    }
-                )
-            }
+            .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
     }
 

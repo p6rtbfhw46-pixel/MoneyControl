@@ -1965,7 +1965,10 @@ struct TransactionEditor: View {
         )
 
         calculator
-            .recurringIncomeOccurrencesDue(after: account.createdAt, through: now)
+            .recurringIncomeOccurrencesDue(
+                onOrAfter: calendar.startOfDay(for: account.createdAt),
+                through: now
+            )
             .forEach { occurrence in
                 let occurrenceDate = calendar.startOfDay(for: occurrence.receivedDate)
                 guard !existingOccurrenceKeys.contains(occurrenceDate) else { return }

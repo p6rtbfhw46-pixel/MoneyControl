@@ -18,6 +18,23 @@ struct SaveResultNotice: Identifiable {
     }
 }
 
+extension View {
+    func saveResultAlert(
+        _ notice: Binding<SaveResultNotice?>,
+        onDismiss: (() -> Void)? = nil
+    ) -> some View {
+        alert(item: notice) { notice in
+            Alert(
+                title: Text(notice.title),
+                message: Text(notice.message),
+                dismissButton: .default(Text(AppStrings.text(.ok))) {
+                    onDismiss?()
+                }
+            )
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class SaveResultNoticeCenter {
@@ -432,14 +449,9 @@ struct MonthPage: View {
             }
         }
         .task(id: renderDataSignature) {
-            if cachedRenderData == nil {
-                try? await Task.sleep(for: .milliseconds(75))
-            } else {
-                await Task.yield()
-            }
-
             guard !Task.isCancelled else { return }
-            cachedRenderData = transactionRenderData
+            let renderData = transactionRenderData
+            cachedRenderData = renderData
         }
     }
 

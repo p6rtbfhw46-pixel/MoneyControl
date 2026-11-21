@@ -650,15 +650,7 @@ private struct AccountEditorView: View {
                 }
             }
             .onAppear(perform: load)
-            .alert(item: $saveNotice) { notice in
-                Alert(
-                    title: Text(notice.title),
-                    message: Text(notice.message),
-                    dismissButton: .default(Text(AppStrings.text(.ok))) {
-                        dismiss()
-                    }
-                )
-            }
+            .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
     }
 
@@ -787,15 +779,7 @@ private struct AccountTransferEditorView: View {
             .onAppear {
                 normalizeAccountSelections()
             }
-            .alert(item: $saveNotice) { notice in
-                Alert(
-                    title: Text(notice.title),
-                    message: Text(notice.message),
-                    dismissButton: .default(Text(AppStrings.text(.ok))) {
-                        dismiss()
-                    }
-                )
-            }
+            .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
     }
 
@@ -914,15 +898,7 @@ private struct AccountBalanceAdjustmentView: View {
             .onAppear {
                 newBalance = currentBalance
             }
-            .alert(item: $saveNotice) { notice in
-                Alert(
-                    title: Text(notice.title),
-                    message: Text(notice.message),
-                    dismissButton: .default(Text(AppStrings.text(.ok))) {
-                        dismiss()
-                    }
-                )
-            }
+            .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
     }
 

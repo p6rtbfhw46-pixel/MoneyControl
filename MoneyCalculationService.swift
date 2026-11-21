@@ -490,7 +490,19 @@ struct MoneyCalculationService {
     }
 
     func recurringIncomeOccurrencesDue(after startDate: Date, through now: Date) -> [IncomeAccountOccurrence] {
-        guard startDate < now else { return [] }
+        recurringIncomeOccurrencesDue(from: startDate, through: now, includesStartDate: false)
+    }
+
+    func recurringIncomeOccurrencesDue(onOrAfter startDate: Date, through now: Date) -> [IncomeAccountOccurrence] {
+        recurringIncomeOccurrencesDue(from: startDate, through: now, includesStartDate: true)
+    }
+
+    private func recurringIncomeOccurrencesDue(
+        from startDate: Date,
+        through now: Date,
+        includesStartDate: Bool
+    ) -> [IncomeAccountOccurrence] {
+        guard includesStartDate ? startDate <= now : startDate < now else { return [] }
 
         return transactions
             .filter { $0.kind == TransactionKind.income.rawValue && $0.isRecurring }
@@ -513,7 +525,12 @@ struct MoneyCalculationService {
                                 )
                             }
                     }
-                    .filter { $0.receivedDate > startDate && $0.receivedDate <= now }
+                    .filter {
+                        let isAfterStart = includesStartDate
+                            ? $0.receivedDate >= startDate
+                            : $0.receivedDate > startDate
+                        return isAfterStart && $0.receivedDate <= now
+                    }
             }
             .sorted { $0.receivedDate < $1.receivedDate }
     }

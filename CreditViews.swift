@@ -300,15 +300,7 @@ private struct CreditEditor: View {
             } message: {
                 Text(CreditStrings.text(.deleteCreditMessage))
             }
-            .alert(item: $saveNotice) { notice in
-                Alert(
-                    title: Text(notice.title),
-                    message: Text(notice.message),
-                    dismissButton: .default(Text(AppStrings.text(.ok))) {
-                        dismiss()
-                    }
-                )
-            }
+            .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
     }
 
@@ -1309,15 +1301,7 @@ private struct CreditMovementEditor: View {
             .onChange(of: kind) { _, newKind in
                 prepareCurrentAccountSelection(for: newKind)
             }
-            .alert(item: $saveNotice) { notice in
-                Alert(
-                    title: Text(notice.title),
-                    message: Text(notice.message),
-                    dismissButton: .default(Text(AppStrings.text(.ok))) {
-                        dismiss()
-                    }
-                )
-            }
+            .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
     }
 
@@ -1902,15 +1886,7 @@ struct CurrentAccountCreditMovementEditor: View {
                     prepareExpenseTypeSelection()
                 }
             }
-            .alert(item: $saveNotice) { notice in
-                Alert(
-                    title: Text(notice.title),
-                    message: Text(notice.message),
-                    dismissButton: .default(Text(AppStrings.text(.ok))) {
-                        dismiss()
-                    }
-                )
-            }
+            .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
     }
 
