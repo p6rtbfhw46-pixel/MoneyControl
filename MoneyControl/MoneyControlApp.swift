@@ -30,7 +30,6 @@ struct MoneyControlApp: App {
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @AppStorage("hasCompletedInitialSetup") private var hasCompletedInitialSetup = false
     @AppStorage(AppPreferences.appLockEnabledKey) private var appLockEnabled = false
-    @AppStorage(AppAppearanceMode.storageKey) private var selectedAppearanceMode = AppAppearanceMode.light.rawValue
     @Environment(\.scenePhase) private var scenePhase
     @State private var isShowingLaunchLoading = true
     @State private var isAppUnlocked = false
@@ -42,10 +41,6 @@ struct MoneyControlApp: App {
 
     private var shouldRequireUnlock: Bool {
         hasSeenOnboarding && hasCompletedInitialSetup && appLockEnabled && AppLockService.hasPIN && !isAppUnlocked
-    }
-
-    private var preferredColorScheme: ColorScheme? {
-        (AppAppearanceMode(rawValue: selectedAppearanceMode) ?? .light).colorScheme
     }
 
     private static func makeModelContainerState() -> ModelContainerLoadState {
@@ -91,7 +86,7 @@ struct MoneyControlApp: App {
                     modelContainerState = MoneyControlApp.makeModelContainerState()
                 }
                 .tint(AppPalette.primary)
-                .preferredColorScheme(preferredColorScheme)
+                .preferredColorScheme(.light)
             }
         }
     }
@@ -142,7 +137,7 @@ struct MoneyControlApp: App {
             }
         }
         .tint(AppPalette.primary)
-        .preferredColorScheme(preferredColorScheme)
+        .preferredColorScheme(.light)
     }
 
     private var authenticatedAppContent: some View {
