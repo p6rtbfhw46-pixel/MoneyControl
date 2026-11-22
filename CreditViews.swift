@@ -1186,6 +1186,28 @@ private struct CreditMovementEditor: View {
             creditMovements: creditMovements
         )
     }
+
+    private var currentCreditBalance: Double {
+        request.credit.balance(with: creditMovements)
+    }
+
+    private var proposedCreditMovementEffect: Double {
+        if kind == .payment && request.movement == nil && !markAsPaid {
+            return 0
+        }
+        let storedAmount = kind == .adjustment && !adjustmentIsPositive ? -amount : amount
+        return kind.balanceEffect(for: storedAmount)
+    }
+
+    private var resultingCreditBalance: Double {
+        let previousEffect = request.movement?.balanceEffect ?? 0
+        return max(currentCreditBalance - previousEffect + proposedCreditMovementEffect, 0)
+    }
+
+    private var creditBalanceDifference: Double {
+        resultingCreditBalance - currentCreditBalance
+    }
+
     private var primarySpendAccountID: UUID? {
         spendAccounts.first(where: \.isPrimary)?.id ?? spendAccounts.first?.id
     }
@@ -1239,6 +1261,11 @@ private struct CreditMovementEditor: View {
 
                 Section {
                     affectedCreditCard
+                }
+                .listRowBackground(AppPalette.surface)
+
+                Section {
+                    creditBalancePreview
                 }
                 .listRowBackground(AppPalette.surface)
 
@@ -1303,6 +1330,51 @@ private struct CreditMovementEditor: View {
             }
             .saveResultAlert($saveNotice, onDismiss: dismiss.callAsFunction)
         }
+    }
+
+    private var creditBalancePreview: some View {
+        VStack(spacing: 12) {
+            creditBalancePreviewRow(
+                title: CreditStrings.text(.currentDebt),
+                value: currentCreditBalance.currencyText,
+                color: AppPalette.background
+            )
+
+            Divider()
+
+            creditBalancePreviewRow(
+                title: CreditStrings.text(.movementDifference),
+                value: signedCurrencyText(creditBalanceDifference),
+                color: creditBalanceDifference < 0 ? AppPalette.mediumGreen : (creditBalanceDifference > 0 ? AppPalette.primary : AppPalette.mutedText)
+            )
+
+            Divider()
+
+            creditBalancePreviewRow(
+                title: CreditStrings.text(.debtAfterMovement),
+                value: resultingCreditBalance.currencyText,
+                color: AppPalette.primary
+            )
+        }
+        .accessibilityIdentifier("creditMovement.balancePreview")
+    }
+
+    private func creditBalancePreviewRow(title: String, value: String, color: Color) -> some View {
+        HStack {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppPalette.mutedText)
+            Spacer()
+            Text(value)
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(color)
+        }
+    }
+
+    private func signedCurrencyText(_ value: Double) -> String {
+        guard abs(value) >= 0.005 else { return value.currencyText }
+        let sign = value < 0 ? "−" : "+"
+        return "\(sign) \(abs(value).currencyText)"
     }
 
     private var affectedCreditCard: some View {

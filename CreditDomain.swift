@@ -165,6 +165,8 @@ enum CreditTextKey {
     case fillCreditName
     case fillCreditValue
     case fillMovementValue
+    case movementDifference
+    case debtAfterMovement
     case credit
     case selectCredit
     case affectedCredit
@@ -241,6 +243,8 @@ enum CreditStrings {
             .fillCreditName: "Preenche o nome do crédito.",
             .fillCreditValue: "Preenche o valor atual em dívida.",
             .fillMovementValue: "Preenche o valor do movimento.",
+            .movementDifference: "Diferença",
+            .debtAfterMovement: "Total após o movimento",
             .credit: "Crédito",
             .selectCredit: "Selecionar crédito",
             .affectedCredit: "Crédito afetado",
@@ -310,6 +314,8 @@ enum CreditStrings {
             .fillCreditName: "Fill in the credit name.",
             .fillCreditValue: "Fill in the current debt amount.",
             .fillMovementValue: "Fill in the movement amount.",
+            .movementDifference: "Difference",
+            .debtAfterMovement: "Total after movement",
             .credit: "Credit",
             .selectCredit: "Select credit",
             .affectedCredit: "Affected credit",

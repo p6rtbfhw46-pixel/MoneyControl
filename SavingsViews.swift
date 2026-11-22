@@ -1032,12 +1032,12 @@ private struct SavingMovementEditor: View {
                 .listRowBackground(AppPalette.surface)
 
                 Section {
-                    MoneyAmountPicker(title: AppStrings.text(.value), amount: $amount, maximumAmount: 1_000_000, onConfirm: save)
+                    savingBalancePreview
                 }
                 .listRowBackground(AppPalette.surface)
 
                 Section {
-                    savingBalancePreview
+                    MoneyAmountPicker(title: AppStrings.text(.value), amount: $amount, maximumAmount: 1_000_000, onConfirm: save)
                 }
                 .listRowBackground(AppPalette.surface)
             }
