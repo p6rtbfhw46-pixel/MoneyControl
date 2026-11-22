@@ -1423,7 +1423,7 @@ private struct CreditMovementEditor: View {
             .padding(.vertical, 6)
         } else if kind == .payment {
             VStack(alignment: .leading, spacing: 14) {
-                Label(CreditStrings.text(.affectCurrentAccount), systemImage: "checkmark.circle.fill")
+                Label(CreditStrings.text(.paymentAccount), systemImage: "wallet.pass.fill")
                     .font(.headline)
                     .foregroundStyle(AppPalette.background)
 
@@ -1434,6 +1434,20 @@ private struct CreditMovementEditor: View {
                     .foregroundStyle(AppPalette.mutedText)
 
                 if !isEditing {
+                    if sortedSpendAccounts.isEmpty {
+                        Text(CreditStrings.text(.createAccountToPayValue))
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(AppPalette.primary)
+                    } else {
+                        Picker(AppStrings.text(.account), selection: normalizedDestinationAccountID) {
+                            ForEach(sortedSpendAccounts) { account in
+                                Label(account.displayName, systemImage: account.iconName)
+                                    .tag(account.id as UUID?)
+                            }
+                        }
+                        .tint(AppPalette.background)
+                    }
+
                     Toggle(isOn: $markAsPaid) {
                         Text(markAsPaid ? AppStrings.text(.paidExpense) : AppStrings.text(.unpaidExpense))
                             .font(.subheadline.weight(.semibold))
@@ -1538,10 +1552,14 @@ private struct CreditMovementEditor: View {
             validationMessage = CreditStrings.text(.selectReceivingAccount)
             return
         }
+        if kind == .payment && request.movement == nil && resolvedDestinationAccountID == nil {
+            validationMessage = CreditStrings.text(.selectPaymentAccount)
+            return
+        }
 
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         if kind == .payment && request.movement == nil {
-            savePaymentThroughCurrentAccount(note: trimmedNote)
+            savePaymentThroughSelectedAccount(note: trimmedNote)
             SaveResultNoticeCenter.shared.show(.saved(AppStrings.text(.creditPaymentSavedMessage)))
             dismiss()
             return
@@ -1603,7 +1621,7 @@ private struct CreditMovementEditor: View {
         dismiss()
     }
 
-    private func savePaymentThroughCurrentAccount(note: String) {
+    private func savePaymentThroughSelectedAccount(note: String) {
         let transaction = MoneyTransaction(
             title: note.isEmpty ? AppStrings.text(.newCreditPaymentExpense) : note,
             day: Calendar.current.component(.day, from: date),
@@ -1613,7 +1631,7 @@ private struct CreditMovementEditor: View {
             expenseCategory: ExpenseCategory.savingsAndDebt.rawValue,
             expenseName: debtAmortizationExpenseName,
             linkedCreditID: request.credit.id,
-            accountID: primarySpendAccountID
+            accountID: resolvedDestinationAccountID
         )
         modelContext.insert(transaction)
         insertAuditLog(
