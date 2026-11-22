@@ -18,6 +18,59 @@ struct SaveResultNotice: Identifiable {
     }
 }
 
+struct SpendAccountSelectionStrip: View {
+    let accounts: [SpendAccount]
+    let accountMovements: [AccountMovement]
+    @Binding var selectedAccountID: UUID?
+    var defaultAccountID: UUID? = nil
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(accounts) { account in
+                    accountButton(account)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    private func accountButton(_ account: SpendAccount) -> some View {
+        let isSelected = (selectedAccountID ?? defaultAccountID) == account.id
+        let balance = account.balance(with: accountMovements)
+
+        return Button {
+            selectedAccountID = account.id
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: account.accountIcon.systemName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isSelected ? AppPalette.surface : account.tint)
+                    .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(balance.currencyText)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(isSelected ? AppPalette.surface : AppPalette.background)
+            .frame(width: 174, height: 72, alignment: .leading)
+            .padding(.horizontal, 12)
+            .background(isSelected ? AppPalette.background : AppPalette.surface, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(isSelected ? AppPalette.background : AppPalette.separator, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
 extension View {
     func saveResultAlert(
         _ notice: Binding<SaveResultNotice?>,

@@ -725,10 +725,16 @@ private struct AccountTransferEditorView: View {
         NavigationStack {
             Form {
                 Section(AppStrings.text(.moveMoney)) {
-                    Picker(AppStrings.text(.fromAccount), selection: normalizedFromAccountID) {
-                        ForEach(orderedAccounts) { account in
-                            Text(account.displayName).tag(Optional(account.id))
-                        }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(AppStrings.text(.fromAccount))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppPalette.background)
+
+                        SpendAccountSelectionStrip(
+                            accounts: orderedAccounts,
+                            accountMovements: movements,
+                            selectedAccountID: normalizedFromAccountID
+                        )
                     }
 
                     Button {
@@ -745,10 +751,16 @@ private struct AccountTransferEditorView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(AppStrings.text(.swapAccounts))
 
-                    Picker(AppStrings.text(.toAccount), selection: normalizedToAccountID) {
-                        ForEach(orderedAccounts) { account in
-                            Text(account.displayName).tag(Optional(account.id))
-                        }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(AppStrings.text(.toAccount))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppPalette.background)
+
+                        SpendAccountSelectionStrip(
+                            accounts: orderedAccounts,
+                            accountMovements: movements,
+                            selectedAccountID: normalizedToAccountID
+                        )
                     }
                     MoneyAmountPicker(title: AppStrings.text(.value), amount: $amount, maximumAmount: 999_999_999)
                     TextField(AppStrings.text(.note), text: $note)

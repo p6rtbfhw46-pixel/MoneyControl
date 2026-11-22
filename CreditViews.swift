@@ -1409,13 +1409,12 @@ private struct CreditMovementEditor: View {
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(AppPalette.primary)
                         } else {
-                            Picker(AppStrings.text(.account), selection: normalizedDestinationAccountID) {
-                                ForEach(sortedSpendAccounts) { account in
-                                    Label(account.displayName, systemImage: account.iconName)
-                                        .tag(account.id as UUID?)
-                                }
-                            }
-                            .tint(AppPalette.background)
+                            SpendAccountSelectionStrip(
+                                accounts: sortedSpendAccounts,
+                                accountMovements: accountMovements,
+                                selectedAccountID: normalizedDestinationAccountID,
+                                defaultAccountID: primarySpendAccountID
+                            )
                         }
                     }
                 }
@@ -1439,13 +1438,12 @@ private struct CreditMovementEditor: View {
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(AppPalette.primary)
                     } else {
-                        Picker(AppStrings.text(.account), selection: normalizedDestinationAccountID) {
-                            ForEach(sortedSpendAccounts) { account in
-                                Label(account.displayName, systemImage: account.iconName)
-                                    .tag(account.id as UUID?)
-                            }
-                        }
-                        .tint(AppPalette.background)
+                        SpendAccountSelectionStrip(
+                            accounts: sortedSpendAccounts,
+                            accountMovements: accountMovements,
+                            selectedAccountID: normalizedDestinationAccountID,
+                            defaultAccountID: primarySpendAccountID
+                        )
                     }
 
                     Toggle(isOn: $markAsPaid) {
